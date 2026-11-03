@@ -255,16 +255,19 @@ The proposal records its `requirement_id`. Saving it marks any older pending `re
 
 For sales, leadership and anyone non-technical.
 
-- One card per outcome: plain title, a progress bar, the product status in words ("Partially available: customers can export to CSV today"), and the target date.
-- A "What changed this week" feed built from events with product notes.
-- No ticket numbers by default. A "Show technical detail" toggle reveals them.
+- One card per outcome: plain title, a progress bar, the product status in words ("Partially available: customers can use part of this today"), and the target date.
+- Under the status, a list of what customers can use today: one line per finished, user-visible leaf. Each line is the product note written when the leaf was marked done, else the requirement's own product note, else its title (`availableToday` in `src/core/roadmap.ts`).
+- A "What changed this week" feed built from the last 7 days of events with product notes, each labelled with the outcome it belongs to.
+- No ticket numbers by default. The "Show technical detail" toggle is a link to `?detail=1`, so keys are only rendered on request and never sent to the browser otherwise.
 
 ### Technical view (`/p/[slug]/tech`)
 
 For engineering.
 
-- An expandable tree: outcome → requirements → children → linked PRs and issues with state badges.
-- Split history: which requirements were split, when and why.
+- An expandable tree (native `<details>`, so it works with the keyboard and without JavaScript): outcome → requirements → children → linked PRs and issues with state badges. Parents start open; leaves open to show their work items.
+- Split history: which requirements were split, when and why, from `split_requirement` events.
+
+Both views read the graph through `loadRoadmap`, `loadRecentChanges` and `loadSplitHistory` in `src/core/roadmap.ts`; progress and status come from the rollups. A missing project shows a plain "could not find that project" page and a failed load a "try again" page (`not-found.tsx` and `error.tsx` under `/p/[slug]`).
 
 ### Review queue (`/p/[slug]/review`)
 

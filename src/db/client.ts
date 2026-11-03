@@ -14,8 +14,8 @@ import * as schema from "./schema";
  */
 export type Database = PgDatabase<PgQueryResultHKT, typeof schema>;
 
-/** Directory where local PGlite keeps its data between runs. */
-export const LOCAL_DATA_DIR = ".pglite";
+/** Directory where local PGlite keeps its data between runs. The end-to-end tests use their own. */
+export const LOCAL_DATA_DIR = process.env.PGLITE_DATA_DIR || ".pglite";
 
 /**
  * Create a Drizzle client backed by embedded PGlite.

@@ -123,7 +123,7 @@ Mirrors of GitHub issues and pull requests.
 
 ### `links`
 
-Many-to-many between requirements and work items. Fields: `requirement_id`, `work_item_id`, `relation` (`implements` or `part_of`), `confidence` (`explicit` from a PR reference, or `suggested` from the agent and approved).
+Many-to-many between requirements and work items. Fields: `requirement_id`, `work_item_id`, `relation` (`implements` or `part_of`), `confidence` (`explicit` from a PR reference, or `suggested` from the agent and approved). The pair `(requirement_id, work_item_id)` is the primary key; links have no id of their own.
 
 ### `proposals`
 
@@ -145,6 +145,8 @@ The review queue.
 
 Append-only audit log. Fields: `id`, `project_id`, `type`, `entity_type`, `entity_id`, `actor` (user id or `agent`), `proposal_id`, `payload` (JSON), `product_note`.
 
+`type` is the operation type and `payload` is the operation itself. `entity_type` is `outcome` or `requirement`; link and unlink events belong to the requirement.
+
 ### `jobs`
 
 A minimal job queue for agent runs. Fields: `id`, `type`, `payload`, `status` (`queued`, `running`, `done`, `failed`), `attempts`, `last_error`, `run_after`.
@@ -163,6 +165,10 @@ Proposals carry a list of typed operations. Applying a proposal runs them in one
 | `set_status`         | Set a leaf's status                                                                      |
 | `link_work_item`     | Link a work item to a requirement                                                        |
 | `unlink_work_item`   | Remove a link                                                                            |
+
+Operations name outcomes and requirements by `key` (`OUT-3`, `TL-12`), not by id, so one proposal can create an outcome and then add requirements under it. Work items are referenced by id because proposals never create them. Only leaves can be split or given a status. Each operation's optional `product_note` becomes the event's product note (and, for requirement create/update, the requirement's own note).
+
+`applyProposal(db, proposalId, actor)` in `src/core/proposals.ts` is the only code that changes the graph. It locks the proposal, validates its operations with Zod, applies them in order in one transaction, writes one event per operation and marks the proposal `approved`. If any operation fails, nothing changes. `rejectProposal` marks a proposal `rejected` and touches nothing else.
 
 Because a proposal is just data, the review UI can show it as a readable diff and the PM can edit it before approving.
 
@@ -248,6 +254,8 @@ For the PM.
 ## Demo mode
 
 A seeded project called "Acme Analytics" lets anyone explore Throughline without signing in or providing an API key. Demo proposals are pre-generated fixtures. The demo resets on a schedule.
+
+`pnpm db:seed` (`src/db/seed.ts`) builds the demo graph by approving proposals, so it has the same event history a real project would, then leaves three proposals pending for the review queue. Running it again replaces the demo project.
 
 ## Moving to production
 

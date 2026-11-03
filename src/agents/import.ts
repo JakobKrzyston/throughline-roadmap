@@ -1,11 +1,12 @@
 /** Roadmap import agent: pasted text in, one pending proposal of create_outcome and create_requirement operations out. Exports runImport, buildImportPrompt, importOutputSchema, IMPORT_TASK. */
-import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import type { LLMProvider, StructuredPrompt } from "@/adapters/llm/provider";
 import type { GraphOperationInput } from "@/core/operations";
 import type { Database } from "@/db/client";
-import { outcomes, projects, proposals, requirements } from "@/db/schema";
+import { proposals } from "@/db/schema";
+
+import { lastKeyNumbers } from "./keys";
 
 export const IMPORT_TASK = "roadmap_import";
 
@@ -144,17 +145,10 @@ export async function runImport(
   const summary = `Import ${count(output.outcomes.length, "outcome")} and ${count(requirementCount, "requirement")} from a pasted roadmap`;
 
   return db.transaction(async (tx) => {
-    // Lock the project row so two imports running at once cannot pick the same keys.
-    await tx
-      .select({ id: projects.id })
-      .from(projects)
-      .where(eq(projects.id, projectId))
-      .for("update");
-    const taken = await takenKeys(tx, projectId);
-    const operations = toOperations(output, {
-      outcome: highestNumber(taken, "OUT"),
-      requirement: highestNumber(taken, "TL"),
-    });
+    const operations = toOperations(
+      output,
+      await lastKeyNumbers(tx, projectId),
+    );
     const [proposal] = await tx
       .insert(proposals)
       .values({
@@ -197,51 +191,6 @@ function toOperations(
       })),
     ];
   });
-}
-
-/** Keys in the graph plus keys that pending proposals would create, so a new import cannot clash with either. */
-async function takenKeys(
-  db: Pick<Database, "select">,
-  projectId: string,
-): Promise<string[]> {
-  const [outcomeRows, requirementRows, pending] = await Promise.all([
-    db
-      .select({ key: outcomes.key })
-      .from(outcomes)
-      .where(eq(outcomes.projectId, projectId)),
-    db
-      .select({ key: requirements.key })
-      .from(requirements)
-      .where(eq(requirements.projectId, projectId)),
-    db
-      .select({ operations: proposals.operations })
-      .from(proposals)
-      .where(
-        and(
-          eq(proposals.projectId, projectId),
-          eq(proposals.status, "pending"),
-        ),
-      ),
-  ]);
-  const proposed = pending.flatMap(({ operations }) =>
-    operations.flatMap((op) => {
-      if (op.type === "create_outcome" || op.type === "create_requirement") {
-        return [op.key];
-      }
-      if (op.type === "split_requirement") {
-        return op.children.map((child) => child.key);
-      }
-      return [];
-    }),
-  );
-  return [...outcomeRows, ...requirementRows]
-    .map((row) => row.key)
-    .concat(proposed);
-}
-
-function highestNumber(keys: string[], prefix: string): number {
-  const pattern = new RegExp(`^${prefix}-(\\d+)$`);
-  return Math.max(0, ...keys.map((key) => Number(pattern.exec(key)?.[1] ?? 0)));
 }
 
 function count(n: number, noun: string): string {

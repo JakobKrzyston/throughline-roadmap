@@ -3,14 +3,17 @@ import { type App, type Octokit, RequestError } from "octokit";
 
 import type {
   SourceAdapter,
+  SourceChangedFile,
   SourceRepository,
   SourceWorkItem,
 } from "@/adapters/source";
 
 import {
   githubIssueSchema,
+  githubPullFileSchema,
   githubPullSchema,
   issueToWorkItem,
+  pullFileToChangedFile,
   pullToWorkItem,
 } from "./work-items";
 
@@ -97,6 +100,33 @@ export class GitHubAdapter implements SourceAdapter {
       if (!last || new Date(last.updated_at) < mergedSince) break;
     }
     return items;
+  }
+
+  /**
+   * List the files a pull request changed, with their diffs where GitHub provides them.
+   *
+   * Args:
+   *   repository: The repository the pull request belongs to.
+   *   workItemExternalId: The pull request's work item id, e.g. `1043219876#41`.
+   *
+   * Returns:
+   *   The changed files. GitHub returns at most 3000.
+   */
+  async listChangedFiles(
+    repository: SourceRepository,
+    workItemExternalId: string,
+  ): Promise<SourceChangedFile[]> {
+    const [owner, repo] = repository.fullName.split("/");
+    const octokit = await this.installationOctokit(owner, repo);
+    const files = await octokit.paginate(octokit.rest.pulls.listFiles, {
+      owner,
+      repo,
+      pull_number: Number(workItemExternalId.split("#")[1]),
+      per_page: 100,
+    });
+    return files.map((file) =>
+      pullFileToChangedFile(githubPullFileSchema.parse(file)),
+    );
   }
 
   private async installationOctokit(

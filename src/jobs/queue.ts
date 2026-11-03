@@ -8,8 +8,10 @@ import { jobs } from "@/db/schema";
 export type JobPayloads = {
   /** Import open issues and recently merged PRs from a newly connected repository. */
   backfill: { repositoryId: string };
-  /** Compare a finished work item with one requirement it is linked to (agent arrives in Stage 5). */
+  /** Compare a finished work item with one requirement it is linked to. */
   reconcile: { workItemId: string; requirementId: string };
+  /** Suggest a requirement for a merged pull request that references none. */
+  link_suggest: { workItemId: string };
 };
 
 export type JobType = keyof JobPayloads;

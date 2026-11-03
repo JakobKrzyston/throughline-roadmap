@@ -5,7 +5,7 @@ import type { GraphOperationInput } from "@/core/operations";
 import { applyProposal } from "@/core/proposals";
 
 import type { Database } from "./client";
-import { projects, proposals, workItems } from "./schema";
+import { projects, proposals, requirements, workItems } from "./schema";
 
 export const DEMO_SLUG = "acme-analytics";
 const REPO = "acme/analytics";
@@ -215,8 +215,19 @@ export async function seedDemoProject(db: Database): Promise<string> {
     source: "import" | "reconcile" | "link_suggest",
     summary: string,
     operations: GraphOperationInput[],
-    extra: { trigger?: number; rationale?: string } = {},
+    extra: { trigger?: number; rationale?: string; requirement?: string } = {},
   ): Promise<string> {
+    const [requirement] = extra.requirement
+      ? await db
+          .select({ id: requirements.id })
+          .from(requirements)
+          .where(
+            and(
+              eq(requirements.projectId, project.id),
+              eq(requirements.key, extra.requirement),
+            ),
+          )
+      : [];
     const [proposal] = await db
       .insert(proposals)
       .values({
@@ -226,6 +237,7 @@ export async function seedDemoProject(db: Database): Promise<string> {
         rationale: extra.rationale ?? "",
         operations,
         triggerWorkItemId: extra.trigger ? workItemId(extra.trigger) : null,
+        requirementId: requirement?.id ?? null,
       })
       .returning();
     return proposal.id;
@@ -266,6 +278,7 @@ export async function seedDemoProject(db: Database): Promise<string> {
     ],
     {
       trigger: 125,
+      requirement: "TL-4",
       rationale:
         "The merged pull request adds the Excel writer, multiple sheets and formatting, which covers everything TL-4 describes.",
     },

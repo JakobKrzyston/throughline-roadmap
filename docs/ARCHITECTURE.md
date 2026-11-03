@@ -143,6 +143,7 @@ The review queue.
 | `rationale`                | Why the agent suggests this                            |
 | `operations`               | JSON array of typed graph operations (see below)       |
 | `trigger_work_item_id`     | The PR or issue that caused it, if any                 |
+| `requirement_id`           | The requirement a `reconcile` proposal is about        |
 | `decided_by`, `decided_at` |                                                        |
 
 ### `events`
@@ -155,7 +156,7 @@ Append-only audit log. Fields: `id`, `project_id`, `type`, `entity_type`, `entit
 
 A minimal job queue for agent runs. Fields: `id`, `type`, `payload`, `status` (`queued`, `running`, `done`, `failed`), `attempts`, `last_error`, `run_after`.
 
-Job types are `backfill` (`{ repositoryId }`) and `reconcile` (`{ workItemId, requirementId }`). `enqueue()` and `runJobs()` live in `src/jobs/queue.ts`. A runner claims one job at a time with `FOR UPDATE SKIP LOCKED`, so concurrent runners never share a job. A failed job is retried after a delay, up to three attempts, then marked `failed`. A job left `running` for 15 minutes (for example, cut off by a serverless timeout) is claimed again. Job types without a handler stay `queued`, which is how `reconcile` jobs wait for the Stage 5 agent.
+Job types are `backfill` (`{ repositoryId }`), `reconcile` (`{ workItemId, requirementId }`) and `link_suggest` (`{ workItemId }`). `enqueue()` and `runJobs()` live in `src/jobs/queue.ts`. A runner claims one job at a time with `FOR UPDATE SKIP LOCKED`, so concurrent runners never share a job. A failed job is retried after a delay, up to three attempts, then marked `failed`. A job left `running` for 15 minutes (for example, cut off by a serverless timeout) is claimed again. Job types without a handler stay `queued`.
 
 ## Graph operations
 
@@ -176,7 +177,7 @@ Operations name outcomes and requirements by `key` (`OUT-3`, `TL-12`), not by id
 
 `applyProposal(db, proposalId, actor)` in `src/core/proposals.ts` is the only code that changes the graph. It locks the proposal, validates its operations with Zod, applies them in order in one transaction, writes one event per operation and marks the proposal `approved`. If any operation fails, nothing changes. `rejectProposal` marks a proposal `rejected` and touches nothing else.
 
-Because a proposal is just data, the review UI can show it as a readable diff and the PM can edit it before approving.
+Because a proposal is just data, the review UI can show it as a readable diff (`describeOperations` in `src/core/proposal-diff.ts`) and the PM can edit it before approving. `applyProposal` accepts the edited operations in place of the stored ones and saves them on the proposal. An edit may change wording and values (titles, notes, statuses, whether customers can see it) but not what the proposal touches: the same operations, in the same order, on the same keys and work items. Anything else is refused.
 
 ## Rollup rules
 
@@ -195,7 +196,7 @@ Computed on read by pure functions in `src/core/rollup.ts`.
 ## Linking PRs to requirements
 
 1. **Explicit:** a PR body or title containing `Implements TL-12` or `Part of TL-12` creates a link automatically. This is deterministic and needs no review. Matching is case-insensitive, one phrase can list several keys (`Part of TL-3, TL-4 and TL-5`), and keys that are not in the project are ignored (`src/core/references.ts`). The links still go through a proposal with source `explicit_link`, approved at once by the `github-sync` actor, so `applyProposal` stays the only code that changes the graph and every link has an event. Removing a reference from a PR later does not remove the link.
-2. **Suggested:** if a merged PR has no reference, the link agent compares it to open requirements and proposes the best match. A person approves it.
+2. **Suggested:** if a merged PR has no reference, the link agent compares it to the project's requirements and proposes the best match. A person approves it.
 
 ## Agents
 
@@ -213,32 +214,39 @@ The model does not choose keys. `src/agents/import.ts` numbers new outcomes and 
 
 ### Reconciliation agent
 
-Triggered when a linked PR merges or a linked issue closes. It gathers:
+`src/agents/reconcile.ts`. Runs as a `reconcile` job when a linked PR merges or a linked issue closes, once per linked requirement. It only reconciles leaf requirements that are `planned` or `in_progress`; a requirement that has since been split, finished or dropped is skipped.
 
-- the requirement, its parent chain and its outcome
-- the PR title, body, list of changed files and a size-limited diff summary
-- sibling requirements and their statuses
+The context builder (`src/agents/context.ts`) gathers:
 
-It classifies the result as one of:
+- the requirement, the requirements it was split from, and its outcome
+- sibling requirements and their statuses, and the other work items linked to the requirement with the first 500 characters of their descriptions, so work covered elsewhere is not reported as missing and earlier finished work still counts
+- the work item's title, state and description excerpt
+- for a PR, its changed files from the `SourceAdapter`: totals, a list of up to 100 files with line counts, and as much diff as fits in 20,000 characters, at most 4,000 per file. Lockfile diffs are left out. Without GitHub credentials the agent works from the title and description alone.
+
+Repository text goes inside tags the prompt tells the model to treat as data. The model classifies the result as one of:
 
 - `fully_done`: propose `set_status(done)`
-- `partially_done`: propose a split into the part that shipped (done) and the part that remains (planned)
-- `done_differently`: propose `update_requirement` describing what was actually built
-- `scope_grew`: propose a split into the newly discovered pieces
+- `partially_done`: propose a split into the part that shipped (`done`) and the part that remains (`planned`)
+- `done_differently`: propose `update_requirement` describing what was actually built, then `set_status(done)`
+- `scope_grew`: propose a split into the newly discovered pieces (`planned`), plus the part that shipped (`done`) if any
+
+Zod checks that the answer is consistent (a split for the two split classifications, at least one piece still to do, and so on), so an inconsistent answer gets the usual single retry. As with the import, the agent numbers new pieces itself after the highest `TL-n` in use.
 
 Every proposal it makes includes a product note in plain language, for example: "Export took longer because it needed new background-job infrastructure, which also unblocks scheduled reports."
 
+The proposal records its `requirement_id`. Saving it marks any older pending `reconcile` proposal for the same requirement `superseded` (decided by `agent`): the newer one was made with more of the work in view, since it sees every work item linked so far, and the prompt asks for a verdict on the requirement as a whole.
+
 ### Link suggestion agent
 
-Described above. Runs on merged PRs with no explicit reference.
+`src/agents/link-suggest.ts`. Runs as a `link_suggest` job when a PR merges with no link at all (not during a backfill). The model sees the PR's title, description and changed files, and every leaf requirement that is not dropped, with its outcome. Finished requirements stay in, since a fix to finished work belongs with it. The answer must be one of those keys, or null when nothing fits well. A match becomes a pending `link_suggest` proposal with a `suggested` link; no match proposes nothing. A PR that has been linked since, or already has a pending suggestion, is skipped. If the PR later gains an explicit reference, the sync marks its pending suggestion `superseded`.
 
 ## GitHub integration
 
 - A **GitHub App** with read access to issues, pull requests, contents and metadata, subscribed to `issues` and `pull_request` events. Setup steps are in `docs/GITHUB_APP.md`.
-- `SourceAdapter` (`src/adapters/source.ts`) is the interface a source implements: look up a repository, and list the items to backfill. `GitHubAdapter` (`src/adapters/github/`) implements it with Octokit, authenticated as the app installation on each repository. Webhook signature checks and payload parsing also live there, and both webhook payloads and REST responses are validated with the same Zod schemas.
+- `SourceAdapter` (`src/adapters/source.ts`) is the interface a source implements: look up a repository, list the items to backfill, and list a PR's changed files for the agents. `GitHubAdapter` (`src/adapters/github/`) implements it with Octokit, authenticated as the app installation on each repository. Webhook signature checks and payload parsing also live there, and both webhook payloads and REST responses are validated with the same Zod schemas.
 - Repositories are connected on `/p/[slug]/settings`. Connecting checks that the repository's owner is in `GITHUB_ALLOWED_OWNERS` (v1 has no sign-in, so this stands in for permissions until #11) and that the app is installed on it, stores it, and enqueues a **backfill**: open issues plus PRs merged in the last 90 days. The backfill links explicit references but queues no reconciliation, since that work finished before Throughline was watching.
 - `POST /api/github/webhook` verifies the `X-Hub-Signature-256` header against the raw body (401 if it does not match), then hands the work item to `syncWorkItem` (`src/core/work-items.ts`) for every project the repository is connected to.
-- `syncWorkItem` upserts the work item, creates explicit links, and enqueues a `reconcile` job per linked requirement when the item first becomes merged (or, for an issue, closed as done; `not_planned` does not count), and for each link added to an item that has already finished. Replaying a delivery therefore changes nothing: the work item is keyed by `(project, source, external_id)`, existing links are skipped, and no state change means no new job. Concurrent deliveries for the same item are serialised by a row lock.
+- `syncWorkItem` upserts the work item, creates explicit links, and enqueues a `reconcile` job per linked requirement when the item first becomes merged (or, for an issue, closed as done; `not_planned` does not count), and for each link added to an item that has already finished. A PR that merges with no links at all gets a `link_suggest` job instead. Replaying a delivery therefore changes nothing: the work item is keyed by `(project, source, external_id)`, existing links are skipped, and no state change means no new job. Concurrent deliveries for the same item are serialised by a row lock.
 - Jobs run from `/api/jobs/run` (`GET` for Vercel cron, `POST` otherwise), and right after a webhook or connect through Next.js `after()`, so responses stay fast. The cron entry in `vercel.json` is a daily safety net, the most often Vercel's Hobby plan allows. When `CRON_SECRET` is set the route requires it as a bearer token.
 
 ## Views
@@ -262,8 +270,10 @@ For engineering.
 
 For the PM.
 
-- Pending proposals, newest first, each with a summary, rationale and a readable diff of its operations.
-- Approve, edit then approve, or reject.
+- Pending proposals, newest first, each with its source, the work item that prompted it, a summary, rationale and a readable diff of its operations: current values struck through next to the proposed ones.
+- Approve, edit then approve, or reject. Editing offers the fields an edit may change (see "Graph operations").
+- Approving goes through `approveProposal` (`src/core/review.ts`): it applies the proposal and, for each work item the proposal links that has already finished, queues a `reconcile` job, just as a PR that references a requirement would. This is how an approved link suggestion leads to reconciliation.
+- v1 has no sign-in, so decisions are recorded with the actor `reviewer`.
 
 ## Demo mode
 

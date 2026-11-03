@@ -201,7 +201,7 @@ All agents call `LLMProvider.generateStructured(schema, prompt)` (`src/adapters/
 
 ### Roadmap import agent
 
-Input: pasted text or Markdown (a roadmap, meeting notes, a product brief) from `/p/[slug]/import`. Output: one pending proposal with `create_outcome` and `create_requirement` operations. The prompt asks for customer-facing outcome titles and engineering-facing requirement titles, and marks which requirements are user-visible.
+Input: pasted text or Markdown (a roadmap, meeting notes, a product brief) from `/p/[slug]/import`. Output: one pending proposal with `create_outcome` and `create_requirement` operations. The prompt asks for customer-facing outcome titles and engineering-facing requirement titles, and marks which requirements are user-visible. It groups related work under a few broad outcomes and places internal engineering work (security, refactoring, tooling) under the outcome it supports rather than making it an outcome. Targets must be a quarter (`2027-Q1`) or a date (`2027-01-11`); any other format counts as invalid output.
 
 The model does not choose keys. `src/agents/import.ts` numbers new outcomes and requirements after the highest `OUT-n` and `TL-n` already in the project or claimed by a pending proposal, so an import cannot clash with existing work.
 

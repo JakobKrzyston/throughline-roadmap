@@ -11,7 +11,7 @@ import { seedDemoProject } from "@/db/seed";
 import { createTestDb } from "@/db/test-db";
 
 import { SAMPLE_IMPORT_OUTPUT, SAMPLE_ROADMAP } from "./fixtures";
-import { IMPORT_TASK, runImport } from "./import";
+import { IMPORT_TASK, importOutputSchema, runImport } from "./import";
 
 type TestDb = Awaited<ReturnType<typeof createTestDb>>;
 
@@ -137,5 +137,26 @@ describe("runImport", () => {
     await runImport(db, llm, projectId, SAMPLE_ROADMAP);
 
     expect(await db.select().from(proposals)).toHaveLength(1);
+  });
+});
+
+describe("importOutputSchema", () => {
+  function withTarget(target: string | null): unknown {
+    const [first, ...rest] = SAMPLE_IMPORT_OUTPUT.outcomes;
+    return {
+      ...SAMPLE_IMPORT_OUTPUT,
+      outcomes: [{ ...first, target }, ...rest],
+    };
+  }
+
+  it.each(["2027-Q1", "2027-01-11", null])("accepts target %s", (target) => {
+    expect(importOutputSchema.safeParse(withTarget(target)).success).toBe(true);
+  });
+
+  // Formats a real import produced before targets were constrained.
+  it.each(["2027-06", "2028", "Q1 2027"])("rejects target %s", (target) => {
+    expect(importOutputSchema.safeParse(withTarget(target)).success).toBe(
+      false,
+    );
   });
 });

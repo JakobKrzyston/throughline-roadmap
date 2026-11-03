@@ -158,6 +158,8 @@ export const workItems = pgTable(
     bodyExcerpt: text("body_excerpt").notNull().default(""),
     mergedAt: timestamp("merged_at", { withTimezone: true }),
     closedAt: timestamp("closed_at", { withTimezone: true }),
+    // When the source last changed the item. Null for items stored before this was recorded.
+    sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }),
     ...timestamps,
   },
   (t) => [unique().on(t.projectId, t.source, t.externalId)],

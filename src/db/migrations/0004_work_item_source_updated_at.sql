@@ -1,0 +1,1 @@
+ALTER TABLE "work_items" ADD COLUMN "source_updated_at" timestamp with time zone;

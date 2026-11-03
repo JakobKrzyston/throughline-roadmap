@@ -53,6 +53,7 @@ describe("parseWebhookEvent", () => {
         state: "open",
         mergedAt: null,
         closedAt: null,
+        updatedAt: new Date("2026-11-01T09:00:00Z"),
       },
     });
   });

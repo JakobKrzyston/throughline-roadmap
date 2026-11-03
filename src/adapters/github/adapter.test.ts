@@ -110,6 +110,7 @@ describe("GitHubAdapter.listBackfill", () => {
       html_url: "https://github.com/acme/analytics/issues/7",
       state: "open",
       closed_at: null,
+      updated_at: "2026-11-01T09:00:00Z",
     };
     const { app } = fakeApp({
       issues: [issue, { ...issue, number: 8, pull_request: {} }],

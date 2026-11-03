@@ -27,6 +27,7 @@ export function pullRequestPayload(
       state: "open",
       merged_at: null,
       closed_at: null,
+      updated_at: "2026-11-01T09:00:00Z",
       ...overrides,
     },
   };
@@ -56,6 +57,7 @@ export function issuePayload(
       html_url: "https://github.com/acme/analytics/issues/7",
       state: "open",
       closed_at: null,
+      updated_at: "2026-11-01T09:00:00Z",
       ...overrides,
     },
   };

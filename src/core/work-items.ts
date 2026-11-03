@@ -36,7 +36,8 @@ type SyncResult = {
  * Store a work item in a project, link the requirements it explicitly references, and queue
  * reconciliation when it has finished.
  *
- * Safe to repeat: replaying the same item creates no duplicate work items, links or jobs. A
+ * Safe to repeat: replaying the same item creates no duplicate work items, links or jobs. An
+ * item older than the stored copy (a delivery that arrived out of order) changes nothing. A
  * reconciliation job is queued for each linked requirement when the item first becomes merged
  * (or, for an issue, closed as done), and for each new link added to an item that has already
  * finished. A pull request that merges with no links at all gets a link suggestion job instead,
@@ -68,13 +69,19 @@ export async function syncWorkItem(
       bodyExcerpt: item.body.slice(0, BODY_EXCERPT_LENGTH),
       mergedAt: item.mergedAt,
       closedAt: item.closedAt,
+      sourceUpdatedAt: item.updatedAt,
     };
-    const { id: workItemId, previousState } = await upsertWorkItem(
-      tx,
-      projectId,
-      item,
-      fields,
-    );
+    const upserted = await upsertWorkItem(tx, projectId, item, fields);
+    const workItemId = upserted.id;
+    if (upserted.stale) {
+      return {
+        workItemId,
+        linked: [],
+        reconcileJobs: 0,
+        linkSuggestJob: false,
+      };
+    }
+    const { previousState } = upserted;
 
     const alreadyLinked = await tx
       .select({ requirementId: links.requirementId })
@@ -236,7 +243,10 @@ async function upsertWorkItem(
     typeof workItems.$inferInsert,
     "projectId" | "source" | "externalId"
   >,
-): Promise<{ id: string; previousState: string | null }> {
+): Promise<
+  | { id: string; stale: false; previousState: string | null }
+  | { id: string; stale: true }
+> {
   // Insert first: if another delivery for the same item is mid-transaction, this waits for it
   // to commit, so the state read below is never stale.
   const [inserted] = await tx
@@ -249,7 +259,7 @@ async function upsertWorkItem(
     })
     .onConflictDoNothing()
     .returning({ id: workItems.id });
-  if (inserted) return { id: inserted.id, previousState: null };
+  if (inserted) return { id: inserted.id, stale: false, previousState: null };
 
   const match = and(
     eq(workItems.projectId, projectId),
@@ -258,10 +268,19 @@ async function upsertWorkItem(
   );
   // Row lock so concurrent deliveries for this item run one after the other.
   const [existing] = await tx
-    .select({ id: workItems.id, state: workItems.state })
+    .select({
+      id: workItems.id,
+      state: workItems.state,
+      sourceUpdatedAt: workItems.sourceUpdatedAt,
+    })
     .from(workItems)
     .where(match)
     .for("update");
+  // GitHub does not deliver webhooks in order. An equal timestamp still applies: GitHub reports
+  // whole seconds, so two changes in the same second can only be taken in arrival order.
+  if (existing.sourceUpdatedAt && item.updatedAt < existing.sourceUpdatedAt) {
+    return { id: existing.id, stale: true };
+  }
   await tx.update(workItems).set(fields).where(eq(workItems.id, existing.id));
-  return { id: existing.id, previousState: existing.state };
+  return { id: existing.id, stale: false, previousState: existing.state };
 }

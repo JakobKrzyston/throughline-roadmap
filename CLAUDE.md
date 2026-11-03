@@ -27,18 +27,23 @@ Next.js (App Router), TypeScript (strict), Tailwind CSS, shadcn/ui, Drizzle ORM,
 
 ## Commands
 
-These are created in Stage 1. Keep this list accurate.
+Keep this list accurate.
 
 ```bash
-pnpm dev          # run the app locally
-pnpm lint         # ESLint
-pnpm typecheck    # tsc --noEmit
-pnpm test         # Vitest unit tests
-pnpm test:e2e     # Playwright smoke tests
-pnpm db:generate  # generate a Drizzle migration from schema changes
-pnpm db:migrate   # apply migrations
-pnpm db:seed      # seed the Acme Analytics demo project
+pnpm dev           # run the app locally
+pnpm build         # production build
+pnpm lint          # ESLint
+pnpm format        # Prettier, rewrite files
+pnpm format:check  # Prettier, check only (runs in CI)
+pnpm typecheck     # next typegen && tsc --noEmit
+pnpm test          # Vitest unit tests
+pnpm db:generate   # generate a Drizzle migration from schema changes
+pnpm db:migrate    # apply migrations (PGlite in ./.pglite, or DATABASE_URL if set)
 ```
+
+Still to come: `pnpm db:seed` (Stage 2) and `pnpm test:e2e` for Playwright (Stage 6).
+
+This project uses a Next.js version newer than most training data. Before writing Next.js code, read the relevant guide in `node_modules/next/dist/docs/` (see `AGENTS.md`).
 
 ## Layout (target)
 

@@ -74,6 +74,10 @@ All IDs are UUIDs except where noted. Timestamps are omitted for brevity; every 
 
 One roadmap workspace. Fields: `id`, `name`, `slug`, `is_demo`.
 
+### `repositories`
+
+Source repositories connected to a project. Fields: `project_id`, `source` (`github`), `external_id` (GitHub's numeric repository id, which survives renames), `full_name` (`owner/name`). Webhooks find their project through `(source, external_id)`; one repository may be connected to several projects.
+
 ### `outcomes`
 
 Product-facing goals.
@@ -129,17 +133,17 @@ Many-to-many between requirements and work items. Fields: `requirement_id`, `wor
 
 The review queue.
 
-| Field                      | Notes                                            |
-| -------------------------- | ------------------------------------------------ |
-| `id`                       |                                                  |
-| `project_id`               |                                                  |
-| `source`                   | `import`, `reconcile`, `link_suggest`            |
-| `status`                   | `pending`, `approved`, `rejected`, `superseded`  |
-| `summary`                  | One plain-language line for the queue            |
-| `rationale`                | Why the agent suggests this                      |
-| `operations`               | JSON array of typed graph operations (see below) |
-| `trigger_work_item_id`     | The PR or issue that caused it, if any           |
-| `decided_by`, `decided_at` |                                                  |
+| Field                      | Notes                                                  |
+| -------------------------- | ------------------------------------------------------ |
+| `id`                       |                                                        |
+| `project_id`               |                                                        |
+| `source`                   | `import`, `reconcile`, `link_suggest`, `explicit_link` |
+| `status`                   | `pending`, `approved`, `rejected`, `superseded`        |
+| `summary`                  | One plain-language line for the queue                  |
+| `rationale`                | Why the agent suggests this                            |
+| `operations`               | JSON array of typed graph operations (see below)       |
+| `trigger_work_item_id`     | The PR or issue that caused it, if any                 |
+| `decided_by`, `decided_at` |                                                        |
 
 ### `events`
 
@@ -150,6 +154,8 @@ Append-only audit log. Fields: `id`, `project_id`, `type`, `entity_type`, `entit
 ### `jobs`
 
 A minimal job queue for agent runs. Fields: `id`, `type`, `payload`, `status` (`queued`, `running`, `done`, `failed`), `attempts`, `last_error`, `run_after`.
+
+Job types are `backfill` (`{ repositoryId }`) and `reconcile` (`{ workItemId, requirementId }`). `enqueue()` and `runJobs()` live in `src/jobs/queue.ts`. A runner claims one job at a time with `FOR UPDATE SKIP LOCKED`, so concurrent runners never share a job. A failed job is retried after a delay, up to three attempts, then marked `failed`. A job left `running` for 15 minutes (for example, cut off by a serverless timeout) is claimed again. Job types without a handler stay `queued`, which is how `reconcile` jobs wait for the Stage 5 agent.
 
 ## Graph operations
 
@@ -188,7 +194,7 @@ Computed on read by pure functions in `src/core/rollup.ts`.
 
 ## Linking PRs to requirements
 
-1. **Explicit:** a PR body or title containing `Implements TL-12` or `Part of TL-12` creates a link automatically. This is deterministic and needs no review.
+1. **Explicit:** a PR body or title containing `Implements TL-12` or `Part of TL-12` creates a link automatically. This is deterministic and needs no review. Matching is case-insensitive, one phrase can list several keys (`Part of TL-3, TL-4 and TL-5`), and keys that are not in the project are ignored (`src/core/references.ts`). The links still go through a proposal with source `explicit_link`, approved at once by the `github-sync` actor, so `applyProposal` stays the only code that changes the graph and every link has an event. Removing a reference from a PR later does not remove the link.
 2. **Suggested:** if a merged PR has no reference, the link agent compares it to open requirements and proposes the best match. A person approves it.
 
 ## Agents
@@ -228,10 +234,12 @@ Described above. Runs on merged PRs with no explicit reference.
 
 ## GitHub integration
 
-- A **GitHub App** with read access to issues, pull requests, contents and metadata, subscribed to `issues` and `pull_request` events.
-- `POST /api/github/webhook` verifies the `X-Hub-Signature-256` header, upserts the work item, creates explicit links, and enqueues agent jobs.
-- Agent jobs run from `POST /api/jobs/run`, called right after the webhook and on a Vercel cron schedule as a safety net. This keeps webhook responses fast.
-- A one-time **backfill** imports existing open issues and recently merged PRs when a repo is connected.
+- A **GitHub App** with read access to issues, pull requests, contents and metadata, subscribed to `issues` and `pull_request` events. Setup steps are in `docs/GITHUB_APP.md`.
+- `SourceAdapter` (`src/adapters/source.ts`) is the interface a source implements: look up a repository, and list the items to backfill. `GitHubAdapter` (`src/adapters/github/`) implements it with Octokit, authenticated as the app installation on each repository. Webhook signature checks and payload parsing also live there, and both webhook payloads and REST responses are validated with the same Zod schemas.
+- Repositories are connected on `/p/[slug]/settings`. Connecting checks the app is installed on the repository, stores it, and enqueues a **backfill**: open issues plus PRs merged in the last 90 days.
+- `POST /api/github/webhook` verifies the `X-Hub-Signature-256` header against the raw body (401 if it does not match), then hands the work item to `syncWorkItem` (`src/core/work-items.ts`) for every project the repository is connected to.
+- `syncWorkItem` upserts the work item, creates explicit links, and enqueues a `reconcile` job per linked requirement when the item first becomes merged (or, for an issue, closed), and for each link added to an item that has already finished. Replaying a delivery therefore changes nothing: the work item is keyed by `(project, source, external_id)`, existing links are skipped, and no state change means no new job. Concurrent deliveries for the same item are serialised by a row lock.
+- Jobs run from `/api/jobs/run` (`GET` for Vercel cron, `POST` otherwise), and right after a webhook or connect through Next.js `after()`, so responses stay fast. The cron entry in `vercel.json` is a daily safety net, the most often Vercel's Hobby plan allows. When `CRON_SECRET` is set the route requires it as a bearer token.
 
 ## Views
 

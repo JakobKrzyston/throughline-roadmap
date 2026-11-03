@@ -39,6 +39,8 @@ export const proposalSource = pgEnum("proposal_source", [
   "import",
   "reconcile",
   "link_suggest",
+  // PR references like "Implements TL-12": approved automatically by the sync, never by a person.
+  "explicit_link",
 ]);
 export const proposalStatus = pgEnum("proposal_status", [
   "pending",
@@ -70,6 +72,23 @@ export const projects = pgTable("projects", {
   isDemo: boolean("is_demo").notNull().default(false),
   ...timestamps,
 });
+
+// Repositories connected to a project. Webhooks find their project through external_id,
+// which survives renames, unlike the full name.
+export const repositories = pgTable(
+  "repositories",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    source: workItemSource("source").notNull(),
+    externalId: text("external_id").notNull(),
+    fullName: text("full_name").notNull(),
+    ...timestamps,
+  },
+  (t) => [unique().on(t.projectId, t.source, t.externalId)],
+);
 
 export const outcomes = pgTable(
   "outcomes",

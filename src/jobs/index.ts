@@ -25,8 +25,7 @@ export async function runQueuedJobs(): Promise<{
   const llm = getLLMProvider(DEMO_LLM_FIXTURES);
   const source = isGitHubConfigured() ? getGitHubAdapter() : null;
   return runJobs(db, {
-    backfill: ({ repositoryId }) =>
-      runBackfill(db, getGitHubAdapter(), repositoryId),
+    backfill: (payload) => runBackfill(db, getGitHubAdapter(), payload),
     reconcile: async (payload) => {
       await runReconcile(db, llm, source, payload);
     },

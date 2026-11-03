@@ -52,19 +52,25 @@ export interface SourceAdapter {
   findRepository(fullName: string): Promise<SourceRepository | null>;
 
   /**
-   * List the work items to import when a repository is connected.
+   * List one page of the work items to import when a repository is connected.
+   *
+   * Pages are small enough to sync in one job, so a long import is spread over many jobs and a
+   * retry repeats only the page that failed.
    *
    * Args:
    *   repository: The repository to read.
    *   mergedSince: Oldest merge date of pull requests to include.
+   *   cursor: Where to continue, from the previous page's `nextCursor`; null for the first page.
    *
    * Returns:
-   *   Every open issue, plus pull requests merged on or after mergedSince.
+   *   The page's items and the cursor for the next page, or null after the last page. Across all
+   *   pages: every open issue, plus pull requests merged on or after mergedSince.
    */
-  listBackfill(
+  listBackfillPage(
     repository: SourceRepository,
     mergedSince: Date,
-  ): Promise<SourceWorkItem[]>;
+    cursor: string | null,
+  ): Promise<{ items: SourceWorkItem[]; nextCursor: string | null }>;
 
   /**
    * List the files a pull request changed.

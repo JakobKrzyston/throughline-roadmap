@@ -26,12 +26,15 @@ vi.mock(import("@/db/client"), async (importOriginal) => ({
 // after() needs a Next.js request scope; the job run it schedules is not under test here.
 vi.mock("next/server", () => ({ after: vi.fn() }));
 
+const { after } = await import("next/server");
+const { runQueuedJobs } = await import("@/jobs");
 const { POST } = await import("./route");
 
 const SECRET = "webhook-secret";
 let db: TestDb;
 
 beforeEach(async () => {
+  vi.mocked(after).mockClear();
   vi.stubEnv("GITHUB_WEBHOOK_SECRET", SECRET);
   db = await createTestDb();
   state.db = db;
@@ -97,6 +100,7 @@ describe("POST /api/github/webhook", () => {
     const response = await POST(delivery(mergedPr, { secret: "wrong" }));
     expect(response.status).toBe(401);
     expect(await db.select().from(workItems)).toEqual([]);
+    expect(after).not.toHaveBeenCalled();
   });
 
   it("rejects a missing signature with 401", async () => {
@@ -118,6 +122,12 @@ describe("POST /api/github/webhook", () => {
     const response = await POST(delivery({ zen: "hi" }, { event: "ping" }));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ status: "ignored" });
+  });
+
+  it("runs due jobs after any genuine delivery, even one that queues nothing", async () => {
+    // A retry or a job cut off by a timeout must not wait for a delivery that happens to queue work.
+    await POST(delivery({ zen: "hi" }, { event: "ping" }));
+    expect(after).toHaveBeenCalledWith(runQueuedJobs);
   });
 
   it("links a merged PR that references a requirement and enqueues reconciliation", async () => {

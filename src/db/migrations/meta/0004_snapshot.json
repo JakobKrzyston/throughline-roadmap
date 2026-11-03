@@ -1,5 +1,5 @@
 {
-  "id": "7f8516b6-a236-459e-870f-28ad8697a15d",
+  "id": "483c0cf6-82df-44e4-99a6-c87a02122057",
   "prevId": "cce0234d-9d84-4d97-a57e-380d37d6615a",
   "version": "7",
   "dialect": "postgresql",
@@ -14,23 +14,6 @@
           "primaryKey": true,
           "notNull": true,
           "default": "gen_random_uuid()"
-        },
-        "seq": {
-          "name": "seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "identity": {
-            "type": "always",
-            "name": "events_seq_seq",
-            "schema": "public",
-            "increment": "1",
-            "startWith": "1",
-            "minValue": "1",
-            "maxValue": "9223372036854775807",
-            "cache": "1",
-            "cycle": false
-          }
         },
         "project_id": {
           "name": "project_id",
@@ -898,6 +881,12 @@
         },
         "closed_at": {
           "name": "closed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_updated_at": {
+          "name": "source_updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false

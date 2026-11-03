@@ -10,6 +10,7 @@ const common = {
   body: z.string().nullable(),
   html_url: z.url(),
   closed_at: z.iso.datetime({ offset: true }).nullable(),
+  updated_at: z.iso.datetime({ offset: true }),
 };
 
 export const githubIssueSchema = z.object({
@@ -126,5 +127,6 @@ function shared(repositoryId: string, item: GitHubIssue | GitHubPull) {
     body: item.body ?? "",
     url: item.html_url,
     closedAt: item.closed_at ? new Date(item.closed_at) : null,
+    updatedAt: new Date(item.updated_at),
   };
 }

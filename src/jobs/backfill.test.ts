@@ -32,6 +32,7 @@ const issue: SourceWorkItem = {
   state: "open",
   mergedAt: null,
   closedAt: null,
+  updatedAt: new Date("2026-11-01"),
 };
 
 const adapter = {

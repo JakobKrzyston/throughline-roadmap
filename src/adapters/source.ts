@@ -14,6 +14,8 @@ export type SourceWorkItem = {
   state: "open" | "closed" | "merged" | "not_planned";
   mergedAt: Date | null;
   closedAt: Date | null;
+  /** When the source last changed the item. Used to ignore deliveries that arrive out of order. */
+  updatedAt: Date;
 };
 
 /** A repository the source can read. */

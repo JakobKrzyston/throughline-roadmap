@@ -114,16 +114,17 @@ Technical work, arranged as a tree under each outcome.
 
 Mirrors of GitHub issues and pull requests.
 
-| Field                    | Notes                                                                                            |
-| ------------------------ | ------------------------------------------------------------------------------------------------ |
-| `id`                     |                                                                                                  |
-| `project_id`             |                                                                                                  |
-| `source`                 | `github` (later `linear`, `jira`)                                                                |
-| `external_id`            | e.g. `1043219876#41`: repository id, then number                                                 |
-| `kind`                   | `issue` or `pull_request`                                                                        |
-| `title`, `url`, `state`  | `state`: `open`, `closed`, `merged`, `not_planned` (an issue closed as not planned or duplicate) |
-| `body_excerpt`           | First part of the description, for agent context                                                 |
-| `merged_at`, `closed_at` |                                                                                                  |
+| Field                    | Notes                                                                                                            |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `id`                     |                                                                                                                  |
+| `project_id`             |                                                                                                                  |
+| `source`                 | `github` (later `linear`, `jira`)                                                                                |
+| `external_id`            | e.g. `1043219876#41`: repository id, then number                                                                 |
+| `kind`                   | `issue` or `pull_request`                                                                                        |
+| `title`, `url`, `state`  | `state`: `open`, `closed`, `merged`, `not_planned` (an issue closed as not planned or duplicate)                 |
+| `body_excerpt`           | First part of the description, for agent context                                                                 |
+| `merged_at`, `closed_at` |                                                                                                                  |
+| `source_updated_at`      | When GitHub last changed the item. A delivery older than this is ignored, since webhooks can arrive out of order |
 
 ### `links`
 

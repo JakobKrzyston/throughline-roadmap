@@ -66,6 +66,7 @@ function pr(overrides: Partial<SourceWorkItem> = {}): SourceWorkItem {
     state: "open",
     mergedAt: null,
     closedAt: null,
+    updatedAt: new Date("2026-11-01T09:00:00Z"),
     ...overrides,
   };
 }
@@ -268,6 +269,32 @@ describe("syncWorkItem", () => {
     );
     expect(await db.select().from(links)).toHaveLength(1);
     expect(await reconcileJobs()).toEqual([]);
+  });
+
+  it("ignores a delivery older than the stored item", async () => {
+    const opened = pr({ kind: "issue", externalId: "4242#7" });
+    const closedEdited = {
+      ...opened,
+      title: "Edited title",
+      state: "closed" as const,
+      closedAt: new Date("2026-11-02T10:00:00Z"),
+      updatedAt: new Date("2026-11-02T10:00:00Z"),
+    };
+    const closed = await syncWorkItem(db, projectId, closedEdited);
+    const late = await syncWorkItem(db, projectId, opened);
+    // Had the late delivery reopened the issue, this would count as a new close.
+    const closedAgain = await syncWorkItem(db, projectId, closedEdited);
+
+    expect(late).toEqual({
+      workItemId: closed.workItemId,
+      linked: [],
+      reconcileJobs: 0,
+      linkSuggestJob: false,
+    });
+    expect(closedAgain.reconcileJobs).toBe(0);
+    expect(await reconcileJobs()).toHaveLength(1);
+    const [row] = await db.select().from(workItems);
+    expect(row).toMatchObject({ state: "closed", title: "Edited title" });
   });
 
   it("links but does not reconcile when told not to", async () => {

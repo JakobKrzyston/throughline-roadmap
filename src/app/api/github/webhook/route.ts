@@ -38,6 +38,10 @@ export async function POST(request: Request): Promise<Response> {
   if (!verifyWebhookSignature(secret, body, signature)) {
     return Response.json({ error: "Bad signature" }, { status: 401 });
   }
+  // Every genuine delivery runs the queue after responding, whether or not it queued anything.
+  // That is how retries and jobs cut off by a timeout get picked up between the daily crons; when
+  // nothing is due the run is one quick lookup.
+  after(runQueuedJobs);
 
   let event;
   try {
@@ -58,10 +62,5 @@ export async function POST(request: Request): Promise<Response> {
     event.repository,
     event.item,
   );
-  if (
-    results.some((result) => result.reconcileJobs > 0 || result.linkSuggestJob)
-  ) {
-    after(runQueuedJobs);
-  }
   return Response.json({ status: "synced", projects: results.length });
 }

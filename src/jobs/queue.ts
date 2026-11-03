@@ -6,8 +6,12 @@ import { jobs } from "@/db/schema";
 
 /** Every job type and the payload it carries. */
 export type JobPayloads = {
-  /** Import open issues and recently merged PRs from a newly connected repository. */
-  backfill: { repositoryId: string };
+  /**
+   * Import one page of open issues and recently merged PRs from a newly connected repository.
+   * The first job carries only the repository; each later page carries the cut-off date the
+   * first one chose and the source's cursor.
+   */
+  backfill: { repositoryId: string; mergedSince?: string; cursor?: string };
   /** Compare a finished work item with one requirement it is linked to. */
   reconcile: { workItemId: string; requirementId: string };
   /** Suggest a requirement for a merged pull request that references none. */
@@ -16,9 +20,14 @@ export type JobPayloads = {
 
 export type JobType = keyof JobPayloads;
 
-/** Functions that run each job type. Types without a handler stay queued until one exists. */
+/**
+ * Functions that run each job type. Types without a handler stay queued until one exists.
+ *
+ * A handler may return the payload of a follow-up job of the same type. It is queued in the same
+ * transaction that marks this job done, so a job cut off before finishing never queues it twice.
+ */
 export type JobHandlers = {
-  [T in JobType]?: (payload: JobPayloads[T]) => Promise<void>;
+  [T in JobType]?: (payload: JobPayloads[T]) => Promise<JobPayloads[T] | void>;
 };
 
 /** A job that has failed this many times is marked `failed` and not retried. */
@@ -79,21 +88,30 @@ export async function runJobs(
     if (!job) break;
 
     let error: unknown;
+    let followUp: unknown;
     if (job.attempts > MAX_ATTEMPTS) {
       error = new Error("Stopped responding on its last attempt");
     } else {
       try {
         const handler = handlers[job.type as JobType] as (
           payload: unknown,
-        ) => Promise<void>;
-        await handler(job.payload);
+        ) => Promise<unknown>;
+        followUp = await handler(job.payload);
       } catch (caught) {
         error = caught;
       }
     }
 
     if (error === undefined) {
-      await db.update(jobs).set({ status: "done" }).where(eq(jobs.id, job.id));
+      await db.transaction(async (tx) => {
+        if (followUp) {
+          await tx.insert(jobs).values({ type: job.type, payload: followUp });
+        }
+        await tx
+          .update(jobs)
+          .set({ status: "done" })
+          .where(eq(jobs.id, job.id));
+      });
       summary.done++;
       continue;
     }

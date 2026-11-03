@@ -7,6 +7,7 @@ import { type ReactElement, Suspense } from "react";
 import { githubInstallUrl, missingGitHubSettings } from "@/adapters/github";
 import { getDb } from "@/db/client";
 import { projects, repositories } from "@/db/schema";
+import { type BackfillStatus, backfillStatuses } from "@/jobs/backfill";
 
 import { ConnectForm } from "./connect-form";
 
@@ -62,6 +63,10 @@ async function ProjectSettings({
     .from(repositories)
     .where(eq(repositories.projectId, project.id))
     .orderBy(asc(repositories.fullName));
+  const imports = await backfillStatuses(
+    db,
+    connected.map((repository) => repository.id),
+  );
   const missing = missingGitHubSettings();
   const configured = missing.length === 0;
   const installUrl = githubInstallUrl();
@@ -79,10 +84,11 @@ async function ProjectSettings({
             No repositories connected yet.
           </p>
         ) : (
-          <ul className="flex flex-col gap-1 text-sm">
+          <ul className="flex flex-col gap-2 text-sm">
             {connected.map((repository) => (
-              <li key={repository.id} className="font-mono">
-                {repository.fullName}
+              <li key={repository.id} className="flex flex-col gap-0.5">
+                <span className="font-mono">{repository.fullName}</span>
+                <ImportStatus status={imports.get(repository.id)} />
               </li>
             ))}
           </ul>
@@ -119,4 +125,35 @@ async function ProjectSettings({
       </section>
     </>
   );
+}
+
+function ImportStatus({
+  status,
+}: {
+  status: BackfillStatus | undefined;
+}): ReactElement | null {
+  switch (status?.state) {
+    case undefined:
+    case "done":
+      return null;
+    case "importing":
+      return (
+        <span className="text-muted-foreground">
+          Importing issues and pull requests…
+        </span>
+      );
+    case "retrying":
+      return (
+        <span className="text-muted-foreground">
+          The import hit a problem and will try again: {status.error}
+        </span>
+      );
+    case "failed":
+      return (
+        <span className="text-destructive">
+          The import stopped after repeated failures, so some issues and pull
+          requests are missing: {status.error}
+        </span>
+      );
+  }
 }

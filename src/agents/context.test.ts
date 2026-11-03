@@ -97,7 +97,7 @@ describe("describeChanges", () => {
   const source = {
     source: "github",
     findRepository: async () => null,
-    listBackfill: async () => [],
+    listBackfillPage: async () => ({ items: [], nextCursor: null }),
     listChangedFiles: vi.fn(async () => SAMPLE_PULL_FILES),
   } satisfies SourceAdapter;
 

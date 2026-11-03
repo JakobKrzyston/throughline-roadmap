@@ -31,6 +31,21 @@ describe("runJobs", () => {
     expect(await job(id)).toMatchObject({ status: "done", attempts: 1 });
   });
 
+  it("queues the follow-up job a handler returns", async () => {
+    const id = await enqueue(db, "backfill", { repositoryId: "r1" });
+    const backfill = vi.fn(async (payload: { cursor?: string }) =>
+      payload.cursor ? undefined : { repositoryId: "r1", cursor: "page:2" },
+    );
+
+    expect(await runJobs(db, { backfill })).toEqual({ done: 2, failed: 0 });
+    expect(backfill).toHaveBeenLastCalledWith({
+      repositoryId: "r1",
+      cursor: "page:2",
+    });
+    expect(await job(id)).toMatchObject({ status: "done" });
+    expect(await db.select().from(jobs)).toHaveLength(2);
+  });
+
   it("leaves job types without a handler queued", async () => {
     const id = await enqueue(db, "reconcile", {
       workItemId: "w",

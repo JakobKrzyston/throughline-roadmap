@@ -22,14 +22,13 @@ function pull(number: number, mergedAt: string | null, updatedAt: string) {
   };
 }
 
-/** A fake GitHub App installed on acme/analytics only. Records how many PR pages were read. */
+/** A fake GitHub App installed on acme/analytics only. Serves issue and PR pages by page number. */
 function fakeApp(options: {
-  issues?: unknown[];
+  issuePages?: unknown[][];
   pullPages?: ReturnType<typeof pull>[][];
   pullFiles?: unknown[];
 }) {
-  const read = { pullPages: 0, pullNumber: 0 };
-  const listForRepo = () => {};
+  const read = { pullNumber: 0 };
   const listFiles = () => {};
   const octokit = {
     rest: {
@@ -38,27 +37,23 @@ function fakeApp(options: {
           data: { id: 4242, full_name: "acme/analytics" },
         }),
       },
-      issues: { listForRepo },
-      pulls: { list: () => {}, listFiles },
+      issues: {
+        listForRepo: async ({ page }: { page: number }) => ({
+          data: options.issuePages?.[page - 1] ?? [],
+        }),
+      },
+      pulls: {
+        list: async ({ page }: { page: number }) => ({
+          data: options.pullPages?.[page - 1] ?? [],
+        }),
+        listFiles,
+      },
     },
-    paginate: Object.assign(
-      async (endpoint: unknown, params: { pull_number?: number }) => {
-        if (endpoint === listFiles) {
-          read.pullNumber = params.pull_number ?? 0;
-          return options.pullFiles ?? [];
-        }
-        expect(endpoint).toBe(listForRepo);
-        return options.issues ?? [];
-      },
-      {
-        iterator: async function* () {
-          for (const data of options.pullPages ?? []) {
-            read.pullPages++;
-            yield { data };
-          }
-        },
-      },
-    ),
+    paginate: async (endpoint: unknown, params: { pull_number?: number }) => {
+      expect(endpoint).toBe(listFiles);
+      read.pullNumber = params.pull_number ?? 0;
+      return options.pullFiles ?? [];
+    },
   };
   const app = {
     octokit: {
@@ -98,47 +93,98 @@ describe("GitHubAdapter.findRepository", () => {
   });
 });
 
-describe("GitHubAdapter.listBackfill", () => {
+describe("GitHubAdapter.listBackfillPage", () => {
   const since = new Date("2026-08-01T00:00:00Z");
   const repository = { externalId: "4242", fullName: "acme/analytics" };
-
-  it("returns open issues but not the pull requests the issues API mixes in", async () => {
-    const issue = {
-      number: 7,
-      title: "Slow export",
-      body: "Part of TL-4",
-      html_url: "https://github.com/acme/analytics/issues/7",
-      state: "open",
-      closed_at: null,
-    };
-    const { app } = fakeApp({
-      issues: [issue, { ...issue, number: 8, pull_request: {} }],
-    });
-    const items = await new GitHubAdapter(app).listBackfill(repository, since);
-    expect(items.map((item) => item.externalId)).toEqual(["4242#7"]);
-    expect(items[0]).toMatchObject({ kind: "issue", body: "Part of TL-4" });
+  const issue = (number: number, extra: object = {}) => ({
+    number,
+    title: `Issue ${number}`,
+    body: "Part of TL-4",
+    html_url: `https://github.com/acme/analytics/issues/${number}`,
+    state: "open",
+    closed_at: null,
+    updated_at: "2026-10-01T00:00:00Z",
+    ...extra,
   });
 
-  it("returns pull requests merged since the cutoff and stops paging at older updates", async () => {
-    const { app, read } = fakeApp({
+  it("returns open issues but not the pull requests the issues API mixes in", async () => {
+    const { app } = fakeApp({
+      issuePages: [[issue(7), issue(8, { pull_request: {} })]],
+    });
+    const page = await new GitHubAdapter(app).listBackfillPage(
+      repository,
+      since,
+      null,
+    );
+    expect(page.items.map((item) => item.externalId)).toEqual(["4242#7"]);
+    expect(page.items[0]).toMatchObject({
+      kind: "issue",
+      body: "Part of TL-4",
+    });
+    // A short page is the last page of issues, so pull requests come next.
+    expect(page.nextCursor).toBe("pulls:1");
+  });
+
+  it("moves to the next page of issues after a full one", async () => {
+    const full = Array.from({ length: 100 }, (_, i) => issue(i + 1));
+    const { app } = fakeApp({ issuePages: [full, [issue(101)]] });
+    const adapter = new GitHubAdapter(app);
+
+    const first = await adapter.listBackfillPage(repository, since, null);
+    expect(first.items).toHaveLength(100);
+    expect(first.nextCursor).toBe("issues:2");
+
+    const second = await adapter.listBackfillPage(
+      repository,
+      since,
+      "issues:2",
+    );
+    expect(second.items.map((item) => item.externalId)).toEqual(["4242#101"]);
+    expect(second.nextCursor).toBe("pulls:1");
+  });
+
+  it("returns pull requests merged since the cutoff", async () => {
+    const { app } = fakeApp({
       pullPages: [
         [
           pull(30, "2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z"),
           pull(29, null, "2026-09-01T00:00:00Z"), // closed without merging
           pull(28, "2026-07-01T00:00:00Z", "2026-07-15T00:00:00Z"), // merged before the cutoff
         ],
-        [pull(27, "2026-06-01T00:00:00Z", "2026-06-01T00:00:00Z")],
       ],
     });
-    const items = await new GitHubAdapter(app).listBackfill(repository, since);
-    expect(items).toEqual([
+    const page = await new GitHubAdapter(app).listBackfillPage(
+      repository,
+      since,
+      "pulls:1",
+    );
+    expect(page.items).toEqual([
       expect.objectContaining({
         externalId: "4242#30",
         kind: "pull_request",
         state: "merged",
       }),
     ]);
-    expect(read.pullPages).toBe(1);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it("stops paging pull requests at the first page that reaches older updates", async () => {
+    const recent = Array.from({ length: 99 }, (_, i) =>
+      pull(200 - i, "2026-10-01T00:00:00Z", "2026-10-01T00:00:00Z"),
+    );
+    const { app } = fakeApp({
+      pullPages: [
+        [...recent, pull(50, "2026-10-01T00:00:00Z", "2026-10-01T00:00:00Z")],
+        [...recent, pull(10, "2026-06-01T00:00:00Z", "2026-06-01T00:00:00Z")],
+      ],
+    });
+    const adapter = new GitHubAdapter(app);
+    expect(
+      (await adapter.listBackfillPage(repository, since, "pulls:1")).nextCursor,
+    ).toBe("pulls:2");
+    expect(
+      (await adapter.listBackfillPage(repository, since, "pulls:2")).nextCursor,
+    ).toBeNull();
   });
 });
 

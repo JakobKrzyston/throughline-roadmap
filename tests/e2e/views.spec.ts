@@ -51,10 +51,19 @@ test("technical view shows the requirement tree and split history", async ({
   ).toBeVisible();
 });
 
-test("an unknown project gets a plain-language message", async ({ page }) => {
-  await page.goto("/p/no-such-project");
+test("an unknown project gets a plain-language, unindexed page", async ({
+  page,
+}) => {
+  for (const path of ["/p/no-such-project", "/p/no-such-project/tech"]) {
+    await page.goto(path);
 
-  await expect(
-    page.getByRole("heading", { name: "We could not find that project" }),
-  ).toBeVisible();
+    // The status stays 200 because the lookup runs after the shell streams; noindex keeps it out of search.
+    await expect(page.locator('meta[name="robots"]').first()).toHaveAttribute(
+      "content",
+      "noindex",
+    );
+    await expect(
+      page.getByRole("heading", { name: "We could not find that project" }),
+    ).toBeVisible();
+  }
 });

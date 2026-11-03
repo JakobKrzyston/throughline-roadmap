@@ -1,14 +1,14 @@
 /** CLI entry for `pnpm db:seed`: (re)creates the demo project in the app's database. */
 import { loadEnvConfig } from "@next/env";
 
-import { createPgliteDb, createPostgresDb, LOCAL_DATA_DIR } from "./client";
+import { createPgliteDb, createPostgresDb, localDataDir } from "./client";
 import { DEMO_SLUG, seedDemoProject } from "./seed";
 
 async function main(): Promise<void> {
   loadEnvConfig(process.cwd());
   const url = process.env.DATABASE_URL;
   // Built here rather than with getDb so the script can close its own client.
-  const db = url ? createPostgresDb(url) : createPgliteDb(LOCAL_DATA_DIR);
+  const db = url ? createPostgresDb(url) : createPgliteDb(localDataDir());
   try {
     await seedDemoProject(db);
     console.log(`Seeded demo project "${DEMO_SLUG}".`);

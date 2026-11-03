@@ -6,11 +6,7 @@ import { connection } from "next/server";
 import { type ReactElement, Suspense } from "react";
 
 import { Badge } from "@/components/badge";
-import {
-  loadRoadmap,
-  loadSplitHistory,
-  type RequirementTree,
-} from "@/core/roadmap";
+import { loadRoadmap, loadSplitHistory } from "@/core/roadmap";
 import { outcomeProgress } from "@/core/rollup";
 import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
@@ -64,17 +60,8 @@ async function TechView({
     .where(eq(projects.slug, slug));
   if (!project) notFound();
 
-  const [roadmap, splits] = await Promise.all([
-    loadRoadmap(db, project.id),
-    loadSplitHistory(db, project.id),
-  ]);
-  const titles = new Map<string, string>();
-  const collectTitles = (nodes: RequirementTree[]): void =>
-    nodes.forEach((node) => {
-      titles.set(node.key, node.title);
-      collectTitles(node.children);
-    });
-  roadmap.forEach((outcome) => collectTitles(outcome.requirements));
+  const roadmap = await loadRoadmap(db, project.id);
+  const splits = await loadSplitHistory(db, project.id, roadmap);
 
   return (
     <>
@@ -146,7 +133,7 @@ async function TechView({
                   <span className="font-mono text-sm">
                     {split.requirementKey}
                   </span>{" "}
-                  {titles.get(split.requirementKey)} was split into{" "}
+                  {split.requirementTitle} was split into{" "}
                   {split.children
                     .map((child) => `${child.key} ${child.title}`)
                     .join(", ")}
@@ -158,6 +145,7 @@ async function TechView({
                       day: "numeric",
                       month: "long",
                       year: "numeric",
+                      timeZone: "UTC",
                     })}
                   </time>
                   : {split.reason}

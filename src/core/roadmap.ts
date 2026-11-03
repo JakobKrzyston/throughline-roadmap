@@ -1,5 +1,5 @@
 /** Reads a project's graph for the product and technical views. Exports loadRoadmap, loadRecentChanges, loadSplitHistory, availableToday. */
-import { and, asc, desc, eq, gte, isNotNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
 
 import type { Database } from "@/db/client";
 import { events, links, outcomes, requirements, workItems } from "@/db/schema";
@@ -51,10 +51,10 @@ export interface RecentChange {
   id: string;
   note: string;
   at: Date;
-  /** The outcome the change belongs to; null if it has since been archived. */
-  outcomeTitle: string | null;
+  /** The outcome the change belongs to. */
+  outcomeTitle: string;
   /** The outcome or requirement key, shown only as technical detail. */
-  entityKey: string | null;
+  entityKey: string;
 }
 
 /** One requirement split, newest first in the technical view. */
@@ -62,6 +62,7 @@ export interface SplitRecord {
   id: string;
   at: Date;
   requirementKey: string;
+  requirementTitle: string;
   reason: string;
   children: { key: string; title: string }[];
 }
@@ -101,10 +102,11 @@ export async function loadRoadmap(
         .from(links)
         .innerJoin(workItems, eq(links.workItemId, workItems.id))
         .where(eq(workItems.projectId, projectId)),
+      // The latest "done" event per leaf. Its note may be empty: a leaf finished again without a
+      // note should not show the note from an earlier, superseded finish.
       db
-        .select({
+        .selectDistinctOn([events.entityId], {
           entityId: events.entityId,
-          payload: events.payload,
           productNote: events.productNote,
         })
         .from(events)
@@ -112,18 +114,18 @@ export async function loadRoadmap(
           and(
             eq(events.projectId, projectId),
             eq(events.type, "set_status"),
-            isNotNull(events.productNote),
+            sql`${events.payload}->>'status' = 'done'`,
           ),
         )
-        .orderBy(asc(events.createdAt)),
+        .orderBy(events.entityId, desc(events.seq)),
     ]);
 
-  // Later events overwrite earlier ones, so each leaf keeps its latest note.
-  const doneNotes = new Map<string, string>();
-  for (const event of doneEvents) {
-    const op = event.payload as Extract<GraphOperation, { type: "set_status" }>;
-    if (op.status === "done") doneNotes.set(event.entityId, event.productNote!);
-  }
+  const doneNotes = new Map(
+    doneEvents.map((event) => [event.entityId, event.productNote]),
+  );
+  // Group once so building the tree is linear in the number of rows.
+  const childrenOf = Map.groupBy(requirementRows, (row) => row.parentId);
+  const linksOf = Map.groupBy(linkRows, ({ link }) => link.requirementId);
 
   const toTree = (row: RequirementRow): RequirementTree => ({
     id: row.id,
@@ -135,12 +137,8 @@ export async function loadRoadmap(
     productNote: row.productNote,
     splitReason: row.splitReason,
     doneNote: row.status === "done" ? (doneNotes.get(row.id) ?? null) : null,
-    children: requirementRows
-      .filter((child) => child.parentId === row.id)
-      .sort(byKey)
-      .map(toTree),
-    workItems: linkRows
-      .filter(({ link }) => link.requirementId === row.id)
+    children: (childrenOf.get(row.id) ?? []).sort(byKey).map(toTree),
+    workItems: (linksOf.get(row.id) ?? [])
       .map(({ link, item }) => ({
         id: item.id,
         kind: item.kind,
@@ -196,6 +194,7 @@ export function availableToday(
  * Args:
  *   db: Database to read.
  *   projectId: The project.
+ *   roadmap: The project's live roadmap from loadRoadmap. Changes to archived outcomes are left out.
  *   since: Only changes at or after this time. Defaults to a week ago.
  *
  * Returns:
@@ -204,51 +203,44 @@ export function availableToday(
 export async function loadRecentChanges(
   db: Database,
   projectId: string,
+  roadmap: OutcomeTree[],
   since: Date = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
 ): Promise<RecentChange[]> {
-  const [eventRows, outcomeRows, requirementRows] = await Promise.all([
-    db
-      .select()
-      .from(events)
-      .where(
-        and(
-          eq(events.projectId, projectId),
-          isNotNull(events.productNote),
-          gte(events.createdAt, since),
-        ),
-      )
-      .orderBy(desc(events.createdAt))
-      .limit(20),
-    db
-      .select()
-      .from(outcomes)
-      .where(
-        and(eq(outcomes.projectId, projectId), eq(outcomes.archived, false)),
-      ),
-    db.select().from(requirements).where(eq(requirements.projectId, projectId)),
-  ]);
-  const outcomesById = new Map(outcomeRows.map((row) => [row.id, row]));
-  const requirementsById = new Map(requirementRows.map((row) => [row.id, row]));
+  // Label every live outcome and requirement with its key and the outcome it belongs to.
+  const labels = new Map<string, { key: string; outcomeTitle: string }>();
+  const addLabels = (nodes: RequirementTree[], outcomeTitle: string): void =>
+    nodes.forEach((node) => {
+      labels.set(node.id, { key: node.key, outcomeTitle });
+      addLabels(node.children, outcomeTitle);
+    });
+  for (const outcome of roadmap) {
+    labels.set(outcome.id, { key: outcome.key, outcomeTitle: outcome.title });
+    addLabels(outcome.requirements, outcome.title);
+  }
+  if (labels.size === 0) return [];
 
-  // Walk up from a requirement to the outcome its tree hangs from.
-  const outcomeOf = (requirement: RequirementRow): string =>
-    requirement.outcomeId ??
-    outcomeOf(requirementsById.get(requirement.parentId!)!);
+  const eventRows = await db
+    .select()
+    .from(events)
+    .where(
+      and(
+        eq(events.projectId, projectId),
+        isNotNull(events.productNote),
+        gte(events.createdAt, since),
+        inArray(events.entityId, [...labels.keys()]),
+      ),
+    )
+    .orderBy(desc(events.seq))
+    .limit(20);
 
   return eventRows.map((event) => {
-    const requirement =
-      event.entityType === "requirement"
-        ? requirementsById.get(event.entityId)
-        : undefined;
-    const outcome = outcomesById.get(
-      requirement ? outcomeOf(requirement) : event.entityId,
-    );
+    const label = labels.get(event.entityId)!;
     return {
       id: event.id,
       note: event.productNote!,
       at: event.createdAt,
-      outcomeTitle: outcome?.title ?? null,
-      entityKey: requirement?.key ?? outcome?.key ?? null,
+      outcomeTitle: label.outcomeTitle,
+      entityKey: label.key,
     };
   });
 }
@@ -259,6 +251,7 @@ export async function loadRecentChanges(
  * Args:
  *   db: Database to read.
  *   projectId: The project.
+ *   roadmap: The project's live roadmap from loadRoadmap. Splits under archived outcomes are left out.
  *
  * Returns:
  *   Splits newest first, each with its reason and the children it created.
@@ -266,7 +259,16 @@ export async function loadRecentChanges(
 export async function loadSplitHistory(
   db: Database,
   projectId: string,
+  roadmap: OutcomeTree[],
 ): Promise<SplitRecord[]> {
+  const titles = new Map<string, string>();
+  const addTitles = (nodes: RequirementTree[]): void =>
+    nodes.forEach((node) => {
+      titles.set(node.key, node.title);
+      addTitles(node.children);
+    });
+  roadmap.forEach((outcome) => addTitles(outcome.requirements));
+
   const rows = await db
     .select()
     .from(events)
@@ -276,17 +278,20 @@ export async function loadSplitHistory(
         eq(events.type, "split_requirement"),
       ),
     )
-    .orderBy(desc(events.createdAt));
-  return rows.map((row) => {
+    .orderBy(desc(events.seq));
+  return rows.flatMap((row) => {
     // The payload is the validated operation that applyProposal stored.
     const op = row.payload as Extract<
       GraphOperation,
       { type: "split_requirement" }
     >;
+    const requirementTitle = titles.get(op.requirement_key);
+    if (requirementTitle === undefined) return [];
     return {
       id: row.id,
       at: row.createdAt,
       requirementKey: op.requirement_key,
+      requirementTitle,
       reason: op.split_reason,
       children: op.children.map(({ key, title }) => ({ key, title })),
     };

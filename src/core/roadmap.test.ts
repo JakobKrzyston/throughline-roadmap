@@ -87,9 +87,11 @@ describe("roadmap loaders", () => {
   });
 
   it("feeds recent product notes with the outcome they belong to", async () => {
+    const roadmap = await loadRoadmap(db, projectId);
     const changes = await loadRecentChanges(
       db,
       projectId,
+      roadmap,
       new Date(Date.now() - 60_000),
     );
 
@@ -108,12 +110,21 @@ describe("roadmap loaders", () => {
       }),
     );
     expect(
-      await loadRecentChanges(db, projectId, new Date(Date.now() + 60_000)),
+      await loadRecentChanges(
+        db,
+        projectId,
+        roadmap,
+        new Date(Date.now() + 60_000),
+      ),
     ).toEqual([]);
   });
 
   it("lists every split with its reason and children", async () => {
-    const splits = await loadSplitHistory(db, projectId);
+    const splits = await loadSplitHistory(
+      db,
+      projectId,
+      await loadRoadmap(db, projectId),
+    );
 
     expect(splits.map((s) => s.requirementKey).sort()).toEqual([
       "TL-1",
@@ -122,6 +133,7 @@ describe("roadmap loaders", () => {
       "TL-8",
     ]);
     expect(splits.find((s) => s.requirementKey === "TL-8")).toMatchObject({
+      requirementTitle: "Email delivery service",
       reason:
         "Bounce and retry handling is a separate piece of work from sending.",
       children: [
@@ -131,7 +143,8 @@ describe("roadmap loaders", () => {
     });
   });
 
-  it("uses the latest finishing note and hides archived outcomes", async () => {
+  it("orders events from one proposal by when they were written", async () => {
+    // One proposal, so all three events share a timestamp.
     await approve([
       {
         type: "set_status",
@@ -145,9 +158,6 @@ describe("roadmap loaders", () => {
         status: "in_progress",
         product_note: "Excel export needs more work.",
       },
-    ]);
-    // A separate proposal, so its event is later; events in one transaction share a timestamp.
-    await approve([
       {
         type: "set_status",
         requirement_key: "TL-4",
@@ -155,16 +165,48 @@ describe("roadmap loaders", () => {
         product_note: "Customers can download reports as Excel files.",
       },
     ]);
-    await db
-      .update(outcomes)
-      .set({ archived: true })
-      .where(and(eq(outcomes.projectId, projectId), eq(outcomes.key, "OUT-5")));
 
     const roadmap = await loadRoadmap(db, projectId);
     expect(availableToday(roadmap[0].requirements)).toContainEqual({
       key: "TL-4",
       text: "Customers can download reports as Excel files.",
     });
-    expect(roadmap.map((o) => o.key)).not.toContain("OUT-5");
+    const changes = await loadRecentChanges(db, projectId, roadmap);
+    expect(changes.slice(0, 3).map((c) => c.note)).toEqual([
+      "Customers can download reports as Excel files.",
+      "Excel export needs more work.",
+      "Excel export is ready.",
+    ]);
+  });
+
+  it("does not reuse an earlier note when a leaf is finished again without one", async () => {
+    await approve([
+      { type: "set_status", requirement_key: "TL-4", status: "in_progress" },
+      { type: "set_status", requirement_key: "TL-4", status: "done" },
+    ]);
+
+    const roadmap = await loadRoadmap(db, projectId);
+    expect(availableToday(roadmap[0].requirements)).toContainEqual({
+      key: "TL-4",
+      text: "Excel export",
+    });
+  });
+
+  it("hides archived outcomes from the roadmap, the feed and split history", async () => {
+    await db
+      .update(outcomes)
+      .set({ archived: true })
+      .where(and(eq(outcomes.projectId, projectId), eq(outcomes.key, "OUT-4")));
+
+    const roadmap = await loadRoadmap(db, projectId);
+    const changes = await loadRecentChanges(db, projectId, roadmap);
+    const splits = await loadSplitHistory(db, projectId, roadmap);
+
+    expect(roadmap.map((o) => o.key)).not.toContain("OUT-4");
+    expect(changes.map((c) => c.entityKey)).not.toContain("TL-16");
+    expect(splits.map((s) => s.requirementKey).sort()).toEqual([
+      "TL-1",
+      "TL-8",
+    ]);
   });
 });

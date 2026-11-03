@@ -148,7 +148,9 @@ The review queue.
 
 ### `events`
 
-Append-only audit log. Fields: `id`, `project_id`, `type`, `entity_type`, `entity_id`, `actor` (user id or `agent`), `proposal_id`, `payload` (JSON), `product_note`.
+Append-only audit log. Fields: `id`, `seq`, `project_id`, `type`, `entity_type`, `entity_id`, `actor` (user id or `agent`), `proposal_id`, `payload` (JSON), `product_note`.
+
+`seq` is an identity column that records insertion order. Every event from one approved proposal shares `created_at`, so anything that needs "latest" or "newest first" orders by `seq`.
 
 `type` is the operation type and `payload` is the operation itself. `entity_type` is `outcome` or `requirement`; link and unlink events belong to the requirement.
 
@@ -256,8 +258,8 @@ The proposal records its `requirement_id`. Saving it marks any older pending `re
 For sales, leadership and anyone non-technical.
 
 - One card per outcome: plain title, a progress bar, the product status in words ("Partially available: customers can use part of this today"), and the target date.
-- Under the status, a list of what customers can use today: one line per finished, user-visible leaf. Each line is the product note written when the leaf was marked done, else the requirement's own product note, else its title (`availableToday` in `src/core/roadmap.ts`).
-- A "What changed this week" feed built from the last 7 days of events with product notes, each labelled with the outcome it belongs to.
+- Under the status, a list of what customers can use today: one line per finished, user-visible leaf. Each line is the product note on the leaf's latest "done" event, else the requirement's own product note, else its title (`availableToday` in `src/core/roadmap.ts`).
+- A "What changed this week" feed built from the last 7 days of events with product notes, each labelled with the outcome it belongs to. Changes under archived outcomes are left out, as they are from split history.
 - No ticket numbers by default. The "Show technical detail" toggle is a link to `?detail=1`, so keys are only rendered on request and never sent to the browser otherwise.
 
 ### Technical view (`/p/[slug]/tech`)
@@ -267,7 +269,7 @@ For engineering.
 - An expandable tree (native `<details>`, so it works with the keyboard and without JavaScript): outcome → requirements → children → linked PRs and issues with state badges. Parents start open; leaves open to show their work items.
 - Split history: which requirements were split, when and why, from `split_requirement` events.
 
-Both views read the graph through `loadRoadmap`, `loadRecentChanges` and `loadSplitHistory` in `src/core/roadmap.ts`; progress and status come from the rollups. A missing project shows a plain "could not find that project" page and a failed load a "try again" page (`not-found.tsx` and `error.tsx` under `/p/[slug]`).
+Both views read the graph through `loadRoadmap`, `loadRecentChanges` and `loadSplitHistory` in `src/core/roadmap.ts`; progress and status come from the rollups. A missing project shows a plain "could not find that project" page and a failed load a "try again" page (`not-found.tsx` and `error.tsx` under `/p/[slug]`). Dates are shown in UTC so they do not depend on the server's time zone. The project lookup runs inside the page's `<Suspense>` boundary, after the shell has streamed, so a missing project is served with status 200 and a `noindex` tag rather than a 404. A real 404 would need a Proxy lookup, and Proxy must not share the app's PGlite client.
 
 ### Review queue (`/p/[slug]/review`)
 

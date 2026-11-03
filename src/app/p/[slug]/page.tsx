@@ -65,12 +65,12 @@ async function ProductView({
     .select({ id: projects.id, name: projects.name })
     .from(projects)
     .where(eq(projects.slug, slug));
+  // Inside Suspense the status is already 200, so this renders not-found.tsx with a noindex tag, not a 404.
+  // A real 404 would need a Proxy check, and Proxy must not share the app's PGlite client.
   if (!project) notFound();
 
-  const [roadmap, changes] = await Promise.all([
-    loadRoadmap(db, project.id),
-    loadRecentChanges(db, project.id),
-  ]);
+  const roadmap = await loadRoadmap(db, project.id);
+  const changes = await loadRecentChanges(db, project.id, roadmap);
 
   return (
     <>
@@ -131,10 +131,11 @@ async function ProductView({
                       weekday: "long",
                       day: "numeric",
                       month: "long",
+                      timeZone: "UTC",
                     })}
                   </time>
-                  {change.outcomeTitle && ` · ${change.outcomeTitle}`}
-                  {showDetail && change.entityKey && (
+                  {` · ${change.outcomeTitle}`}
+                  {showDetail && (
                     <span className="ml-2 font-mono">{change.entityKey}</span>
                   )}
                 </p>

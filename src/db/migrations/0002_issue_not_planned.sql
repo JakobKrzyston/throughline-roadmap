@@ -1,0 +1,1 @@
+ALTER TYPE "public"."work_item_state" ADD VALUE 'not_planned';

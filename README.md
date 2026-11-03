@@ -30,6 +30,8 @@ Open http://localhost:3000. No environment variables are needed: the app stores 
 
 To turn a pasted roadmap into a proposal, open http://localhost:3000/p/acme-analytics/import. Without `ANTHROPIC_API_KEY` the import returns a sample proposal; set the key in `.env.local` to use Claude.
 
+To follow a real repository, set up a GitHub App as described in [`docs/GITHUB_APP.md`](docs/GITHUB_APP.md), then connect the repository at http://localhost:3000/p/acme-analytics/settings.
+
 Checks that CI runs on every pull request:
 
 ```bash
@@ -40,6 +42,7 @@ pnpm lint && pnpm format:check && pnpm typecheck && pnpm test
 
 - [Architecture and data model](docs/ARCHITECTURE.md)
 - [Build plan](docs/PLAN.md)
+- [GitHub App setup](docs/GITHUB_APP.md)
 
 ## License
 

@@ -57,9 +57,10 @@ export async function applyProposal(
     let operations = operationListSchema.parse(proposal.operations);
     if (editedOperations !== undefined) {
       const edited = operationListSchema.parse(editedOperations);
-      if (
-        edited.map(targetOf).join("\n") !== operations.map(targetOf).join("\n")
-      ) {
+      // JSON keeps the parts apart, so no key can be crafted to match a different structure.
+      const targets = (ops: GraphOperation[]) =>
+        JSON.stringify(ops.map(targetOf));
+      if (targets(edited) !== targets(operations)) {
         throw new ProposalError(
           "An edit can change wording and values, but not what the proposal changes",
         );
@@ -304,23 +305,27 @@ async function applyOperation(
 }
 
 /** What an operation acts on, ignoring the values it sets. Two operations with the same target differ only in wording or values. */
-function targetOf(op: GraphOperation): string {
+function targetOf(op: GraphOperation): unknown[] {
   switch (op.type) {
     case "create_outcome":
-      return `${op.type} ${op.key}`;
+      return [op.type, op.key];
     case "update_outcome":
-      return `${op.type} ${op.outcome_key}`;
+      return [op.type, op.outcome_key];
     case "create_requirement":
-      return `${op.type} ${op.key} under ${op.outcome_key}`;
+      return [op.type, op.key, op.outcome_key];
     case "split_requirement":
-      return `${op.type} ${op.requirement_key} into ${op.children.map((child) => child.key).join(",")}`;
+      return [
+        op.type,
+        op.requirement_key,
+        op.children.map((child) => child.key),
+      ];
     case "update_requirement":
     case "set_status":
-      return `${op.type} ${op.requirement_key}`;
+      return [op.type, op.requirement_key];
     case "link_work_item":
-      return `${op.type} ${op.requirement_key} ${op.work_item_id} ${op.confidence}`;
+      return [op.type, op.requirement_key, op.work_item_id, op.confidence];
     case "unlink_work_item":
-      return `${op.type} ${op.requirement_key} ${op.work_item_id}`;
+      return [op.type, op.requirement_key, op.work_item_id];
   }
 }
 

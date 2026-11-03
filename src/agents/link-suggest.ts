@@ -1,4 +1,4 @@
-/** Link suggestion agent: proposes which requirement a merged pull request with no reference belongs to. Exports runLinkSuggest, buildLinkSuggestPrompt, linkSuggestOutputSchema, LINK_SUGGEST_TASK. */
+/** Link suggestion agent: proposes which requirement a merged pull request with no reference belongs to. Exports runLinkSuggest, buildLinkSuggestPrompt, linkSuggestOutputSchema, LinkSuggestOutput, LINK_SUGGEST_TASK. */
 import { and, eq, isNotNull, ne } from "drizzle-orm";
 import { z } from "zod";
 
@@ -26,6 +26,13 @@ export type LinkCandidate = {
   outcomeTitle: string;
 };
 
+/** What the model returns: a candidate key or null, the relation, and why. */
+export type LinkSuggestOutput = {
+  requirement_key: string | null;
+  relation: "implements" | "part_of";
+  rationale: string;
+};
+
 /**
  * The output schema for one pull request. The key must be one of the candidates, so the model
  * cannot invent one.
@@ -36,7 +43,9 @@ export type LinkCandidate = {
  * Returns:
  *   The schema.
  */
-export function linkSuggestOutputSchema(candidateKeys: [string, ...string[]]) {
+export function linkSuggestOutputSchema(
+  candidateKeys: [string, ...string[]],
+): z.ZodType<LinkSuggestOutput> {
   return z.object({
     requirement_key: z
       .enum(candidateKeys)

@@ -27,25 +27,22 @@ export async function lastKeyNumbers(
     .from(projects)
     .where(eq(projects.id, projectId))
     .for("update");
-  const [outcomeRows, requirementRows, pending] = await Promise.all([
-    tx
-      .select({ key: outcomes.key })
-      .from(outcomes)
-      .where(eq(outcomes.projectId, projectId)),
-    tx
-      .select({ key: requirements.key })
-      .from(requirements)
-      .where(eq(requirements.projectId, projectId)),
-    tx
-      .select({ operations: proposals.operations })
-      .from(proposals)
-      .where(
-        and(
-          eq(proposals.projectId, projectId),
-          eq(proposals.status, "pending"),
-        ),
-      ),
-  ]);
+  // Pending proposals first, then the graph: a proposal approved in between has its keys in the
+  // graph by the second read, so no key can slip between the two.
+  const pending = await tx
+    .select({ operations: proposals.operations })
+    .from(proposals)
+    .where(
+      and(eq(proposals.projectId, projectId), eq(proposals.status, "pending")),
+    );
+  const outcomeRows = await tx
+    .select({ key: outcomes.key })
+    .from(outcomes)
+    .where(eq(outcomes.projectId, projectId));
+  const requirementRows = await tx
+    .select({ key: requirements.key })
+    .from(requirements)
+    .where(eq(requirements.projectId, projectId));
   const proposed = pending.flatMap(({ operations }) =>
     operations.flatMap((op) => {
       if (op.type === "create_outcome" || op.type === "create_requirement") {

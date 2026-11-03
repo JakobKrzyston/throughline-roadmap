@@ -219,7 +219,7 @@ The model does not choose keys. `src/agents/import.ts` numbers new outcomes and 
 The context builder (`src/agents/context.ts`) gathers:
 
 - the requirement, the requirements it was split from, and its outcome
-- sibling requirements and their statuses, and the other work items linked to the requirement, so work covered elsewhere is not reported as missing
+- sibling requirements and their statuses, and the other work items linked to the requirement with the first 500 characters of their descriptions, so work covered elsewhere is not reported as missing and earlier finished work still counts
 - the work item's title, state and description excerpt
 - for a PR, its changed files from the `SourceAdapter`: totals, a list of up to 100 files with line counts, and as much diff as fits in 20,000 characters, at most 4,000 per file. Lockfile diffs are left out. Without GitHub credentials the agent works from the title and description alone.
 
@@ -234,11 +234,11 @@ Zod checks that the answer is consistent (a split for the two split classificati
 
 Every proposal it makes includes a product note in plain language, for example: "Export took longer because it needed new background-job infrastructure, which also unblocks scheduled reports."
 
-The proposal records its `requirement_id`. Saving it marks any older pending `reconcile` proposal for the same requirement `superseded` (decided by `agent`): the newer one was made with more of the work in view, since it sees every work item linked so far.
+The proposal records its `requirement_id`. Saving it marks any older pending `reconcile` proposal for the same requirement `superseded` (decided by `agent`): the newer one was made with more of the work in view, since it sees every work item linked so far, and the prompt asks for a verdict on the requirement as a whole.
 
 ### Link suggestion agent
 
-`src/agents/link-suggest.ts`. Runs as a `link_suggest` job when a PR merges with no link at all (not during a backfill). The model sees the PR's title, description and changed files, and every leaf requirement that is not dropped, with its outcome. Finished requirements stay in, since a fix to finished work belongs with it. The answer must be one of those keys, or null when nothing fits well. A match becomes a pending `link_suggest` proposal with a `suggested` link; no match proposes nothing. A PR that has been linked since, or already has a pending suggestion, is skipped.
+`src/agents/link-suggest.ts`. Runs as a `link_suggest` job when a PR merges with no link at all (not during a backfill). The model sees the PR's title, description and changed files, and every leaf requirement that is not dropped, with its outcome. Finished requirements stay in, since a fix to finished work belongs with it. The answer must be one of those keys, or null when nothing fits well. A match becomes a pending `link_suggest` proposal with a `suggested` link; no match proposes nothing. A PR that has been linked since, or already has a pending suggestion, is skipped. If the PR later gains an explicit reference, the sync marks its pending suggestion `superseded`.
 
 ## GitHub integration
 

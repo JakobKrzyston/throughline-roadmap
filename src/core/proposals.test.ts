@@ -334,6 +334,33 @@ describe("applyProposal with edits", () => {
     expect(await snapshot()).toEqual(before);
   });
 
+  it("refuses an edit whose keys are crafted to look like the original", async () => {
+    await approve(exportOutcome);
+    const proposalId = await propose([
+      {
+        type: "split_requirement",
+        requirement_key: "TL-1",
+        split_reason: "Two parts",
+        product_note: "Two parts",
+        children: [
+          { key: "TL-2", title: "A" },
+          { key: "TL-3", title: "B" },
+        ],
+      },
+    ]);
+    await expect(
+      applyProposal(db, proposalId, "pm", [
+        {
+          type: "split_requirement",
+          requirement_key: "TL-1",
+          split_reason: "Two parts",
+          product_note: "Two parts",
+          children: [{ key: "TL-2,TL-3", title: "A" }],
+        },
+      ]),
+    ).rejects.toThrow(ProposalError);
+  });
+
   it("validates edited operations", async () => {
     const proposalId = await propose(exportOutcome);
     await expect(

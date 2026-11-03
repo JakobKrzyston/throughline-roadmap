@@ -39,7 +39,8 @@ type SyncResult = {
  * Safe to repeat: replaying the same item creates no duplicate work items, links or jobs. A
  * reconciliation job is queued for each linked requirement when the item first becomes merged
  * (or, for an issue, closed as done), and for each new link added to an item that has already
- * finished. A pull request that merges with no links at all gets a link suggestion job instead.
+ * finished. A pull request that merges with no links at all gets a link suggestion job instead,
+ * and an explicit link added later supersedes a pending suggestion.
  *
  * Args:
  *   db: Database to write to.
@@ -127,6 +128,21 @@ export async function syncWorkItem(
         })
         .returning({ id: proposals.id });
       await applyProposal(tx, proposal.id, SYNC_ACTOR);
+      // The author has now said what this work is for, so a pending guess is out of date.
+      await tx
+        .update(proposals)
+        .set({
+          status: "superseded",
+          decidedBy: SYNC_ACTOR,
+          decidedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(proposals.triggerWorkItemId, workItemId),
+            eq(proposals.source, "link_suggest"),
+            eq(proposals.status, "pending"),
+          ),
+        );
     }
 
     const finished = isFinished(item);

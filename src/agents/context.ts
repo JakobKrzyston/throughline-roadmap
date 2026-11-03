@@ -134,8 +134,16 @@ export async function describeChanges(
  *   cannot close the block early.
  */
 export function dataBlock(tag: string, content: string): string {
-  const own = new RegExp(`</?${tag}>`, "gi");
-  return `<${tag}>\n${content.replace(own, "")}\n</${tag}>`;
+  // Spacing inside the tag is allowed, and removal repeats because taking out one tag can join
+  // the text around it into another (`</wo</work_item>rk_item>`).
+  const own = new RegExp(`<\\s*/?\\s*${tag}\\s*>`, "gi");
+  let text = content;
+  let previous;
+  do {
+    previous = text;
+    text = text.replace(own, "");
+  } while (text !== previous);
+  return `<${tag}>\n${text}\n</${tag}>`;
 }
 
 function truncate(text: string, limit: number): string | null {

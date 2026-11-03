@@ -298,6 +298,42 @@ describe("syncWorkItem link suggestions", () => {
     ]);
   });
 
+  it("supersedes a pending suggestion once the pull request references a requirement", async () => {
+    const { workItemId } = await syncWorkItem(
+      db,
+      projectId,
+      merged({ body: "Tidy up" }),
+    );
+    const [suggestion] = await db
+      .insert(proposals)
+      .values({
+        projectId,
+        source: "link_suggest",
+        summary: "Link to TL-2",
+        operations: [
+          {
+            type: "link_work_item",
+            requirement_key: "TL-2",
+            work_item_id: workItemId,
+            confidence: "suggested",
+          },
+        ],
+        triggerWorkItemId: workItemId,
+      })
+      .returning();
+
+    await syncWorkItem(db, projectId, merged({ body: "Implements TL-1" }));
+
+    const [after] = await db
+      .select()
+      .from(proposals)
+      .where(eq(proposals.id, suggestion.id));
+    expect(after).toMatchObject({
+      status: "superseded",
+      decidedBy: SYNC_ACTOR,
+    });
+  });
+
   it("does not suggest a link for a pull request that references a requirement", async () => {
     expect((await syncWorkItem(db, projectId, merged())).linkSuggestJob).toBe(
       false,

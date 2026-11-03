@@ -24,6 +24,9 @@ export const RECONCILE_ACTOR = "agent";
 
 const text = z.string().trim().min(1);
 
+/** How much of each other linked work item's description the prompt includes. */
+export const OTHER_WORK_EXCERPT_LENGTH = 500;
+
 const childSchema = z.object({
   title: text.describe("Short engineering-facing name for this piece."),
   description: z.string().describe("What this piece covers."),
@@ -107,8 +110,8 @@ export type ReconcileContext = {
     state: string;
     body: string;
   };
-  /** Other work items linked to the requirement. */
-  otherWork: { kind: string; title: string; state: string }[];
+  /** Other work items linked to the requirement, with the start of their descriptions. */
+  otherWork: { kind: string; title: string; state: string; body: string }[];
   /** summariseChanges output, or why there are no changes to show. */
   changes: string;
 };
@@ -125,6 +128,7 @@ Classify the result as exactly one of:
 
 Rules:
 - Judge from the evidence: the work item's title, description and changed files. Other work linked to the requirement and its sibling requirements tell you what is covered elsewhere, so do not report scope as missing when a sibling covers it.
+- Judge the requirement as a whole, not only the newest work item. Your answer replaces any earlier pending one for this requirement, so take account of what earlier finished work linked to it delivered.
 - When the evidence is thin, such as a closed issue with no description, prefer fully_done and say in the rationale what you could not check.
 - Only split when the remaining or new work is real engineering work. Small follow-ups, tests and polish are not a reason to split.
 - Write the product note for sales and leadership: plain language, no ticket numbers, file names, branch names or engineering jargon. Say what customers can do now and, when the plan changed, why.
@@ -167,7 +171,10 @@ export function buildReconcilePrompt(
       "other_work",
       context.otherWork.length
         ? context.otherWork
-            .map((w) => `- ${label(w.kind)} "${w.title}" (${w.state})`)
+            .map(
+              (w) =>
+                `- ${label(w.kind)} "${w.title}" (${w.state})${w.body ? `\n  ${w.body.slice(0, OTHER_WORK_EXCERPT_LENGTH).replace(/\n/g, "\n  ")}` : ""}`,
+            )
             .join("\n")
         : "(none)",
     ),
@@ -263,6 +270,7 @@ export async function loadReconcileContext(
       kind: workItems.kind,
       title: workItems.title,
       state: workItems.state,
+      body: workItems.bodyExcerpt,
     })
     .from(links)
     .innerJoin(workItems, eq(links.workItemId, workItems.id))

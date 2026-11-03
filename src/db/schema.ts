@@ -196,7 +196,7 @@ export const proposals = pgTable("proposals", {
   ),
   // The requirement a reconcile proposal is about. A newer one supersedes older pending ones.
   requirementId: uuid("requirement_id").references(() => requirements.id, {
-    onDelete: "cascade",
+    onDelete: "set null",
   }),
   decidedBy: text("decided_by"),
   decidedAt: timestamp("decided_at", { withTimezone: true }),

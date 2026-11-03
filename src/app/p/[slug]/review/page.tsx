@@ -77,10 +77,26 @@ async function PendingProposals({
       and(eq(proposals.projectId, project.id), eq(proposals.status, "pending")),
     )
     .orderBy(desc(proposals.createdAt));
-  const graph = await loadSnapshot(project.id, pending);
+  // Validate before reading anything from the operations, so one malformed proposal shows up as
+  // reject-only instead of breaking the page.
+  const parsedOperations = pending.map((proposal) =>
+    operationListSchema.safeParse(proposal.operations),
+  );
+  const workItemIds = pending.flatMap((proposal, i) => {
+    const parsed = parsedOperations[i];
+    return [
+      ...(proposal.triggerWorkItemId ? [proposal.triggerWorkItemId] : []),
+      ...(parsed.success
+        ? parsed.data.flatMap((op) =>
+            "work_item_id" in op ? [op.work_item_id] : [],
+          )
+        : []),
+    ];
+  });
+  const graph = await loadSnapshot(project.id, workItemIds);
 
-  const views = pending.map((proposal): ProposalView => {
-    const parsed = operationListSchema.safeParse(proposal.operations);
+  const views = pending.map((proposal, i): ProposalView => {
+    const parsed = parsedOperations[i];
     const trigger = proposal.triggerWorkItemId
       ? graph.workItems.get(proposal.triggerWorkItemId)
       : undefined;
@@ -119,10 +135,10 @@ async function PendingProposals({
   );
 }
 
-/** The current graph values the diffs compare against, plus the work items the proposals mention. */
+/** The current graph values the diffs compare against, plus the given work items (ids must be valid uuids). */
 async function loadSnapshot(
   projectId: string,
-  pending: (typeof proposals.$inferSelect)[],
+  workItemIds: string[],
 ): Promise<
   Omit<GraphSnapshot, "workItems"> & {
     workItems: Map<
@@ -132,12 +148,6 @@ async function loadSnapshot(
   }
 > {
   const db = getDb();
-  const workItemIds = pending.flatMap((proposal) => [
-    ...(proposal.triggerWorkItemId ? [proposal.triggerWorkItemId] : []),
-    ...proposal.operations.flatMap((op) =>
-      "work_item_id" in op ? [op.work_item_id] : [],
-    ),
-  ]);
   const [outcomeRows, requirementRows, workItemRows] = await Promise.all([
     db.select().from(outcomes).where(eq(outcomes.projectId, projectId)),
     db.select().from(requirements).where(eq(requirements.projectId, projectId)),

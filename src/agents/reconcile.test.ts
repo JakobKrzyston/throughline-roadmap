@@ -24,7 +24,11 @@ import { seedDemoProject } from "@/db/seed";
 import { createTestDb } from "@/db/test-db";
 
 import { SAMPLE_PULL_FILES, SAMPLE_RECONCILE_OUTPUTS } from "./fixtures";
-import { RECONCILE_TASK, runReconcile } from "./reconcile";
+import {
+  OTHER_WORK_EXCERPT_LENGTH,
+  RECONCILE_TASK,
+  runReconcile,
+} from "./reconcile";
 
 type TestDb = Awaited<ReturnType<typeof createTestDb>>;
 type Requirement = typeof requirements.$inferSelect;
@@ -128,6 +132,21 @@ async function technicalTree(key: string): Promise<unknown> {
 }
 
 describe("runReconcile", () => {
+  it("includes the start of other linked work's descriptions", async () => {
+    await db
+      .update(workItems)
+      .set({ bodyExcerpt: `Writes xlsx with one sheet.\n${"x".repeat(1000)}` })
+      .where(eq(workItems.externalId, "100001#106"));
+    const llm = fakeLLM(SAMPLE_RECONCILE_OUTPUTS.fully_done);
+    await runReconcile(db, llm, source, await excelPayload());
+
+    const otherWork = llm.prompts[0].user.split("<other_work>")[1];
+    expect(otherWork).toContain(
+      '"Excel export with xlsx writer" (open)\n  Writes xlsx with one sheet.\n  xxx',
+    );
+    expect(otherWork).not.toContain("x".repeat(OTHER_WORK_EXCERPT_LENGTH));
+  });
+
   it("sends the requirement, its place in the roadmap and the pull request's changes", async () => {
     const llm = fakeLLM(SAMPLE_RECONCILE_OUTPUTS.fully_done);
     await runReconcile(db, llm, source, await excelPayload());

@@ -58,7 +58,9 @@ export async function POST(request: Request): Promise<Response> {
     event.repository,
     event.item,
   );
-  if (results.some((result) => result.reconcileJobs > 0)) {
+  if (
+    results.some((result) => result.reconcileJobs > 0 || result.linkSuggestJob)
+  ) {
     after(runQueuedJobs);
   }
   return Response.json({ status: "synced", projects: results.length });

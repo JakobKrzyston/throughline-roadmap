@@ -1,7 +1,7 @@
-/** Zod schemas for the GitHub issue and pull request fields Throughline reads, and their mapping to SourceWorkItem. Exports githubIssueSchema, githubPullSchema, issueToWorkItem, pullToWorkItem. */
+/** Zod schemas for the GitHub issue and pull request fields Throughline reads, and their mapping to SourceWorkItem. Exports githubIssueSchema, githubPullSchema, githubPullFileSchema, issueToWorkItem, pullToWorkItem, pullFileToChangedFile. */
 import { z } from "zod";
 
-import type { SourceWorkItem } from "@/adapters/source";
+import type { SourceChangedFile, SourceWorkItem } from "@/adapters/source";
 
 // Webhook payloads and REST responses share these shapes, so both paths validate with the same schemas.
 const common = {
@@ -25,6 +25,16 @@ export const githubPullSchema = z.object({
   ...common,
   state: z.enum(["open", "closed"]),
   merged_at: z.iso.datetime({ offset: true }).nullable(),
+});
+
+export const githubPullFileSchema = z.object({
+  filename: z.string(),
+  // Kept as a string so a status GitHub adds later does not reject the response.
+  status: z.string(),
+  additions: z.number().int(),
+  deletions: z.number().int(),
+  // GitHub leaves the patch out for binary and very large files.
+  patch: z.string().optional(),
 });
 
 type GitHubIssue = z.output<typeof githubIssueSchema>;
@@ -77,6 +87,34 @@ export function pullToWorkItem(
     kind: "pull_request",
     state: pull.merged_at ? "merged" : pull.state,
     mergedAt: pull.merged_at ? new Date(pull.merged_at) : null,
+  };
+}
+
+/**
+ * Convert one file from a pull request's file list into a changed file.
+ *
+ * Args:
+ *   file: The validated file entry.
+ *
+ * Returns:
+ *   The changed file. GitHub's `copied` counts as added; `changed` and `unchanged` (a mode or
+ *   rename-only change) count as modified.
+ */
+export function pullFileToChangedFile(
+  file: z.output<typeof githubPullFileSchema>,
+): SourceChangedFile {
+  const status =
+    file.status === "added" || file.status === "copied"
+      ? "added"
+      : file.status === "removed" || file.status === "renamed"
+        ? file.status
+        : "modified";
+  return {
+    path: file.filename,
+    status,
+    additions: file.additions,
+    deletions: file.deletions,
+    patch: file.patch ?? null,
   };
 }
 

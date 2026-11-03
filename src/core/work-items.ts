@@ -1,4 +1,4 @@
-/** Mirrors source work items into a project, links explicit references and queues reconciliation. Exports syncWorkItem, syncRepositoryItem, SYNC_ACTOR, BODY_EXCERPT_LENGTH. */
+/** Mirrors source work items into a project, links explicit references and queues reconciliation or a link suggestion. Exports syncWorkItem, syncRepositoryItem, isFinished, SYNC_ACTOR, BODY_EXCERPT_LENGTH. */
 import { and, eq, inArray } from "drizzle-orm";
 
 import type { SourceRepository, SourceWorkItem } from "@/adapters/source";
@@ -28,6 +28,8 @@ type SyncResult = {
   linked: string[];
   /** Reconciliation jobs queued. */
   reconcileJobs: number;
+  /** Whether a link suggestion was queued, for a merged pull request that references nothing. */
+  linkSuggestJob: boolean;
 };
 
 /**
@@ -37,17 +39,18 @@ type SyncResult = {
  * Safe to repeat: replaying the same item creates no duplicate work items, links or jobs. A
  * reconciliation job is queued for each linked requirement when the item first becomes merged
  * (or, for an issue, closed as done), and for each new link added to an item that has already
- * finished.
+ * finished. A pull request that merges with no links at all gets a link suggestion job instead.
  *
  * Args:
  *   db: Database to write to.
  *   projectId: Project the work item belongs to.
  *   item: The issue or pull request as the source reports it.
- *   options.reconcile: False to store and link without queueing reconciliation, for importing
- *     work that finished before the repository was connected.
+ *   options.reconcile: False to store and link without queueing reconciliation or link
+ *     suggestions, for importing work that finished before the repository was connected.
  *
  * Returns:
- *   The work item's id, the requirement keys newly linked, and how many reconciliation jobs were queued.
+ *   The work item's id, the requirement keys newly linked, how many reconciliation jobs were
+ *   queued, and whether a link suggestion was.
  */
 export async function syncWorkItem(
   db: Database,
@@ -126,9 +129,7 @@ export async function syncWorkItem(
       await applyProposal(tx, proposal.id, SYNC_ACTOR);
     }
 
-    const finished =
-      item.state === "merged" ||
-      (item.kind === "issue" && item.state === "closed");
+    const finished = isFinished(item);
     const justFinished = finished && previousState !== item.state;
     const toReconcile =
       !finished || !reconcile
@@ -139,11 +140,19 @@ export async function syncWorkItem(
     for (const requirementId of toReconcile) {
       await enqueue(tx, "reconcile", { workItemId, requirementId });
     }
+    const suggestLink =
+      justFinished &&
+      reconcile &&
+      item.kind === "pull_request" &&
+      linkedIds.size === 0 &&
+      newLinks.length === 0;
+    if (suggestLink) await enqueue(tx, "link_suggest", { workItemId });
 
     return {
       workItemId,
       linked: newLinks.map((link) => link.key),
       reconcileJobs: toReconcile.length,
+      linkSuggestJob: suggestLink,
     };
   });
 }
@@ -180,6 +189,25 @@ export async function syncRepositoryItem(
     results.push(await syncWorkItem(db, projectId, item));
   }
   return results;
+}
+
+/**
+ * Whether a work item's work is done: a merged pull request, or an issue closed as done.
+ *
+ * Args:
+ *   item: The work item's kind and state.
+ *
+ * Returns:
+ *   True when it should be reconciled against the requirements it is linked to.
+ */
+export function isFinished(item: {
+  kind: "issue" | "pull_request";
+  state: "open" | "closed" | "merged" | "not_planned";
+}): boolean {
+  return (
+    item.state === "merged" ||
+    (item.kind === "issue" && item.state === "closed")
+  );
 }
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];

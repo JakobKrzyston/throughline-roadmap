@@ -279,6 +279,48 @@ describe("syncWorkItem", () => {
   });
 });
 
+describe("syncWorkItem link suggestions", () => {
+  const linkSuggestJobs = () =>
+    db.select().from(jobs).where(eq(jobs.type, "link_suggest"));
+
+  it("queues one suggestion when a pull request with no reference merges", async () => {
+    await syncWorkItem(db, projectId, pr({ body: "Tidy up" }));
+    const result = await syncWorkItem(
+      db,
+      projectId,
+      merged({ body: "Tidy up" }),
+    );
+    await syncWorkItem(db, projectId, merged({ body: "Tidy up" }));
+
+    expect(result.linkSuggestJob).toBe(true);
+    expect((await linkSuggestJobs()).map((job) => job.payload)).toEqual([
+      { workItemId: result.workItemId },
+    ]);
+  });
+
+  it("does not suggest a link for a pull request that references a requirement", async () => {
+    expect((await syncWorkItem(db, projectId, merged())).linkSuggestJob).toBe(
+      false,
+    );
+    expect(await linkSuggestJobs()).toEqual([]);
+  });
+
+  it("does not suggest links for closed issues or backfilled pull requests", async () => {
+    await syncWorkItem(
+      db,
+      projectId,
+      pr({ kind: "issue", body: "", state: "closed" }),
+    );
+    await syncWorkItem(
+      db,
+      projectId,
+      merged({ externalId: "4242#42", body: "" }),
+      { reconcile: false },
+    );
+    expect(await linkSuggestJobs()).toEqual([]);
+  });
+});
+
 describe("syncRepositoryItem", () => {
   const repository = { externalId: "4242", fullName: "acme/analytics" };
 

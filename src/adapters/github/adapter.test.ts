@@ -26,9 +26,11 @@ function pull(number: number, mergedAt: string | null, updatedAt: string) {
 function fakeApp(options: {
   issues?: unknown[];
   pullPages?: ReturnType<typeof pull>[][];
+  pullFiles?: unknown[];
 }) {
-  const read = { pullPages: 0 };
+  const read = { pullPages: 0, pullNumber: 0 };
   const listForRepo = () => {};
+  const listFiles = () => {};
   const octokit = {
     rest: {
       repos: {
@@ -37,10 +39,14 @@ function fakeApp(options: {
         }),
       },
       issues: { listForRepo },
-      pulls: { list: () => {} },
+      pulls: { list: () => {}, listFiles },
     },
     paginate: Object.assign(
-      async (endpoint: unknown) => {
+      async (endpoint: unknown, params: { pull_number?: number }) => {
+        if (endpoint === listFiles) {
+          read.pullNumber = params.pull_number ?? 0;
+          return options.pullFiles ?? [];
+        }
         expect(endpoint).toBe(listForRepo);
         return options.issues ?? [];
       },
@@ -133,5 +139,48 @@ describe("GitHubAdapter.listBackfill", () => {
       }),
     ]);
     expect(read.pullPages).toBe(1);
+  });
+});
+
+describe("GitHubAdapter.listChangedFiles", () => {
+  it("reads the pull request's files and maps GitHub's statuses", async () => {
+    const { app, read } = fakeApp({
+      pullFiles: [
+        {
+          filename: "src/export/xlsx.ts",
+          status: "added",
+          additions: 120,
+          deletions: 0,
+          patch: "@@ -0,0 +1,120 @@",
+        },
+        {
+          filename: "assets/logo.png",
+          status: "changed",
+          additions: 0,
+          deletions: 0,
+        },
+      ],
+    });
+    const files = await new GitHubAdapter(app).listChangedFiles(
+      { externalId: "4242", fullName: "acme/analytics" },
+      "4242#41",
+    );
+    expect(read.pullNumber).toBe(41);
+    expect(files).toEqual([
+      {
+        path: "src/export/xlsx.ts",
+        status: "added",
+        additions: 120,
+        deletions: 0,
+        patch: "@@ -0,0 +1,120 @@",
+      },
+      {
+        path: "assets/logo.png",
+        status: "modified",
+        additions: 0,
+        deletions: 0,
+        patch: null,
+      },
+    ]);
   });
 });

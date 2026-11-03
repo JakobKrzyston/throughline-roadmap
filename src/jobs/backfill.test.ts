@@ -38,6 +38,7 @@ const adapter = {
   source: "github",
   findRepository: async () => null,
   listBackfill: vi.fn(async () => [issue]),
+  listChangedFiles: async () => [],
 } satisfies SourceAdapter;
 
 beforeEach(async () => {

@@ -1,4 +1,4 @@
-/** The SourceAdapter interface that brings issues and PRs into Throughline. Exports SourceAdapter, SourceWorkItem, SourceRepository. */
+/** The SourceAdapter interface that brings issues and PRs into Throughline. Exports SourceAdapter, SourceWorkItem, SourceRepository, SourceChangedFile. */
 
 /** An issue or pull request as a source reports it, before it is stored as a work item. */
 export type SourceWorkItem = {
@@ -22,6 +22,16 @@ export type SourceRepository = {
   externalId: string;
   /** `owner/name`. */
   fullName: string;
+};
+
+/** One file a pull request changed. */
+export type SourceChangedFile = {
+  path: string;
+  status: "added" | "modified" | "removed" | "renamed";
+  additions: number;
+  deletions: number;
+  /** The unified diff for this file, or null when the source omits it (binary or very large files). */
+  patch: string | null;
 };
 
 /** Reads repositories and their work items from one source, such as GitHub. */
@@ -53,4 +63,19 @@ export interface SourceAdapter {
     repository: SourceRepository,
     mergedSince: Date,
   ): Promise<SourceWorkItem[]>;
+
+  /**
+   * List the files a pull request changed.
+   *
+   * Args:
+   *   repository: The repository the pull request belongs to.
+   *   workItemExternalId: The pull request's SourceWorkItem.externalId.
+   *
+   * Returns:
+   *   The changed files, in the order the source lists them.
+   */
+  listChangedFiles(
+    repository: SourceRepository,
+    workItemExternalId: string,
+  ): Promise<SourceChangedFile[]>;
 }

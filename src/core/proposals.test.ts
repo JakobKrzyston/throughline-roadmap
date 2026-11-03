@@ -292,6 +292,60 @@ describe("links", () => {
   });
 });
 
+describe("applyProposal with edits", () => {
+  it("applies the reviewer's wording and stores it on the proposal", async () => {
+    const proposalId = await propose(exportOutcome);
+    const edited = [
+      { ...exportOutcome[0], title: "Customers can export to Excel" },
+      { ...exportOutcome[1], user_visible: false, product_note: "Soon." },
+    ];
+
+    await applyProposal(db, proposalId, "pm", edited);
+
+    const [outcome] = await db.select().from(outcomes);
+    expect(outcome.title).toBe("Customers can export to Excel");
+    expect(await requirementByKey("TL-1")).toMatchObject({
+      userVisible: false,
+      productNote: "Soon.",
+    });
+    const [proposal] = await db.select().from(proposals);
+    expect(proposal.operations).toMatchObject(edited);
+  });
+
+  it("refuses an edit that changes what the proposal touches", async () => {
+    await approve(exportOutcome);
+    const before = await snapshot();
+    const proposalId = await propose([
+      { type: "set_status", requirement_key: "TL-1", status: "done" },
+    ]);
+
+    for (const edited of [
+      [{ type: "set_status", requirement_key: "TL-2", status: "done" }],
+      [
+        { type: "set_status", requirement_key: "TL-1", status: "done" },
+        { type: "set_status", requirement_key: "TL-1", status: "dropped" },
+      ],
+      [{ type: "update_requirement", requirement_key: "TL-1", title: "X" }],
+    ]) {
+      await expect(applyProposal(db, proposalId, "pm", edited)).rejects.toThrow(
+        ProposalError,
+      );
+    }
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it("validates edited operations", async () => {
+    const proposalId = await propose(exportOutcome);
+    await expect(
+      applyProposal(db, proposalId, "pm", [
+        { ...exportOutcome[0], title: "  " },
+        exportOutcome[1],
+      ]),
+    ).rejects.toThrow();
+    expect(await db.select().from(outcomes)).toEqual([]);
+  });
+});
+
 describe("rejectProposal", () => {
   it("marks the proposal rejected and changes nothing else", async () => {
     await approve(exportOutcome);

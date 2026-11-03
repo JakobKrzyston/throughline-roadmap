@@ -38,19 +38,38 @@ export class ProposalError extends Error {
  *   db: Database to write to.
  *   proposalId: The proposal to approve.
  *   actor: User id of the person approving it.
+ *   editedOperations: The reviewer's edited copy of the operations, applied and stored in place of
+ *     the originals. Edits may change wording and values but not what the proposal touches.
  *
  * Raises:
- *   ProposalError: The proposal is missing or not pending, or an operation is invalid for the current graph.
- *   ZodError: The stored operations do not match the operation schema.
+ *   ProposalError: The proposal is missing or not pending, an edit changes what it touches, or an
+ *     operation is invalid for the current graph.
+ *   ZodError: The stored or edited operations do not match the operation schema.
  */
 export async function applyProposal(
   db: Database,
   proposalId: string,
   actor: string,
+  editedOperations?: unknown,
 ): Promise<void> {
   await db.transaction(async (tx) => {
     const proposal = await lockPendingProposal(tx, proposalId);
-    const operations = operationListSchema.parse(proposal.operations);
+    let operations = operationListSchema.parse(proposal.operations);
+    if (editedOperations !== undefined) {
+      const edited = operationListSchema.parse(editedOperations);
+      if (
+        edited.map(targetOf).join("\n") !== operations.map(targetOf).join("\n")
+      ) {
+        throw new ProposalError(
+          "An edit can change wording and values, but not what the proposal changes",
+        );
+      }
+      operations = edited;
+      await tx
+        .update(proposals)
+        .set({ operations })
+        .where(eq(proposals.id, proposalId));
+    }
 
     for (const operation of operations) {
       const event = await applyOperation(tx, proposal.projectId, operation);
@@ -281,6 +300,27 @@ async function applyOperation(
       }
       return event(op, "requirement", requirement.id, null);
     }
+  }
+}
+
+/** What an operation acts on, ignoring the values it sets. Two operations with the same target differ only in wording or values. */
+function targetOf(op: GraphOperation): string {
+  switch (op.type) {
+    case "create_outcome":
+      return `${op.type} ${op.key}`;
+    case "update_outcome":
+      return `${op.type} ${op.outcome_key}`;
+    case "create_requirement":
+      return `${op.type} ${op.key} under ${op.outcome_key}`;
+    case "split_requirement":
+      return `${op.type} ${op.requirement_key} into ${op.children.map((child) => child.key).join(",")}`;
+    case "update_requirement":
+    case "set_status":
+      return `${op.type} ${op.requirement_key}`;
+    case "link_work_item":
+      return `${op.type} ${op.requirement_key} ${op.work_item_id} ${op.confidence}`;
+    case "unlink_work_item":
+      return `${op.type} ${op.requirement_key} ${op.work_item_id}`;
   }
 }
 

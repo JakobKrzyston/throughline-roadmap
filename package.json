@@ -16,6 +16,7 @@
     "db:seed": "tsx src/db/run-seed.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.4.0",
     "@base-ui/react": "^1.9.0",
     "@electric-sql/pglite": "^0.5.14",
     "class-variance-authority": "^0.7.1",

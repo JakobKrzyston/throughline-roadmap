@@ -193,11 +193,17 @@ Computed on read by pure functions in `src/core/rollup.ts`.
 
 ## Agents
 
-All agents call `LLMProvider.generateStructured(schema, prompt)`, which uses Claude's tool use to return JSON that matches a Zod schema. Tests use a `FakeLLMProvider` that returns fixtures, so the test suite never needs an API key.
+All agents call `LLMProvider.generateStructured(schema, prompt)` (`src/adapters/llm/`), which returns output that matches a Zod schema.
+
+- `AnthropicProvider` offers Claude a single tool whose input schema is generated from the Zod schema, and reads the answer from the tool call. Current Claude models reject forced `tool_choice`, so the system prompt asks for the call and a reply without one counts as invalid output. The model comes from `ANTHROPIC_MODEL` (default `claude-sonnet-5-5`).
+- Output that fails Zod validation is retried **once**: the validation error goes back to the model as a failed tool result. If the second attempt also fails, the provider raises `LLMOutputError`, whose message is shown to the user. Agents write nothing until they have valid output, so a failed run never leaves a partial proposal.
+- `FakeLLMProvider` serves fixtures per task name with the same validation and retry. Tests use it, and so does the app when `ANTHROPIC_API_KEY` is unset (demo mode), so nothing needs an API key.
 
 ### Roadmap import agent
 
-Input: pasted text or Markdown (a roadmap, meeting notes, a product brief). Output: one proposal with `create_outcome` and `create_requirement` operations. The prompt asks for customer-facing outcome titles and engineering-facing requirement titles, and marks which requirements are user-visible.
+Input: pasted text or Markdown (a roadmap, meeting notes, a product brief) from `/p/[slug]/import`. Output: one pending proposal with `create_outcome` and `create_requirement` operations. The prompt asks for customer-facing outcome titles and engineering-facing requirement titles, and marks which requirements are user-visible.
+
+The model does not choose keys. `src/agents/import.ts` numbers new outcomes and requirements after the highest `OUT-n` and `TL-n` already in the project or claimed by a pending proposal, so an import cannot clash with existing work.
 
 ### Reconciliation agent
 

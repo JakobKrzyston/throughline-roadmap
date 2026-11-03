@@ -39,9 +39,10 @@ pnpm typecheck     # next typegen && tsc --noEmit
 pnpm test          # Vitest unit tests
 pnpm db:generate   # generate a Drizzle migration from schema changes
 pnpm db:migrate    # apply migrations (PGlite in ./.pglite, or DATABASE_URL if set)
+pnpm db:seed       # (re)create the "Acme Analytics" demo project; run db:migrate first
 ```
 
-Still to come: `pnpm db:seed` (Stage 2) and `pnpm test:e2e` for Playwright (Stage 6).
+Still to come: `pnpm test:e2e` for Playwright (Stage 6).
 
 This project uses a Next.js version newer than most training data. Before writing Next.js code, read the relevant guide in `node_modules/next/dist/docs/` (see `AGENTS.md`).
 

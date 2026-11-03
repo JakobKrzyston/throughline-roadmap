@@ -21,6 +21,8 @@ You need Node.js 22 and pnpm (`corepack enable pnpm`).
 
 ```bash
 pnpm install
+pnpm db:migrate   # create the tables
+pnpm db:seed      # load the "Acme Analytics" demo project
 pnpm dev
 ```
 

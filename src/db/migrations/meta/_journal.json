@@ -15,6 +15,13 @@
       "when": 1793739655776,
       "tag": "0001_github_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793741152272,
+      "tag": "0002_issue_not_planned",
+      "breakpoints": true
     }
   ]
 }

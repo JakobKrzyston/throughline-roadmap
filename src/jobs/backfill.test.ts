@@ -1,8 +1,17 @@
 /** Tests for the backfill job with a fake source adapter. */
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SourceAdapter, SourceWorkItem } from "@/adapters/source";
-import { projects, repositories, workItems } from "@/db/schema";
+import { applyProposal } from "@/core/proposals";
+import {
+  jobs,
+  links,
+  projects,
+  proposals,
+  repositories,
+  workItems,
+} from "@/db/schema";
 import { createTestDb } from "@/db/test-db";
 
 import { runBackfill } from "./backfill";
@@ -10,11 +19,12 @@ import { runBackfill } from "./backfill";
 type TestDb = Awaited<ReturnType<typeof createTestDb>>;
 
 let db: TestDb;
+let projectId: string;
 let repositoryId: string;
 
 const issue: SourceWorkItem = {
   source: "github",
-  externalId: "acme/analytics#7",
+  externalId: "4242#7",
   kind: "issue",
   title: "Slow export",
   body: "",
@@ -36,6 +46,7 @@ beforeEach(async () => {
     .insert(projects)
     .values({ name: "Test", slug: "test" })
     .returning();
+  projectId = project.id;
   [{ id: repositoryId }] = await db
     .insert(repositories)
     .values({
@@ -58,10 +69,50 @@ describe("runBackfill", () => {
     );
 
     expect(adapter.listBackfill).toHaveBeenCalledWith(
-      "acme/analytics",
+      expect.objectContaining({
+        externalId: "4242",
+        fullName: "acme/analytics",
+      }),
       new Date("2026-08-05T00:00:00Z"),
     );
     expect(await db.select().from(workItems)).toHaveLength(1);
+  });
+
+  it("links references in finished work without queueing reconciliation", async () => {
+    const [proposal] = await db
+      .insert(proposals)
+      .values({
+        projectId,
+        source: "import",
+        summary: "Roadmap",
+        operations: [
+          { type: "create_outcome", key: "OUT-1", title: "Export" },
+          {
+            type: "create_requirement",
+            key: "TL-1",
+            outcome_key: "OUT-1",
+            title: "CSV",
+          },
+        ],
+      })
+      .returning();
+    await applyProposal(db, proposal.id, "pm");
+    adapter.listBackfill.mockResolvedValueOnce([
+      {
+        ...issue,
+        externalId: "4242#9",
+        kind: "pull_request",
+        body: "Implements TL-1",
+        state: "merged",
+        mergedAt: new Date("2026-10-01"),
+      },
+    ]);
+    await runBackfill(db, adapter, repositoryId);
+
+    expect(await db.select().from(links)).toHaveLength(1);
+    expect(
+      await db.select().from(jobs).where(eq(jobs.type, "reconcile")),
+    ).toEqual([]);
   });
 
   it("can run twice without duplicating work items", async () => {

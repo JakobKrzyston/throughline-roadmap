@@ -42,10 +42,10 @@ describe("verifyWebhookSignature", () => {
 describe("parseWebhookEvent", () => {
   it("reads an open pull request", () => {
     expect(parseWebhookEvent("pull_request", pullRequestPayload())).toEqual({
-      repositoryExternalId: "4242",
+      repository: { externalId: "4242", fullName: "acme/analytics" },
       item: {
         source: "github",
-        externalId: "acme/analytics#41",
+        externalId: "4242#41",
         kind: "pull_request",
         title: "Add CSV export",
         body: "Implements TL-3",
@@ -88,11 +88,23 @@ describe("parseWebhookEvent", () => {
   it("reads an issue and treats a null body as empty", () => {
     const event = parseWebhookEvent("issues", issuePayload());
     expect(event?.item).toMatchObject({
-      externalId: "acme/analytics#7",
+      externalId: "4242#7",
       kind: "issue",
       state: "open",
       body: "",
     });
+  });
+
+  it("tells an issue closed as done from one closed as not planned or duplicate", () => {
+    const closed = (state_reason: string | null) =>
+      parseWebhookEvent(
+        "issues",
+        issuePayload({ state: "closed", state_reason }, "closed"),
+      )?.item.state;
+    expect(closed("completed")).toBe("closed");
+    expect(closed(null)).toBe("closed");
+    expect(closed("not_planned")).toBe("not_planned");
+    expect(closed("duplicate")).toBe("not_planned");
   });
 
   it("ignores deleted and transferred issues", () => {

@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { z } from "zod";
 
-import type { SourceWorkItem } from "@/adapters/source";
+import type { SourceRepository, SourceWorkItem } from "@/adapters/source";
 
 import {
   githubIssueSchema,
@@ -14,8 +14,8 @@ import {
 
 /** A delivery that changes a work item in a repository. */
 export type WebhookEvent = {
-  /** GitHub's numeric repository id, as a string. */
-  repositoryExternalId: string;
+  /** The repository as the delivery reports it, so a rename shows up in its `fullName`. */
+  repository: SourceRepository;
   item: SourceWorkItem;
 };
 
@@ -82,17 +82,23 @@ export function parseWebhookEvent(
     if (event.action === "deleted" || event.action === "transferred") {
       return null;
     }
+    const repository = toRepository(event.repository);
     return {
-      repositoryExternalId: String(event.repository.id),
-      item: issueToWorkItem(event.repository.full_name, event.issue),
+      repository,
+      item: issueToWorkItem(repository.externalId, event.issue),
     };
   }
   if (eventName === "pull_request") {
     const event = pullRequestEvent.parse(payload);
+    const repository = toRepository(event.repository);
     return {
-      repositoryExternalId: String(event.repository.id),
-      item: pullToWorkItem(event.repository.full_name, event.pull_request),
+      repository,
+      item: pullToWorkItem(repository.externalId, event.pull_request),
     };
   }
   return null;
+}
+
+function toRepository(raw: z.output<typeof repository>): SourceRepository {
+  return { externalId: String(raw.id), fullName: raw.full_name };
 }

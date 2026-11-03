@@ -3,14 +3,15 @@
 /** An issue or pull request as a source reports it, before it is stored as a work item. */
 export type SourceWorkItem = {
   source: "github";
-  /** Stable id within the source, e.g. `JakobKrzyston/throughline-roadmap#41`. */
+  /** Stable id within the source that survives repository renames, e.g. `1043219876#41` (repository id, then number). */
   externalId: string;
   kind: "issue" | "pull_request";
   title: string;
   /** Full description. Link references are read from it; only an excerpt is stored. */
   body: string;
   url: string;
-  state: "open" | "closed" | "merged";
+  /** For an issue, `closed` means done and `not_planned` means closed without doing it. */
+  state: "open" | "closed" | "merged" | "not_planned";
   mergedAt: Date | null;
   closedAt: Date | null;
 };
@@ -42,11 +43,14 @@ export interface SourceAdapter {
    * List the work items to import when a repository is connected.
    *
    * Args:
-   *   fullName: `owner/name`.
+   *   repository: The repository to read.
    *   mergedSince: Oldest merge date of pull requests to include.
    *
    * Returns:
    *   Every open issue, plus pull requests merged on or after mergedSince.
    */
-  listBackfill(fullName: string, mergedSince: Date): Promise<SourceWorkItem[]>;
+  listBackfill(
+    repository: SourceRepository,
+    mergedSince: Date,
+  ): Promise<SourceWorkItem[]>;
 }

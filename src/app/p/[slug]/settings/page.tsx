@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { type ReactElement, Suspense } from "react";
 
-import { githubInstallUrl, isGitHubConfigured } from "@/adapters/github";
+import { githubInstallUrl, missingGitHubSettings } from "@/adapters/github";
 import { getDb } from "@/db/client";
 import { projects, repositories } from "@/db/schema";
 
@@ -62,7 +62,8 @@ async function ProjectSettings({
     .from(repositories)
     .where(eq(repositories.projectId, project.id))
     .orderBy(asc(repositories.fullName));
-  const configured = isGitHubConfigured();
+  const missing = missingGitHubSettings();
+  const configured = missing.length === 0;
   const installUrl = githubInstallUrl();
 
   return (
@@ -110,7 +111,8 @@ async function ProjectSettings({
         ) : (
           <p className="rounded-md border border-border bg-muted p-3 text-sm">
             GitHub is not set up on this server, so repositories cannot be
-            connected. The setup steps are in docs/GITHUB_APP.md.
+            connected. Set {missing.join(", ")}; the setup steps are in
+            docs/GITHUB_APP.md.
           </p>
         )}
         <ConnectForm slug={slug} disabled={!configured} />

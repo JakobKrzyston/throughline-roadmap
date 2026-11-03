@@ -249,7 +249,7 @@ describe("links", () => {
       .values({
         projectId,
         source: "github",
-        externalId: "acme/app#41",
+        externalId: "4242#41",
         kind: "pull_request",
         title: "Export endpoint",
         url: "https://github.com/acme/app/pull/41",

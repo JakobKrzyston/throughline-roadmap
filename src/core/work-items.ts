@@ -1,7 +1,7 @@
 /** Mirrors source work items into a project, links explicit references and queues reconciliation. Exports syncWorkItem, syncRepositoryItem, SYNC_ACTOR, BODY_EXCERPT_LENGTH. */
 import { and, eq, inArray } from "drizzle-orm";
 
-import type { SourceWorkItem } from "@/adapters/source";
+import type { SourceRepository, SourceWorkItem } from "@/adapters/source";
 import type { Database } from "@/db/client";
 import {
   links,
@@ -36,12 +36,15 @@ type SyncResult = {
  *
  * Safe to repeat: replaying the same item creates no duplicate work items, links or jobs. A
  * reconciliation job is queued for each linked requirement when the item first becomes merged
- * (or, for an issue, closed), and for each new link added to an item that has already finished.
+ * (or, for an issue, closed as done), and for each new link added to an item that has already
+ * finished.
  *
  * Args:
  *   db: Database to write to.
  *   projectId: Project the work item belongs to.
  *   item: The issue or pull request as the source reports it.
+ *   options.reconcile: False to store and link without queueing reconciliation, for importing
+ *     work that finished before the repository was connected.
  *
  * Returns:
  *   The work item's id, the requirement keys newly linked, and how many reconciliation jobs were queued.
@@ -50,6 +53,7 @@ export async function syncWorkItem(
   db: Database,
   projectId: string,
   item: SourceWorkItem,
+  { reconcile = true }: { reconcile?: boolean } = {},
 ): Promise<SyncResult> {
   return db.transaction(async (tx) => {
     const fields = {
@@ -126,11 +130,12 @@ export async function syncWorkItem(
       item.state === "merged" ||
       (item.kind === "issue" && item.state === "closed");
     const justFinished = finished && previousState !== item.state;
-    const toReconcile = !finished
-      ? []
-      : justFinished
-        ? [...linkedIds, ...newLinks.map((link) => link.requirementId)]
-        : newLinks.map((link) => link.requirementId);
+    const toReconcile =
+      !finished || !reconcile
+        ? []
+        : justFinished
+          ? [...linkedIds, ...newLinks.map((link) => link.requirementId)]
+          : newLinks.map((link) => link.requirementId);
     for (const requirementId of toReconcile) {
       await enqueue(tx, "reconcile", { workItemId, requirementId });
     }
@@ -144,11 +149,12 @@ export async function syncWorkItem(
 }
 
 /**
- * Sync a work item into every project its repository is connected to.
+ * Sync a work item into every project its repository is connected to, and record the
+ * repository's current name in case it was renamed.
  *
  * Args:
  *   db: Database to write to.
- *   repositoryExternalId: The source's id for the repository.
+ *   repository: The repository as the source reports it now.
  *   item: The issue or pull request.
  *
  * Returns:
@@ -156,18 +162,19 @@ export async function syncWorkItem(
  */
 export async function syncRepositoryItem(
   db: Database,
-  repositoryExternalId: string,
+  repository: SourceRepository,
   item: SourceWorkItem,
 ): Promise<SyncResult[]> {
   const connected = await db
-    .select({ projectId: repositories.projectId })
-    .from(repositories)
+    .update(repositories)
+    .set({ fullName: repository.fullName })
     .where(
       and(
         eq(repositories.source, item.source),
-        eq(repositories.externalId, repositoryExternalId),
+        eq(repositories.externalId, repository.externalId),
       ),
-    );
+    )
+    .returning({ projectId: repositories.projectId });
   const results: SyncResult[] = [];
   for (const { projectId } of connected) {
     results.push(await syncWorkItem(db, projectId, item));

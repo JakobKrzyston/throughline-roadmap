@@ -94,6 +94,7 @@ describe("GitHubAdapter.findRepository", () => {
 
 describe("GitHubAdapter.listBackfill", () => {
   const since = new Date("2026-08-01T00:00:00Z");
+  const repository = { externalId: "4242", fullName: "acme/analytics" };
 
   it("returns open issues but not the pull requests the issues API mixes in", async () => {
     const issue = {
@@ -107,11 +108,8 @@ describe("GitHubAdapter.listBackfill", () => {
     const { app } = fakeApp({
       issues: [issue, { ...issue, number: 8, pull_request: {} }],
     });
-    const items = await new GitHubAdapter(app).listBackfill(
-      "acme/analytics",
-      since,
-    );
-    expect(items.map((item) => item.externalId)).toEqual(["acme/analytics#7"]);
+    const items = await new GitHubAdapter(app).listBackfill(repository, since);
+    expect(items.map((item) => item.externalId)).toEqual(["4242#7"]);
     expect(items[0]).toMatchObject({ kind: "issue", body: "Part of TL-4" });
   });
 
@@ -126,13 +124,10 @@ describe("GitHubAdapter.listBackfill", () => {
         [pull(27, "2026-06-01T00:00:00Z", "2026-06-01T00:00:00Z")],
       ],
     });
-    const items = await new GitHubAdapter(app).listBackfill(
-      "acme/analytics",
-      since,
-    );
+    const items = await new GitHubAdapter(app).listBackfill(repository, since);
     expect(items).toEqual([
       expect.objectContaining({
-        externalId: "acme/analytics#30",
+        externalId: "4242#30",
         kind: "pull_request",
         state: "merged",
       }),

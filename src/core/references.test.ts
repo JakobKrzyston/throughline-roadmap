@@ -28,6 +28,29 @@ describe("parseReferences", () => {
     ]);
   });
 
+  it("reads a list with an Oxford comma or an ampersand", () => {
+    expect(parseReferences("Part of TL-3, TL-4, and TL-5 & TL-6")).toEqual([
+      { key: "TL-3", relation: "part_of" },
+      { key: "TL-4", relation: "part_of" },
+      { key: "TL-5", relation: "part_of" },
+      { key: "TL-6", relation: "part_of" },
+    ]);
+  });
+
+  it("accepts a colon after the phrase and extra spaces inside it", () => {
+    expect(parseReferences("Implements: TL-3\nPart  of TL-4")).toEqual([
+      { key: "TL-3", relation: "implements" },
+      { key: "TL-4", relation: "part_of" },
+    ]);
+  });
+
+  it("does not shorten a dotted key to its prefix", () => {
+    expect(parseReferences("Implements TL-3.1")).toEqual([]);
+    expect(parseReferences("Implements TL-3.")).toEqual([
+      { key: "TL-3", relation: "implements" },
+    ]);
+  });
+
   it("accepts lowercase phrases and keys and upper-cases the key", () => {
     expect(parseReferences("this implements tl-12; PART OF Tl-4")).toEqual([
       { key: "TL-12", relation: "implements" },

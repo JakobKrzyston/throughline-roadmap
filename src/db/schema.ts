@@ -29,6 +29,8 @@ export const workItemState = pgEnum("work_item_state", [
   "open",
   "closed",
   "merged",
+  // An issue closed without being done: GitHub's "not planned" or "duplicate".
+  "not_planned",
 ]);
 export const linkRelation = pgEnum("link_relation", ["implements", "part_of"]);
 export const linkConfidence = pgEnum("link_confidence", [

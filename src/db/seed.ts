@@ -9,6 +9,8 @@ import { projects, proposals, workItems } from "./schema";
 
 export const DEMO_SLUG = "acme-analytics";
 const REPO = "acme/analytics";
+// Stands in for GitHub's numeric repository id, which work item ids are built from.
+const REPO_ID = "100001";
 const SEED_ACTOR = "demo-seed";
 
 type WorkItemSeed = {
@@ -196,7 +198,7 @@ export async function seedDemoProject(db: Database): Promise<string> {
       WORK_ITEMS.map((item) => ({
         projectId: project.id,
         source: "github" as const,
-        externalId: `${REPO}#${item.number}`,
+        externalId: `${REPO_ID}#${item.number}`,
         kind: item.kind,
         title: item.title,
         url: `https://github.com/${REPO}/${item.kind === "issue" ? "issues" : "pull"}/${item.number}`,
@@ -207,7 +209,7 @@ export async function seedDemoProject(db: Database): Promise<string> {
     )
     .returning({ id: workItems.id, externalId: workItems.externalId });
   const workItemId = (number: number): string =>
-    inserted.find((item) => item.externalId === `${REPO}#${number}`)!.id;
+    inserted.find((item) => item.externalId === `${REPO_ID}#${number}`)!.id;
 
   async function propose(
     source: "import" | "reconcile" | "link_suggest",

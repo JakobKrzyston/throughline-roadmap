@@ -52,17 +52,17 @@ export class GitHubAdapter implements SourceAdapter {
    * List open issues plus pull requests merged on or after mergedSince.
    *
    * Args:
-   *   fullName: `owner/name`.
+   *   repository: The repository to read.
    *   mergedSince: Oldest merge date to include.
    *
    * Returns:
    *   The work items.
    */
   async listBackfill(
-    fullName: string,
+    repository: SourceRepository,
     mergedSince: Date,
   ): Promise<SourceWorkItem[]> {
-    const [owner, repo] = fullName.split("/");
+    const [owner, repo] = repository.fullName.split("/");
     const octokit = await this.installationOctokit(owner, repo);
 
     const openIssues = await octokit.paginate(octokit.rest.issues.listForRepo, {
@@ -74,7 +74,7 @@ export class GitHubAdapter implements SourceAdapter {
     const items = openIssues
       .map((issue) => githubIssueSchema.parse(issue))
       .filter((issue) => !issue.pull_request)
-      .map((issue) => issueToWorkItem(fullName, issue));
+      .map((issue) => issueToWorkItem(repository.externalId, issue));
 
     // Most recently updated first. A PR merged after mergedSince was also updated after it,
     // so paging can stop at the first page that reaches older updates.
@@ -90,7 +90,7 @@ export class GitHubAdapter implements SourceAdapter {
       for (const raw of data) {
         const pull = githubPullSchema.parse(raw);
         if (pull.merged_at && new Date(pull.merged_at) >= mergedSince) {
-          items.push(pullToWorkItem(fullName, pull));
+          items.push(pullToWorkItem(repository.externalId, pull));
         }
       }
       const last = data.at(-1);

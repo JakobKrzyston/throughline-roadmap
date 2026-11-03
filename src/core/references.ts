@@ -9,8 +9,10 @@ export type Reference = {
 
 const KEY = String.raw`[a-z]+-\d+`;
 // A phrase followed by one key or a list of them: "Part of TL-3, TL-4 and TL-5".
+// Also accepts "Implements: TL-3", "TL-3, TL-4, and TL-5", and any whitespace inside "part of".
+// A key followed by ".digit" (TL-3.1) is not a key, so it is not cut short to TL-3.
 const PHRASE = new RegExp(
-  String.raw`\b(implements|part of)\s+(${KEY}(?:\s*(?:,|&|\band\b)\s*${KEY})*)\b`,
+  String.raw`\b(implements|part\s+of):?\s+(${KEY}(?:\s*(?:,\s*(?:and\b)?|&|\band\b)\s*${KEY})*)\b(?!\.\d)`,
   "gi",
 );
 

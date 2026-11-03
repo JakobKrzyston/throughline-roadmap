@@ -76,7 +76,7 @@ One roadmap workspace. Fields: `id`, `name`, `slug`, `is_demo`.
 
 ### `repositories`
 
-Source repositories connected to a project. Fields: `project_id`, `source` (`github`), `external_id` (GitHub's numeric repository id, which survives renames), `full_name` (`owner/name`). Webhooks find their project through `(source, external_id)`; one repository may be connected to several projects.
+Source repositories connected to a project. Fields: `project_id`, `source` (`github`), `external_id` (GitHub's numeric repository id, which survives renames), `full_name` (`owner/name`, refreshed from each webhook so it follows renames). Webhooks find their project through `(source, external_id)`; one repository may be connected to several projects.
 
 ### `outcomes`
 
@@ -114,16 +114,16 @@ Technical work, arranged as a tree under each outcome.
 
 Mirrors of GitHub issues and pull requests.
 
-| Field                    | Notes                                            |
-| ------------------------ | ------------------------------------------------ |
-| `id`                     |                                                  |
-| `project_id`             |                                                  |
-| `source`                 | `github` (later `linear`, `jira`)                |
-| `external_id`            | e.g. `JakobKrzyston/throughline-roadmap#41`      |
-| `kind`                   | `issue` or `pull_request`                        |
-| `title`, `url`, `state`  | `state`: `open`, `closed`, `merged`              |
-| `body_excerpt`           | First part of the description, for agent context |
-| `merged_at`, `closed_at` |                                                  |
+| Field                    | Notes                                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------------------------ |
+| `id`                     |                                                                                                  |
+| `project_id`             |                                                                                                  |
+| `source`                 | `github` (later `linear`, `jira`)                                                                |
+| `external_id`            | e.g. `1043219876#41`: repository id, then number                                                 |
+| `kind`                   | `issue` or `pull_request`                                                                        |
+| `title`, `url`, `state`  | `state`: `open`, `closed`, `merged`, `not_planned` (an issue closed as not planned or duplicate) |
+| `body_excerpt`           | First part of the description, for agent context                                                 |
+| `merged_at`, `closed_at` |                                                                                                  |
 
 ### `links`
 
@@ -236,9 +236,9 @@ Described above. Runs on merged PRs with no explicit reference.
 
 - A **GitHub App** with read access to issues, pull requests, contents and metadata, subscribed to `issues` and `pull_request` events. Setup steps are in `docs/GITHUB_APP.md`.
 - `SourceAdapter` (`src/adapters/source.ts`) is the interface a source implements: look up a repository, and list the items to backfill. `GitHubAdapter` (`src/adapters/github/`) implements it with Octokit, authenticated as the app installation on each repository. Webhook signature checks and payload parsing also live there, and both webhook payloads and REST responses are validated with the same Zod schemas.
-- Repositories are connected on `/p/[slug]/settings`. Connecting checks the app is installed on the repository, stores it, and enqueues a **backfill**: open issues plus PRs merged in the last 90 days.
+- Repositories are connected on `/p/[slug]/settings`. Connecting checks that the repository's owner is in `GITHUB_ALLOWED_OWNERS` (v1 has no sign-in, so this stands in for permissions until #11) and that the app is installed on it, stores it, and enqueues a **backfill**: open issues plus PRs merged in the last 90 days. The backfill links explicit references but queues no reconciliation, since that work finished before Throughline was watching.
 - `POST /api/github/webhook` verifies the `X-Hub-Signature-256` header against the raw body (401 if it does not match), then hands the work item to `syncWorkItem` (`src/core/work-items.ts`) for every project the repository is connected to.
-- `syncWorkItem` upserts the work item, creates explicit links, and enqueues a `reconcile` job per linked requirement when the item first becomes merged (or, for an issue, closed), and for each link added to an item that has already finished. Replaying a delivery therefore changes nothing: the work item is keyed by `(project, source, external_id)`, existing links are skipped, and no state change means no new job. Concurrent deliveries for the same item are serialised by a row lock.
+- `syncWorkItem` upserts the work item, creates explicit links, and enqueues a `reconcile` job per linked requirement when the item first becomes merged (or, for an issue, closed as done; `not_planned` does not count), and for each link added to an item that has already finished. Replaying a delivery therefore changes nothing: the work item is keyed by `(project, source, external_id)`, existing links are skipped, and no state change means no new job. Concurrent deliveries for the same item are serialised by a row lock.
 - Jobs run from `/api/jobs/run` (`GET` for Vercel cron, `POST` otherwise), and right after a webhook or connect through Next.js `after()`, so responses stay fast. The cron entry in `vercel.json` is a daily safety net, the most often Vercel's Hobby plan allows. When `CRON_SECRET` is set the route requires it as a bearer token.
 
 ## Views

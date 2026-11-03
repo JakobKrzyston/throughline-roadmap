@@ -15,6 +15,8 @@ const common = {
 export const githubIssueSchema = z.object({
   ...common,
   state: z.enum(["open", "closed"]),
+  // Why a closed issue was closed. Kept as a string so a new reason GitHub adds does not reject the payload.
+  state_reason: z.string().nullish(),
   // Present when the "issue" is really a pull request; the issues API lists both.
   pull_request: z.object({}).optional(),
 });
@@ -32,20 +34,26 @@ type GitHubPull = z.output<typeof githubPullSchema>;
  * Convert a GitHub issue into a work item.
  *
  * Args:
- *   repoFullName: `owner/name` of the issue's repository.
+ *   repositoryId: GitHub's numeric id of the issue's repository, which survives renames.
  *   issue: The validated issue.
  *
  * Returns:
  *   The work item.
  */
 export function issueToWorkItem(
-  repoFullName: string,
+  repositoryId: string,
   issue: GitHubIssue,
 ): SourceWorkItem {
   return {
-    ...shared(repoFullName, issue),
+    ...shared(repositoryId, issue),
     kind: "issue",
-    state: issue.state,
+    // Issues closed before GitHub recorded reasons have none; count those as done.
+    state:
+      issue.state === "closed" &&
+      (issue.state_reason === "not_planned" ||
+        issue.state_reason === "duplicate")
+        ? "not_planned"
+        : issue.state,
     mergedAt: null,
   };
 }
@@ -54,28 +62,28 @@ export function issueToWorkItem(
  * Convert a GitHub pull request into a work item. A closed pull request with a merge date is `merged`.
  *
  * Args:
- *   repoFullName: `owner/name` of the pull request's repository.
+ *   repositoryId: GitHub's numeric id of the pull request's repository, which survives renames.
  *   pull: The validated pull request.
  *
  * Returns:
  *   The work item.
  */
 export function pullToWorkItem(
-  repoFullName: string,
+  repositoryId: string,
   pull: GitHubPull,
 ): SourceWorkItem {
   return {
-    ...shared(repoFullName, pull),
+    ...shared(repositoryId, pull),
     kind: "pull_request",
     state: pull.merged_at ? "merged" : pull.state,
     mergedAt: pull.merged_at ? new Date(pull.merged_at) : null,
   };
 }
 
-function shared(repoFullName: string, item: GitHubIssue | GitHubPull) {
+function shared(repositoryId: string, item: GitHubIssue | GitHubPull) {
   return {
     source: "github" as const,
-    externalId: `${repoFullName}#${item.number}`,
+    externalId: `${repositoryId}#${item.number}`,
     title: item.title,
     body: item.body ?? "",
     url: item.html_url,

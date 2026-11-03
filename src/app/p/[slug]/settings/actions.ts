@@ -5,7 +5,11 @@ import { refresh } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
 
-import { getGitHubAdapter, isGitHubConfigured } from "@/adapters/github";
+import {
+  getGitHubAdapter,
+  isGitHubConfigured,
+  isOwnerAllowed,
+} from "@/adapters/github";
 import { getDb } from "@/db/client";
 import { projects, repositories } from "@/db/schema";
 import { runQueuedJobs } from "@/jobs";
@@ -54,12 +58,18 @@ export async function connectRepository(
     message,
     repository: typeof raw === "string" ? raw : "",
   });
+  const notAllowed = (name: string): ConnectState =>
+    fail(
+      `This server only connects repositories from approved accounts, and ${name.split("/")[0]} is not one of them.`,
+    );
 
   if (!isGitHubConfigured()) {
     return fail("GitHub is not set up on this server yet.");
   }
   const fullName = repositorySchema.safeParse(raw);
   if (!fullName.success) return fail(fullName.error.issues[0].message);
+  // Checked before the lookup so the answer reveals nothing about other owners' repositories.
+  if (!isOwnerAllowed(fullName.data)) return notAllowed(fullName.data);
 
   const db = getDb();
   const [project] = await db
@@ -79,6 +89,10 @@ export async function connectRepository(
     return fail(
       `Throughline cannot see ${fullName.data}. Install the GitHub App on it first, then try again.`,
     );
+  }
+  // GitHub follows renames and transfers, so the repository found may belong to another owner.
+  if (!isOwnerAllowed(repository.fullName)) {
+    return notAllowed(repository.fullName);
   }
 
   const connected = await db.transaction(async (tx) => {

@@ -6,15 +6,15 @@ Throughline reads issues and pull requests through a GitHub App. The app is opti
 
 Go to **GitHub → Settings → Developer settings → GitHub Apps → New GitHub App** (or the same path under an organisation's settings).
 
-| Field                      | Value                                                                   |
-| -------------------------- | ----------------------------------------------------------------------- |
-| GitHub App name            | Anything, e.g. `Throughline (yourname)`. Its URL slug is used below.    |
-| Homepage URL               | Your deployment's URL                                                   |
-| Callback URL               | Leave empty. Throughline does not sign users in with GitHub.            |
-| Webhook → Active           | Checked                                                                 |
-| Webhook URL                | `https://<your-host>/api/github/webhook`                                |
-| Webhook secret             | A long random string, e.g. from `openssl rand -hex 32`                  |
-| Where can it be installed? | "Only on this account" is enough for one team; "Any account" for others |
+| Field                      | Value                                                                |
+| -------------------------- | -------------------------------------------------------------------- |
+| GitHub App name            | Anything, e.g. `Throughline (yourname)`. Its URL slug is used below. |
+| Homepage URL               | Your deployment's URL                                                |
+| Callback URL               | Leave empty. Throughline does not sign users in with GitHub.         |
+| Webhook → Active           | Checked                                                              |
+| Webhook URL                | `https://<your-host>/api/github/webhook`                             |
+| Webhook secret             | A long random string, e.g. from `openssl rand -hex 32`               |
+| Where can it be installed? | "Only on this account"                                               |
 
 ### Repository permissions
 
@@ -47,10 +47,14 @@ Set these environment variables (in `.env.local` locally, or in the Vercel proje
 ```bash
 GITHUB_APP_ID=123456
 GITHUB_APP_SLUG=throughline-yourname
+# Accounts whose repositories may be connected, comma-separated.
+GITHUB_ALLOWED_OWNERS=yourname
 GITHUB_WEBHOOK_SECRET=<the webhook secret from step 1>
 # The whole .pem file. On one line, write each line break as \n.
 GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----\n"
 ```
+
+Throughline has no sign-in yet, so anyone who can open a project's settings page can connect a repository. `GITHUB_ALLOWED_OWNERS` limits that to repositories owned by the accounts you list, and repositories cannot be connected until it is set.
 
 On Vercel, also set `CRON_SECRET` to a random string. Vercel's cron then sends it to `/api/jobs/run`, and other callers are refused.
 

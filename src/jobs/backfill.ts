@@ -12,7 +12,9 @@ export const BACKFILL_DAYS = 90;
 /**
  * Import a connected repository's open issues and the pull requests merged in the last BACKFILL_DAYS days.
  *
- * Each item goes through syncWorkItem, so running a backfill twice creates no duplicates.
+ * Each item goes through syncWorkItem, so running a backfill twice creates no duplicates. Explicit
+ * references are linked, but no reconciliation is queued: work that finished before the repository
+ * was connected is history, not news, and reconciling all of it at once would flood the review queue.
  *
  * Args:
  *   db: Database to write to.
@@ -34,8 +36,8 @@ export async function runBackfill(
   if (!repository) return;
 
   const mergedSince = new Date(now.getTime() - BACKFILL_DAYS * 86_400_000);
-  const items = await adapter.listBackfill(repository.fullName, mergedSince);
+  const items = await adapter.listBackfill(repository, mergedSince);
   for (const item of items) {
-    await syncWorkItem(db, repository.projectId, item);
+    await syncWorkItem(db, repository.projectId, item, { reconcile: false });
   }
 }

@@ -55,7 +55,7 @@ export async function POST(request: Request): Promise<Response> {
 
   const results = await syncRepositoryItem(
     getDb(),
-    event.repositoryExternalId,
+    event.repository,
     event.item,
   );
   if (results.some((result) => result.reconcileJobs > 0)) {

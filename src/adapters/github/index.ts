@@ -1,18 +1,53 @@
-/** Builds the GitHub adapter from environment variables. Exports isGitHubConfigured, getGitHubAdapter, githubInstallUrl. */
+/** Builds the GitHub adapter from environment variables. Exports missingGitHubSettings, isGitHubConfigured, isOwnerAllowed, getGitHubAdapter, githubInstallUrl. */
 import { App } from "octokit";
 
 import { GitHubAdapter } from "./adapter";
 
 /**
- * Whether GitHub App credentials are set, so repositories can be connected.
+ * The environment variables GitHub needs before repositories can be connected, that are unset.
+ *
+ * GITHUB_ALLOWED_OWNERS is required as well as the credentials: v1 has no sign-in, so without it
+ * anyone who can open the settings page could import any repository the app can see.
  *
  * Returns:
- *   True when GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY are both set.
+ *   The names of the unset variables, empty when GitHub is fully set up.
+ */
+export function missingGitHubSettings(): string[] {
+  const required = {
+    GITHUB_APP_ID: process.env.GITHUB_APP_ID,
+    GITHUB_APP_PRIVATE_KEY: process.env.GITHUB_APP_PRIVATE_KEY,
+    GITHUB_ALLOWED_OWNERS: process.env.GITHUB_ALLOWED_OWNERS?.trim(),
+  };
+  return Object.entries(required)
+    .filter(([, value]) => !value)
+    .map(([name]) => name);
+}
+
+/**
+ * Whether GitHub is set up well enough for repositories to be connected.
+ *
+ * Returns:
+ *   True when no required variable is missing (see missingGitHubSettings).
  */
 export function isGitHubConfigured(): boolean {
-  return Boolean(
-    process.env.GITHUB_APP_ID && process.env.GITHUB_APP_PRIVATE_KEY,
-  );
+  return missingGitHubSettings().length === 0;
+}
+
+/**
+ * Whether a repository's owner is listed in GITHUB_ALLOWED_OWNERS.
+ *
+ * Args:
+ *   fullName: `owner/name`.
+ *
+ * Returns:
+ *   True when the owner is listed. GitHub names are not case-sensitive, so neither is this.
+ */
+export function isOwnerAllowed(fullName: string): boolean {
+  const owner = fullName.split("/")[0].toLowerCase();
+  const allowed = (process.env.GITHUB_ALLOWED_OWNERS ?? "")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase());
+  return owner !== "" && allowed.includes(owner);
 }
 
 /**

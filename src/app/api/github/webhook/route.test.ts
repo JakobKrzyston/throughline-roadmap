@@ -126,7 +126,7 @@ describe("POST /api/github/webhook", () => {
     expect(response.status).toBe(200);
     const [item] = await db.select().from(workItems);
     expect(item).toMatchObject({
-      externalId: "acme/analytics#41",
+      externalId: "4242#41",
       state: "merged",
     });
     expect(await db.select().from(links)).toHaveLength(1);

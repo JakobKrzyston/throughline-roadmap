@@ -58,7 +58,7 @@ beforeEach(async () => {
 function pr(overrides: Partial<SourceWorkItem> = {}): SourceWorkItem {
   return {
     source: "github",
-    externalId: "acme/analytics#41",
+    externalId: "4242#41",
     kind: "pull_request",
     title: "Add CSV export",
     body: "Implements TL-1",
@@ -233,13 +233,13 @@ describe("syncWorkItem", () => {
     await syncWorkItem(
       db,
       projectId,
-      merged({ externalId: "acme/analytics#1", body: "" }),
+      merged({ externalId: "4242#1", body: "" }),
     );
     await syncWorkItem(
       db,
       projectId,
       pr({
-        externalId: "acme/analytics#2",
+        externalId: "4242#2",
         state: "closed",
         closedAt: new Date(),
       }),
@@ -250,7 +250,7 @@ describe("syncWorkItem", () => {
   it("reconciles a linked issue each time it is closed", async () => {
     const issue = pr({
       kind: "issue",
-      externalId: "acme/analytics#7",
+      externalId: "4242#7",
       body: "Part of TL-2",
     });
     await syncWorkItem(db, projectId, { ...issue, state: "closed" });
@@ -259,9 +259,29 @@ describe("syncWorkItem", () => {
     await syncWorkItem(db, projectId, { ...issue, state: "closed" });
     expect(await reconcileJobs()).toHaveLength(2);
   });
+
+  it("does not reconcile an issue closed as not planned", async () => {
+    await syncWorkItem(
+      db,
+      projectId,
+      pr({ kind: "issue", body: "Part of TL-2", state: "not_planned" }),
+    );
+    expect(await db.select().from(links)).toHaveLength(1);
+    expect(await reconcileJobs()).toEqual([]);
+  });
+
+  it("links but does not reconcile when told not to", async () => {
+    const result = await syncWorkItem(db, projectId, merged(), {
+      reconcile: false,
+    });
+    expect(result).toMatchObject({ linked: ["TL-1"], reconcileJobs: 0 });
+    expect(await reconcileJobs()).toEqual([]);
+  });
 });
 
 describe("syncRepositoryItem", () => {
+  const repository = { externalId: "4242", fullName: "acme/analytics" };
+
   it("syncs into every project the repository is connected to", async () => {
     await db.insert(repositories).values({
       projectId,
@@ -269,13 +289,36 @@ describe("syncRepositoryItem", () => {
       externalId: "4242",
       fullName: "acme/analytics",
     });
-    const results = await syncRepositoryItem(db, "4242", pr());
+    const results = await syncRepositoryItem(db, repository, pr());
     expect(results).toHaveLength(1);
     expect(await db.select().from(workItems)).toHaveLength(1);
   });
 
+  it("records a new repository name and keeps the same work item after a rename", async () => {
+    await db.insert(repositories).values({
+      projectId,
+      source: "github",
+      externalId: "4242",
+      fullName: "acme/old-name",
+    });
+    await syncRepositoryItem(
+      db,
+      { ...repository, fullName: "acme/old-name" },
+      pr(),
+    );
+    await syncRepositoryItem(db, repository, pr({ title: "Renamed repo" }));
+
+    const [stored] = await db.select().from(repositories);
+    expect(stored.fullName).toBe("acme/analytics");
+    expect(await db.select().from(workItems)).toEqual([
+      expect.objectContaining({ title: "Renamed repo" }),
+    ]);
+  });
+
   it("does nothing for a repository that is not connected", async () => {
-    expect(await syncRepositoryItem(db, "9999", pr())).toEqual([]);
+    expect(
+      await syncRepositoryItem(db, { ...repository, externalId: "9999" }, pr()),
+    ).toEqual([]);
     expect(await db.select().from(workItems)).toEqual([]);
   });
 });

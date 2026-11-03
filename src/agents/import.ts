@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { LLMProvider, StructuredPrompt } from "@/adapters/llm/provider";
 import type { GraphOperationInput } from "@/core/operations";
 import type { Database } from "@/db/client";
-import { outcomes, proposals, requirements } from "@/db/schema";
+import { outcomes, projects, proposals, requirements } from "@/db/schema";
 
 export const IMPORT_TASK = "roadmap_import";
 
@@ -31,11 +31,9 @@ export const importOutputSchema = z.object({
           .string()
           .describe("One or two plain-language sentences. No jargon."),
         target: z
-          .string()
-          .regex(
-            /^\d{4}-(Q[1-4]|\d{2}-\d{2})$/,
-            "Use a quarter like 2027-Q1 or a date like 2027-01-11",
-          )
+          .union([z.string().regex(/^\d{4}-Q[1-4]$/), z.iso.date()], {
+            error: "Use a quarter like 2027-Q1 or a real date like 2027-01-11",
+          })
           .nullable()
           .describe(
             "When the roadmap says this should land, as a quarter ('2027-Q1') or, for a fixed deadline day, a date ('2027-01-11'). Turn a month into its quarter ('June 2027' is '2027-Q2') and a bare year into its last quarter ('2028' is '2028-Q4'). Null if the roadmap gives no timing.",
@@ -107,7 +105,8 @@ export function buildImportPrompt(roadmap: string): StructuredPrompt {
     description:
       "Record the product outcomes and technical requirements found in the roadmap.",
     system: SYSTEM_PROMPT,
-    user: `<roadmap>\n${roadmap}\n</roadmap>`,
+    // Strip roadmap tags from the pasted text so it cannot close the data block early.
+    user: `<roadmap>\n${roadmap.replace(/<\/?roadmap>/gi, "")}\n</roadmap>`,
   };
 }
 
@@ -139,28 +138,35 @@ export async function runImport(
     importOutputSchema,
     buildImportPrompt(roadmap),
   );
-  const taken = await takenKeys(db, projectId);
-  const operations = toOperations(output, {
-    outcome: highestNumber(taken, "OUT"),
-    requirement: highestNumber(taken, "TL"),
-  });
-
   const requirementCount = output.outcomes.flatMap(
     (outcome) => outcome.requirements,
   ).length;
   const summary = `Import ${count(output.outcomes.length, "outcome")} and ${count(requirementCount, "requirement")} from a pasted roadmap`;
 
-  const [proposal] = await db
-    .insert(proposals)
-    .values({
-      projectId,
-      source: "import",
-      summary,
-      rationale: output.rationale,
-      operations,
-    })
-    .returning({ id: proposals.id });
-  return { proposalId: proposal.id, summary };
+  return db.transaction(async (tx) => {
+    // Lock the project row so two imports running at once cannot pick the same keys.
+    await tx
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .for("update");
+    const taken = await takenKeys(tx, projectId);
+    const operations = toOperations(output, {
+      outcome: highestNumber(taken, "OUT"),
+      requirement: highestNumber(taken, "TL"),
+    });
+    const [proposal] = await tx
+      .insert(proposals)
+      .values({
+        projectId,
+        source: "import",
+        summary,
+        rationale: output.rationale,
+        operations,
+      })
+      .returning({ id: proposals.id });
+    return { proposalId: proposal.id, summary };
+  });
 }
 
 function toOperations(
@@ -194,7 +200,10 @@ function toOperations(
 }
 
 /** Keys in the graph plus keys that pending proposals would create, so a new import cannot clash with either. */
-async function takenKeys(db: Database, projectId: string): Promise<string[]> {
+async function takenKeys(
+  db: Pick<Database, "select">,
+  projectId: string,
+): Promise<string[]> {
   const [outcomeRows, requirementRows, pending] = await Promise.all([
     db
       .select({ key: outcomes.key })

@@ -92,7 +92,10 @@ export class AnthropicProvider implements LLMProvider {
         );
       }
 
-      messages.push({ role: "assistant", content: response.content });
+      // The API rejects an empty assistant turn; without it the retry nudge simply follows the user turn.
+      if (response.content.length) {
+        messages.push({ role: "assistant", content: response.content });
+      }
       calls = response.content.filter(
         (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
       );

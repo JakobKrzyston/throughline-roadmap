@@ -2,7 +2,7 @@
 import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { Suspense } from "react";
+import { type ReactElement, Suspense } from "react";
 
 import { isDemoLLM } from "@/adapters/llm";
 import { getDb } from "@/db/client";
@@ -10,7 +10,21 @@ import { projects } from "@/db/schema";
 
 import { ImportForm } from "./import-form";
 
-export default function ImportPage({ params }: PageProps<"/p/[slug]/import">) {
+// Up to two model calls run in this page's server action; allow them more than the platform default.
+export const maxDuration = 300;
+
+/**
+ * Import page: a static heading plus the paste form for the project in the URL.
+ *
+ * Args:
+ *   params: Route params holding the project slug.
+ *
+ * Returns:
+ *   The page.
+ */
+export default function ImportPage({
+  params,
+}: PageProps<"/p/[slug]/import">): ReactElement {
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-12">
       <div className="flex flex-col gap-2">
@@ -33,7 +47,7 @@ export default function ImportPage({ params }: PageProps<"/p/[slug]/import">) {
 
 async function ProjectImport({
   params,
-}: Pick<PageProps<"/p/[slug]/import">, "params">) {
+}: Pick<PageProps<"/p/[slug]/import">, "params">): Promise<ReactElement> {
   const { slug } = await params;
   // The database read is uncached, so render this part per request rather than prerendering it.
   await connection();

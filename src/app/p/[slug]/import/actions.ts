@@ -5,17 +5,19 @@ import { z } from "zod";
 
 import { getLLMProvider } from "@/adapters/llm";
 import { LLMOutputError } from "@/adapters/llm/provider";
+import { DEMO_LLM_FIXTURES } from "@/agents/fixtures";
 import { runImport } from "@/agents/import";
 import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
 
 export type ImportState =
   | { status: "idle" }
-  | { status: "error"; message: string }
+  // The pasted text comes back so the form can restore it; React clears form fields after an action.
+  | { status: "error"; message: string; roadmap: string }
   | { status: "success"; summary: string; reviewHref: string };
 
 const roadmapSchema = z
-  .string()
+  .string({ error: "Paste a roadmap first." })
   .trim()
   .min(1, "Paste a roadmap first.")
   .max(
@@ -39,22 +41,27 @@ export async function generateImportProposal(
   _previous: ImportState,
   formData: FormData,
 ): Promise<ImportState> {
-  const roadmap = roadmapSchema.safeParse(formData.get("roadmap"));
-  if (!roadmap.success) {
-    return { status: "error", message: roadmap.error.issues[0].message };
-  }
+  const raw = formData.get("roadmap");
+  const fail = (message: string): ImportState => ({
+    status: "error",
+    message,
+    roadmap: typeof raw === "string" ? raw : "",
+  });
+
+  const roadmap = roadmapSchema.safeParse(raw);
+  if (!roadmap.success) return fail(roadmap.error.issues[0].message);
 
   const db = getDb();
   const [project] = await db
     .select({ id: projects.id })
     .from(projects)
     .where(eq(projects.slug, slug));
-  if (!project) return { status: "error", message: "Project not found." };
+  if (!project) return fail("Project not found.");
 
   try {
     const { proposalId, summary } = await runImport(
       db,
-      getLLMProvider(),
+      getLLMProvider(DEMO_LLM_FIXTURES),
       project.id,
       roadmap.data,
     );
@@ -64,14 +71,10 @@ export async function generateImportProposal(
       reviewHref: `/p/${slug}/review#proposal-${proposalId}`,
     };
   } catch (error) {
-    if (error instanceof LLMOutputError) {
-      return { status: "error", message: error.message };
-    }
+    if (error instanceof LLMOutputError) return fail(error.message);
     console.error("Roadmap import failed:", error);
-    return {
-      status: "error",
-      message:
-        "Something went wrong while generating the proposal, so nothing was saved. Please try again.",
-    };
+    return fail(
+      "Something went wrong while generating the proposal, so nothing was saved. Please try again.",
+    );
   }
 }

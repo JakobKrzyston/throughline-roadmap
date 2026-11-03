@@ -106,6 +106,29 @@ describe("AnthropicProvider", () => {
     );
   });
 
+  it("retries an empty reply without sending an empty assistant turn", async () => {
+    const { client, create } = stubClient(
+      reply([], "end_turn"),
+      reply([toolCall("call_1", { answer: 42 })]),
+    );
+    const llm = new AnthropicProvider(client);
+
+    await expect(llm.generateStructured(schema, prompt)).resolves.toEqual({
+      answer: 42,
+    });
+    const sent = create.mock.calls[1][0].messages;
+    expect(sent[1]).toEqual({
+      role: "user",
+      content: "Call the test_task tool with your answer.",
+    });
+    expect(
+      sent.some(
+        (m: { role: string; content: unknown[] }) =>
+          m.role === "assistant" && m.content.length === 0,
+      ),
+    ).toBe(false);
+  });
+
   it("throws LLMOutputError after two invalid replies", async () => {
     const { client, create } = stubClient(
       reply([toolCall("call_1", { answer: "no" })]),

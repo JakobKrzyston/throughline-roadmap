@@ -15,6 +15,23 @@ Throughline keeps them connected:
 - **People stay in charge.** Nothing changes until a product manager approves the proposal.
 - **Plain-language status.** Sales and leadership see what is delivered, what is partially available, and why plans changed, without reading tickets.
 
+## Run it locally
+
+You need Node.js 22 and pnpm (`corepack enable pnpm`).
+
+```bash
+pnpm install
+pnpm dev
+```
+
+Open http://localhost:3000. No environment variables are needed: the app stores data in an embedded Postgres (PGlite) under `./.pglite`. To use a Postgres server such as Neon, copy `.env.example` to `.env.local` and set `DATABASE_URL`.
+
+Checks that CI runs on every pull request:
+
+```bash
+pnpm lint && pnpm format:check && pnpm typecheck && pnpm test
+```
+
 ## Learn more
 
 - [Architecture and data model](docs/ARCHITECTURE.md)

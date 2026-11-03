@@ -1,0 +1,4 @@
+pnpm-lock.yaml
+src/db/migrations
+# Written by `next dev`.
+AGENTS.md

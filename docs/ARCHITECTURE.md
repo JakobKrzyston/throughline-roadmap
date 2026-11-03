@@ -53,108 +53,116 @@ These rules are deliberate. They are also listed in `CLAUDE.md` so every coding 
 
 ## Stack
 
-| Layer | Choice | Why |
-|---|---|---|
-| App | Next.js (App Router) + TypeScript | One language front to back; easy deploy with a live demo link |
-| UI | Tailwind CSS + shadcn/ui | Accessible, clean defaults for a non-technical audience |
-| Database | Postgres via Drizzle ORM | Plain relational tables handle the graph; no graph database needed |
-| Local / test DB | PGlite (embedded Postgres) | Same SQL dialect as production with zero setup |
-| Production DB | Neon (serverless Postgres) | Free tier, works well with Vercel |
-| GitHub | GitHub App + Octokit | One integration handles auth, repo access and webhooks |
-| LLM | Anthropic SDK behind `LLMProvider` | Tool use with JSON schemas for structured output |
-| Tests | Vitest (+ Playwright for a smoke test) | Fast unit tests for rollup and agent logic |
-| CI | GitHub Actions | Lint, typecheck, test on every PR |
-| Hosting | Vercel | Preview deploys per PR; public demo URL |
+| Layer           | Choice                                 | Why                                                                |
+| --------------- | -------------------------------------- | ------------------------------------------------------------------ |
+| App             | Next.js (App Router) + TypeScript      | One language front to back; easy deploy with a live demo link      |
+| UI              | Tailwind CSS + shadcn/ui               | Accessible, clean defaults for a non-technical audience            |
+| Database        | Postgres via Drizzle ORM               | Plain relational tables handle the graph; no graph database needed |
+| Local / test DB | PGlite (embedded Postgres)             | Same SQL dialect as production with zero setup                     |
+| Production DB   | Neon (serverless Postgres)             | Free tier, works well with Vercel                                  |
+| GitHub          | GitHub App + Octokit                   | One integration handles auth, repo access and webhooks             |
+| LLM             | Anthropic SDK behind `LLMProvider`     | Tool use with JSON schemas for structured output                   |
+| Tests           | Vitest (+ Playwright for a smoke test) | Fast unit tests for rollup and agent logic                         |
+| CI              | GitHub Actions                         | Lint, typecheck, test on every PR                                  |
+| Hosting         | Vercel                                 | Preview deploys per PR; public demo URL                            |
 
 ## Data model
 
 All IDs are UUIDs except where noted. Timestamps are omitted for brevity; every table has `created_at` and `updated_at`.
 
 ### `projects`
+
 One roadmap workspace. Fields: `id`, `name`, `slug`, `is_demo`.
 
 ### `outcomes`
+
 Product-facing goals.
 
-| Field | Notes |
-|---|---|
-| `id` | |
-| `project_id` | |
-| `key` | Human-readable key, e.g. `OUT-3` |
-| `title` | Plain language, customer-facing |
-| `description` | Plain language |
-| `target` | Optional quarter or date, e.g. `2027-Q1` |
-| `priority` | Integer, lower is higher priority |
-| `archived` | Soft delete |
+| Field         | Notes                                    |
+| ------------- | ---------------------------------------- |
+| `id`          |                                          |
+| `project_id`  |                                          |
+| `key`         | Human-readable key, e.g. `OUT-3`         |
+| `title`       | Plain language, customer-facing          |
+| `description` | Plain language                           |
+| `target`      | Optional quarter or date, e.g. `2027-Q1` |
+| `priority`    | Integer, lower is higher priority        |
+| `archived`    | Soft delete                              |
 
 ### `requirements`
+
 Technical work, arranged as a tree under each outcome.
 
-| Field | Notes |
-|---|---|
-| `id` | |
-| `project_id` | |
-| `key` | e.g. `TL-12`. This is what PRs reference. |
-| `outcome_id` | Set on root requirements only |
-| `parent_id` | Set on child requirements only. Exactly one of `outcome_id` / `parent_id` is set. |
-| `title`, `description` | Technical language is fine here |
-| `status` | Leaf only: `planned`, `in_progress`, `done`, `dropped`. Null on parents. |
-| `user_visible` | True if finishing this gives customers something they can see or use |
-| `product_note` | Plain-language explanation shown in the product view |
-| `split_reason` | Why this requirement was split, if it was |
+| Field                  | Notes                                                                             |
+| ---------------------- | --------------------------------------------------------------------------------- |
+| `id`                   |                                                                                   |
+| `project_id`           |                                                                                   |
+| `key`                  | e.g. `TL-12`. This is what PRs reference.                                         |
+| `outcome_id`           | Set on root requirements only                                                     |
+| `parent_id`            | Set on child requirements only. Exactly one of `outcome_id` / `parent_id` is set. |
+| `title`, `description` | Technical language is fine here                                                   |
+| `status`               | Leaf only: `planned`, `in_progress`, `done`, `dropped`. Null on parents.          |
+| `user_visible`         | True if finishing this gives customers something they can see or use              |
+| `product_note`         | Plain-language explanation shown in the product view                              |
+| `split_reason`         | Why this requirement was split, if it was                                         |
 
 ### `work_items`
+
 Mirrors of GitHub issues and pull requests.
 
-| Field | Notes |
-|---|---|
-| `id` | |
-| `project_id` | |
-| `source` | `github` (later `linear`, `jira`) |
-| `external_id` | e.g. `JakobKrzyston/throughline-roadmap#41` |
-| `kind` | `issue` or `pull_request` |
-| `title`, `url`, `state` | `state`: `open`, `closed`, `merged` |
-| `body_excerpt` | First part of the description, for agent context |
-| `merged_at`, `closed_at` | |
+| Field                    | Notes                                            |
+| ------------------------ | ------------------------------------------------ |
+| `id`                     |                                                  |
+| `project_id`             |                                                  |
+| `source`                 | `github` (later `linear`, `jira`)                |
+| `external_id`            | e.g. `JakobKrzyston/throughline-roadmap#41`      |
+| `kind`                   | `issue` or `pull_request`                        |
+| `title`, `url`, `state`  | `state`: `open`, `closed`, `merged`              |
+| `body_excerpt`           | First part of the description, for agent context |
+| `merged_at`, `closed_at` |                                                  |
 
 ### `links`
+
 Many-to-many between requirements and work items. Fields: `requirement_id`, `work_item_id`, `relation` (`implements` or `part_of`), `confidence` (`explicit` from a PR reference, or `suggested` from the agent and approved).
 
 ### `proposals`
+
 The review queue.
 
-| Field | Notes |
-|---|---|
-| `id` | |
-| `project_id` | |
-| `source` | `import`, `reconcile`, `link_suggest` |
-| `status` | `pending`, `approved`, `rejected`, `superseded` |
-| `summary` | One plain-language line for the queue |
-| `rationale` | Why the agent suggests this |
-| `operations` | JSON array of typed graph operations (see below) |
-| `trigger_work_item_id` | The PR or issue that caused it, if any |
-| `decided_by`, `decided_at` | |
+| Field                      | Notes                                            |
+| -------------------------- | ------------------------------------------------ |
+| `id`                       |                                                  |
+| `project_id`               |                                                  |
+| `source`                   | `import`, `reconcile`, `link_suggest`            |
+| `status`                   | `pending`, `approved`, `rejected`, `superseded`  |
+| `summary`                  | One plain-language line for the queue            |
+| `rationale`                | Why the agent suggests this                      |
+| `operations`               | JSON array of typed graph operations (see below) |
+| `trigger_work_item_id`     | The PR or issue that caused it, if any           |
+| `decided_by`, `decided_at` |                                                  |
 
 ### `events`
+
 Append-only audit log. Fields: `id`, `project_id`, `type`, `entity_type`, `entity_id`, `actor` (user id or `agent`), `proposal_id`, `payload` (JSON), `product_note`.
 
 ### `jobs`
+
 A minimal job queue for agent runs. Fields: `id`, `type`, `payload`, `status` (`queued`, `running`, `done`, `failed`), `attempts`, `last_error`, `run_after`.
 
 ## Graph operations
 
 Proposals carry a list of typed operations. Applying a proposal runs them in one transaction and writes one event per operation. Operations are validated with Zod before they reach the database.
 
-| Operation | Effect |
-|---|---|
-| `create_outcome` | Add a product outcome |
-| `update_outcome` | Change title, description, target or priority |
-| `create_requirement` | Add a root requirement under an outcome |
-| `split_requirement` | Turn a leaf into a parent with N new children; records `split_reason` and a product note |
-| `update_requirement` | Change title, description, `user_visible` or product note |
-| `set_status` | Set a leaf's status |
-| `link_work_item` | Link a work item to a requirement |
-| `unlink_work_item` | Remove a link |
+| Operation            | Effect                                                                                   |
+| -------------------- | ---------------------------------------------------------------------------------------- |
+| `create_outcome`     | Add a product outcome                                                                    |
+| `update_outcome`     | Change title, description, target or priority                                            |
+| `create_requirement` | Add a root requirement under an outcome                                                  |
+| `split_requirement`  | Turn a leaf into a parent with N new children; records `split_reason` and a product note |
+| `update_requirement` | Change title, description, `user_visible` or product note                                |
+| `set_status`         | Set a leaf's status                                                                      |
+| `link_work_item`     | Link a work item to a requirement                                                        |
+| `unlink_work_item`   | Remove a link                                                                            |
 
 Because a proposal is just data, the review UI can show it as a readable diff and the PM can edit it before approving.
 
@@ -182,15 +190,19 @@ Computed on read by pure functions in `src/core/rollup.ts`.
 All agents call `LLMProvider.generateStructured(schema, prompt)`, which uses Claude's tool use to return JSON that matches a Zod schema. Tests use a `FakeLLMProvider` that returns fixtures, so the test suite never needs an API key.
 
 ### Roadmap import agent
+
 Input: pasted text or Markdown (a roadmap, meeting notes, a product brief). Output: one proposal with `create_outcome` and `create_requirement` operations. The prompt asks for customer-facing outcome titles and engineering-facing requirement titles, and marks which requirements are user-visible.
 
 ### Reconciliation agent
+
 Triggered when a linked PR merges or a linked issue closes. It gathers:
+
 - the requirement, its parent chain and its outcome
 - the PR title, body, list of changed files and a size-limited diff summary
 - sibling requirements and their statuses
 
 It classifies the result as one of:
+
 - `fully_done`: propose `set_status(done)`
 - `partially_done`: propose a split into the part that shipped (done) and the part that remains (planned)
 - `done_differently`: propose `update_requirement` describing what was actually built
@@ -199,6 +211,7 @@ It classifies the result as one of:
 Every proposal it makes includes a product note in plain language, for example: "Export took longer because it needed new background-job infrastructure, which also unblocks scheduled reports."
 
 ### Link suggestion agent
+
 Described above. Runs on merged PRs with no explicit reference.
 
 ## GitHub integration
@@ -211,18 +224,24 @@ Described above. Runs on merged PRs with no explicit reference.
 ## Views
 
 ### Product view (`/p/[slug]`)
+
 For sales, leadership and anyone non-technical.
+
 - One card per outcome: plain title, a progress bar, the product status in words ("Partially available: customers can export to CSV today"), and the target date.
 - A "What changed this week" feed built from events with product notes.
 - No ticket numbers by default. A "Show technical detail" toggle reveals them.
 
 ### Technical view (`/p/[slug]/tech`)
+
 For engineering.
+
 - An expandable tree: outcome → requirements → children → linked PRs and issues with state badges.
 - Split history: which requirements were split, when and why.
 
 ### Review queue (`/p/[slug]/review`)
+
 For the PM.
+
 - Pending proposals, newest first, each with a summary, rationale and a readable diff of its operations.
 - Approve, edit then approve, or reject.
 
@@ -233,6 +252,7 @@ A seeded project called "Acme Analytics" lets anyone explore Throughline without
 ## Moving to production
 
 The public version is built so a private fork can harden it without a rewrite:
+
 - Swap the job table for a real queue (e.g. Inngest, SQS) behind the same `enqueue` function.
 - Add organisations, roles and SSO around the existing `projects` table.
 - Add `SourceAdapter` implementations for Linear or Jira.

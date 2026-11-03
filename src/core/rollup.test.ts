@@ -1,3 +1,4 @@
+/** Tests for the progress and product-status rollups in rollup.ts. */
 import { describe, expect, it } from "vitest";
 
 import type { LeafStatus } from "./operations";

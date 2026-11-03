@@ -1,3 +1,4 @@
+/** Tests for applyProposal and rejectProposal against an in-memory database. */
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -28,7 +29,7 @@ beforeEach(async () => {
     .returning();
 });
 
-async function propose(operations: GraphOperationInput[]) {
+async function propose(operations: GraphOperationInput[]): Promise<string> {
   const [proposal] = await db
     .insert(proposals)
     .values({ projectId, source: "import", summary: "Test", operations })
@@ -36,11 +37,13 @@ async function propose(operations: GraphOperationInput[]) {
   return proposal.id;
 }
 
-async function approve(operations: GraphOperationInput[]) {
+async function approve(operations: GraphOperationInput[]): Promise<void> {
   await applyProposal(db, await propose(operations), "pm");
 }
 
-async function requirementByKey(key: string) {
+async function requirementByKey(
+  key: string,
+): Promise<typeof requirements.$inferSelect> {
   const [requirement] = await db
     .select()
     .from(requirements)
@@ -48,7 +51,7 @@ async function requirementByKey(key: string) {
   return requirement;
 }
 
-async function snapshot() {
+async function snapshot(): Promise<Record<string, unknown[]>> {
   return {
     outcomes: await db.select().from(outcomes),
     requirements: await db.select().from(requirements),
@@ -118,6 +121,48 @@ describe("applyProposal", () => {
 
     await expect(applyProposal(db, proposalId, "pm")).rejects.toThrow();
     expect(await db.select().from(outcomes)).toEqual([]);
+  });
+
+  it.each<[string, GraphOperationInput, string]>([
+    [
+      "an outcome key",
+      { type: "create_outcome", key: "OUT-1", title: "Again" },
+      "Outcome key OUT-1 is in use",
+    ],
+    [
+      "a requirement key",
+      {
+        type: "create_requirement",
+        key: "TL-1",
+        outcome_key: "OUT-1",
+        title: "Again",
+      },
+      "Requirement key TL-1 is in use",
+    ],
+    [
+      "a split child key",
+      {
+        type: "split_requirement",
+        requirement_key: "TL-1",
+        split_reason: "Reason",
+        product_note: "Note",
+        children: [
+          { key: "TL-2", title: "New" },
+          { key: "TL-1", title: "Clash" },
+        ],
+      },
+      "Requirement key TL-1 is in use",
+    ],
+  ])("reports reusing %s as a ProposalError", async (_, op, message) => {
+    await approve(exportOutcome);
+    const before = await snapshot();
+    const proposalId = await propose([op]);
+
+    const result = applyProposal(db, proposalId, "pm");
+
+    await expect(result).rejects.toThrow(ProposalError);
+    await expect(result).rejects.toThrow(message);
+    expect(await snapshot()).toEqual(before);
   });
 
   it("will not apply a proposal twice", async () => {
@@ -196,8 +241,10 @@ describe("split_requirement", () => {
 });
 
 describe("links", () => {
-  it("links and unlinks a work item", async () => {
-    const [workItem] = await db
+  let workItemId: string;
+
+  beforeEach(async () => {
+    [{ id: workItemId }] = await db
       .insert(workItems)
       .values({
         projectId,
@@ -209,28 +256,39 @@ describe("links", () => {
         state: "merged",
       })
       .returning();
+    await approve(exportOutcome);
+  });
 
-    await approve([
-      ...exportOutcome,
-      {
-        type: "link_work_item",
-        requirement_key: "TL-1",
-        work_item_id: workItem.id,
-        confidence: "explicit",
-      },
-    ]);
+  const link: GraphOperationInput = {
+    type: "link_work_item",
+    requirement_key: "TL-1",
+    work_item_id: "",
+    confidence: "explicit",
+  };
+
+  it("links and unlinks a work item", async () => {
+    await approve([{ ...link, work_item_id: workItemId }]);
     expect(await db.select().from(links)).toMatchObject([
-      { workItemId: workItem.id, relation: "implements" },
+      { workItemId, relation: "implements" },
     ]);
 
     await approve([
       {
         type: "unlink_work_item",
         requirement_key: "TL-1",
-        work_item_id: workItem.id,
+        work_item_id: workItemId,
       },
     ]);
     expect(await db.select().from(links)).toEqual([]);
+  });
+
+  it("reports linking the same work item twice as a ProposalError", async () => {
+    await approve([{ ...link, work_item_id: workItemId }]);
+    const proposalId = await propose([{ ...link, work_item_id: workItemId }]);
+
+    await expect(applyProposal(db, proposalId, "pm")).rejects.toThrow(
+      "TL-1 is already linked",
+    );
   });
 });
 

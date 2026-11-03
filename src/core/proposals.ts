@@ -14,6 +14,9 @@ import {
 import { type GraphOperation, operationListSchema } from "./operations";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+type Proposal = typeof proposals.$inferSelect;
+type Outcome = typeof outcomes.$inferSelect;
+type Requirement = typeof requirements.$inferSelect;
 
 /** The event fields an operation produces. Project, actor and proposal are added by the caller. */
 type OperationEvent = Pick<
@@ -91,7 +94,10 @@ export async function rejectProposal(
   });
 }
 
-async function lockPendingProposal(tx: Transaction, proposalId: string) {
+async function lockPendingProposal(
+  tx: Transaction,
+  proposalId: string,
+): Promise<Proposal> {
   // Row lock so two people approving at once cannot both apply it.
   const [proposal] = await tx
     .select()
@@ -124,7 +130,9 @@ async function applyOperation(
           target: op.target,
           priority: op.priority,
         })
+        .onConflictDoNothing()
         .returning();
+      if (!outcome) throw new ProposalError(`Outcome key ${op.key} is in use`);
       return event(op, "outcome", outcome.id, null);
     }
 
@@ -156,7 +164,11 @@ async function applyOperation(
           userVisible: op.user_visible,
           productNote: op.product_note,
         })
+        .onConflictDoNothing()
         .returning();
+      if (!requirement) {
+        throw new ProposalError(`Requirement key ${op.key} is in use`);
+      }
       return event(op, "requirement", requirement.id, op.product_note);
     }
 
@@ -167,17 +179,30 @@ async function applyOperation(
         .update(requirements)
         .set({ status: null, splitReason: op.split_reason })
         .where(eq(requirements.id, parent.id));
-      await tx.insert(requirements).values(
-        op.children.map((child) => ({
-          projectId,
-          key: child.key,
-          parentId: parent.id,
-          title: child.title,
-          description: child.description,
-          status: child.status,
-          userVisible: child.user_visible,
-        })),
-      );
+      const children = await tx
+        .insert(requirements)
+        .values(
+          op.children.map((child) => ({
+            projectId,
+            key: child.key,
+            parentId: parent.id,
+            title: child.title,
+            description: child.description,
+            status: child.status,
+            userVisible: child.user_visible,
+          })),
+        )
+        .onConflictDoNothing()
+        .returning({ key: requirements.key });
+      if (children.length < op.children.length) {
+        const created = new Set(children.map((child) => child.key));
+        const taken = op.children
+          .map((child) => child.key)
+          .filter((key) => !created.has(key));
+        throw new ProposalError(
+          `Requirement key ${taken.join(", ")} is in use`,
+        );
+      }
       return event(op, "requirement", parent.id, op.product_note);
     }
 
@@ -215,12 +240,21 @@ async function applyOperation(
         op.requirement_key,
       );
       await findWorkItem(tx, projectId, op.work_item_id);
-      await tx.insert(links).values({
-        requirementId: requirement.id,
-        workItemId: op.work_item_id,
-        relation: op.relation,
-        confidence: op.confidence,
-      });
+      const linked = await tx
+        .insert(links)
+        .values({
+          requirementId: requirement.id,
+          workItemId: op.work_item_id,
+          relation: op.relation,
+          confidence: op.confidence,
+        })
+        .onConflictDoNothing()
+        .returning();
+      if (linked.length === 0) {
+        throw new ProposalError(
+          `${op.requirement_key} is already linked to work item ${op.work_item_id}`,
+        );
+      }
       // Links have no id of their own; the event belongs to the requirement.
       return event(op, "requirement", requirement.id, null);
     }
@@ -265,7 +299,11 @@ function event(
   };
 }
 
-async function findOutcome(tx: Transaction, projectId: string, key: string) {
+async function findOutcome(
+  tx: Transaction,
+  projectId: string,
+  key: string,
+): Promise<Outcome> {
   const [outcome] = await tx
     .select()
     .from(outcomes)
@@ -278,18 +316,24 @@ async function findRequirement(
   tx: Transaction,
   projectId: string,
   key: string,
-) {
+): Promise<Requirement> {
+  // Row lock so a concurrent proposal cannot split or re-status it between this check and our write.
   const [requirement] = await tx
     .select()
     .from(requirements)
     .where(
       and(eq(requirements.projectId, projectId), eq(requirements.key, key)),
-    );
+    )
+    .for("update");
   if (!requirement) throw new ProposalError(`Requirement ${key} not found`);
   return requirement;
 }
 
-async function findLeaf(tx: Transaction, projectId: string, key: string) {
+async function findLeaf(
+  tx: Transaction,
+  projectId: string,
+  key: string,
+): Promise<Requirement> {
   const requirement = await findRequirement(tx, projectId, key);
   // Only leaves carry a status, so a null status means the requirement has children.
   if (requirement.status === null) {
@@ -300,7 +344,11 @@ async function findLeaf(tx: Transaction, projectId: string, key: string) {
   return requirement;
 }
 
-async function findWorkItem(tx: Transaction, projectId: string, id: string) {
+async function findWorkItem(
+  tx: Transaction,
+  projectId: string,
+  id: string,
+): Promise<{ id: string }> {
   const [workItem] = await tx
     .select({ id: workItems.id })
     .from(workItems)

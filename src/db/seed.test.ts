@@ -1,3 +1,4 @@
+/** Tests that the Acme Analytics demo seed builds a valid, varied graph. */
 import { eq } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -8,11 +9,12 @@ import {
   events,
   links,
   outcomes,
+  projects,
   proposals,
   requirements,
   workItems,
 } from "./schema";
-import { seedDemoProject } from "./seed";
+import { DEMO_SLUG, seedDemoProject } from "./seed";
 import { createTestDb } from "./test-db";
 
 type Requirement = typeof requirements.$inferSelect;
@@ -83,6 +85,16 @@ describe("seedDemoProject", () => {
     for (const proposal of pending) {
       await applyProposal(db, proposal.id, "pm");
     }
+  });
+
+  it("never replaces a project that is not a demo", async () => {
+    const fresh = await createTestDb();
+    await fresh.insert(projects).values({ name: "Real", slug: DEMO_SLUG });
+
+    await expect(seedDemoProject(fresh)).rejects.toThrow();
+    expect(await fresh.select().from(projects)).toMatchObject([
+      { name: "Real", isDemo: false },
+    ]);
   });
 
   it("replaces the demo project when run again", async () => {

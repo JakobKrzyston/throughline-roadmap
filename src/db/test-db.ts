@@ -9,7 +9,9 @@ import { createPgliteDb } from "./client";
  * Returns:
  *   A Drizzle client for the new database.
  */
-export async function createTestDb() {
+export async function createTestDb(): Promise<
+  ReturnType<typeof createPgliteDb>
+> {
   const db = createPgliteDb();
   await migrate(db, { migrationsFolder: "src/db/migrations" });
   return db;

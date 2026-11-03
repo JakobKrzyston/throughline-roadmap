@@ -1,5 +1,5 @@
 /** The "Acme Analytics" demo project. Builds the graph through approved proposals so it has a real event history. Exports seedDemoProject, DEMO_SLUG. */
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import type { GraphOperationInput } from "@/core/operations";
 import { applyProposal } from "@/core/proposals";
@@ -181,7 +181,10 @@ const PROGRESS: GraphOperationInput[] = [
  *   The id of the new demo project.
  */
 export async function seedDemoProject(db: Database): Promise<string> {
-  await db.delete(projects).where(eq(projects.slug, DEMO_SLUG));
+  // Only ever replace a demo project; a real project with this slug makes the insert below fail instead.
+  await db
+    .delete(projects)
+    .where(and(eq(projects.slug, DEMO_SLUG), eq(projects.isDemo, true)));
   const [project] = await db
     .insert(projects)
     .values({ name: "Acme Analytics", slug: DEMO_SLUG, isDemo: true })
@@ -203,7 +206,7 @@ export async function seedDemoProject(db: Database): Promise<string> {
       })),
     )
     .returning({ id: workItems.id, externalId: workItems.externalId });
-  const workItemId = (number: number) =>
+  const workItemId = (number: number): string =>
     inserted.find((item) => item.externalId === `${REPO}#${number}`)!.id;
 
   async function propose(
@@ -211,7 +214,7 @@ export async function seedDemoProject(db: Database): Promise<string> {
     summary: string,
     operations: GraphOperationInput[],
     extra: { trigger?: number; rationale?: string } = {},
-  ) {
+  ): Promise<string> {
     const [proposal] = await db
       .insert(proposals)
       .values({
@@ -226,7 +229,7 @@ export async function seedDemoProject(db: Database): Promise<string> {
     return proposal.id;
   }
 
-  const approve = async (...args: Parameters<typeof propose>) =>
+  const approve = async (...args: Parameters<typeof propose>): Promise<void> =>
     applyProposal(db, await propose(...args), SEED_ACTOR);
 
   await approve("import", "Import the Acme product roadmap", ROADMAP);

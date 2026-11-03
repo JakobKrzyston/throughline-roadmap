@@ -1,14 +1,25 @@
 /** CLI entry for `pnpm db:seed`: (re)creates the demo project in the app's database. */
 import { loadEnvConfig } from "@next/env";
 
-import { getDb } from "./client";
+import { createPgliteDb, createPostgresDb, LOCAL_DATA_DIR } from "./client";
 import { DEMO_SLUG, seedDemoProject } from "./seed";
 
-// getDb reads DATABASE_URL when first called, so loading .env files here is early enough.
-loadEnvConfig(process.cwd());
+async function main(): Promise<void> {
+  loadEnvConfig(process.cwd());
+  const url = process.env.DATABASE_URL;
+  // Built here rather than with getDb so the script can close its own client.
+  const db = url ? createPostgresDb(url) : createPgliteDb(LOCAL_DATA_DIR);
+  try {
+    await seedDemoProject(db);
+    console.log(`Seeded demo project "${DEMO_SLUG}".`);
+  } finally {
+    // Closing PGlite cleanly flushes ./.pglite; killing the process can leave it needing recovery.
+    const client = db.$client;
+    await ("end" in client ? client.end() : client.close());
+  }
+}
 
-seedDemoProject(getDb()).then(() => {
-  console.log(`Seeded demo project "${DEMO_SLUG}".`);
-  // The database clients keep connections open; exit once the seed is written.
-  process.exit(0);
+main().catch((error: unknown) => {
+  console.error("Seeding failed:", error);
+  process.exitCode = 1;
 });

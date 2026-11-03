@@ -7,7 +7,11 @@ import postgres from "postgres";
 
 import * as schema from "./schema";
 
-/** The query interface shared by the PGlite and Postgres clients. */
+/**
+ * The query interface shared by the PGlite and Postgres clients.
+ *
+ * Prefer the query builder: raw `execute()` results differ by driver (PGlite returns `{ rows }`, postgres-js an array).
+ */
 export type Database = PgDatabase<PgQueryResultHKT, typeof schema>;
 
 /** Directory where local PGlite keeps its data between runs. */

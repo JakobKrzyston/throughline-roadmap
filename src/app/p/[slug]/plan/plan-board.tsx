@@ -58,10 +58,8 @@ export function PlanBoard({
   const [state, setState] = useState<PlanState>({ status: "idle" });
   const [pending, startTransition] = useTransition();
 
-  const move = (key: string, toIndex: number): void =>
-    startTransition(async () =>
-      setState(await moveOutcome(slug, key, toIndex)),
-    );
+  const move = (key: string, toKey: string): void =>
+    startTransition(async () => setState(await moveOutcome(slug, key, toKey)));
 
   return (
     <div className="flex flex-col gap-3">
@@ -79,8 +77,10 @@ export function PlanBoard({
               if (dragging) event.preventDefault();
             }}
             onDrop={(event) => {
+              // Anything else, such as text dropped into a target box, keeps its default.
+              if (!dragging) return;
               event.preventDefault();
-              if (dragging && dragging !== outcome.key) move(dragging, i);
+              if (dragging !== outcome.key) move(dragging, outcome.key);
               setDragging(null);
             }}
             className={`flex flex-col gap-3 rounded-lg border p-4 ${dragging === outcome.key ? "border-primary opacity-60" : "border-border"}`}
@@ -116,7 +116,7 @@ export function PlanBoard({
                       size="sm"
                       aria-label={`Move “${outcome.title}” up`}
                       disabled={pending || i === 0}
-                      onClick={() => move(outcome.key, i - 1)}
+                      onClick={() => move(outcome.key, outcomes[i - 1].key)}
                     >
                       Up
                     </Button>
@@ -125,7 +125,7 @@ export function PlanBoard({
                       size="sm"
                       aria-label={`Move “${outcome.title}” down`}
                       disabled={pending || i === outcomes.length - 1}
-                      onClick={() => move(outcome.key, i + 1)}
+                      onClick={() => move(outcome.key, outcomes[i + 1].key)}
                     >
                       Down
                     </Button>

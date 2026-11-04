@@ -2,7 +2,7 @@
 import { and, eq } from "drizzle-orm";
 
 import type { GraphOperationInput } from "@/core/operations";
-import { outcomeTargetOperations, savePlanningChange } from "@/core/planning";
+import { outcomeTargetOperations } from "@/core/planning";
 import { applyProposal } from "@/core/proposals";
 
 import type { Database } from "./client";
@@ -213,7 +213,7 @@ export async function seedDemoProject(db: Database): Promise<string> {
     inserted.find((item) => item.externalId === `${REPO_ID}#${number}`)!.id;
 
   async function propose(
-    source: "import" | "reconcile" | "link_suggest" | "reschedule",
+    source: "import" | "reconcile" | "link_suggest" | "manual" | "reschedule",
     summary: string,
     operations: GraphOperationInput[],
     extra: { trigger?: number; rationale?: string; requirement?: string } = {},
@@ -266,39 +266,31 @@ export async function seedDemoProject(db: Database): Promise<string> {
   );
 
   // A PM's own planning: dates for some requirements, and one outcome moved back a quarter.
-  await savePlanningChange(
-    db,
-    project.id,
-    "Plan dates for the scheduled reports work",
-    [
-      {
-        type: "update_requirement",
-        requirement_key: "TL-7",
-        target: "2027-Q1",
-      },
-      {
-        type: "update_requirement",
-        requirement_key: "TL-10",
-        target: "2027-Q2",
-      },
-      {
-        type: "update_requirement",
-        requirement_key: "TL-11",
-        target: "2027-Q1",
-      },
-    ],
-    SEED_ACTOR,
-  );
-  await savePlanningChange(
-    db,
-    project.id,
+  await approve("manual", "Plan dates for the scheduled reports work", [
+    {
+      type: "update_requirement",
+      requirement_key: "TL-7",
+      target: "2027-Q1",
+    },
+    {
+      type: "update_requirement",
+      requirement_key: "TL-10",
+      target: "2027-Q2",
+    },
+    {
+      type: "update_requirement",
+      requirement_key: "TL-11",
+      target: "2027-Q1",
+    },
+  ]);
+  await approve(
+    "manual",
     "Move dashboard share links to Q2 2027",
     outcomeTargetOperations(
       { key: "OUT-5", target: "2027-Q1" },
       "2027-Q2",
       "Single sign-on and exports come first.",
     ),
-    SEED_ACTOR,
   );
 
   // Left pending so the review queue has something in it.

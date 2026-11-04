@@ -400,7 +400,7 @@ describe("targets", () => {
         type: "update_outcome",
         outcome_key: "OUT-1",
         target: "2027-Q2",
-        product_note: "Moved from Q1 2027 to Q2 2027.",
+        product_note: "We ship SSO first.",
       },
     ]);
 
@@ -416,8 +416,36 @@ describe("targets", () => {
       .where(eq(events.type, "update_outcome"));
     expect(moved).toMatchObject({
       entityId: outcome.id,
-      productNote: "Moved from Q1 2027 to Q2 2027.",
+      productNote: "Moved from Q1 2027 to Q2 2027. We ship SSO first.",
     });
+  });
+
+  it("describes the move from the target the outcome has when it is applied", async () => {
+    await approve([
+      {
+        type: "create_outcome",
+        key: "OUT-1",
+        title: "Export",
+        target: "2027-Q1",
+      },
+    ]);
+    const move = (target: string): GraphOperationInput[] => [
+      { type: "update_outcome", outcome_key: "OUT-1", target },
+    ];
+    const stale = await propose(move("2027-Q2"));
+    // The outcome moves another way before the proposal is decided, and the reviewer edits it.
+    await approve(move("2027-Q3"));
+    await applyProposal(db, stale, "pm", move("2027-Q4"));
+
+    const notes = await db
+      .select({ note: events.productNote })
+      .from(events)
+      .where(eq(events.type, "update_outcome"))
+      .orderBy(events.seq);
+    expect(notes.map((row) => row.note)).toEqual([
+      "Moved from Q1 2027 to Q3 2027.",
+      "Moved from Q3 2027 to Q4 2027.",
+    ]);
   });
 
   it("refuses a target that is not a quarter or a date", async () => {

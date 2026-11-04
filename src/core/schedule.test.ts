@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 
 import type { LeafStatus } from "./operations";
 import {
+  describeTargetMove,
   formatTarget,
   hasOpenWork,
   isLater,
   lateRequirements,
   type ScheduledRequirement,
+  scheduleWarnings,
   targetEnd,
   targetSchema,
 } from "./schedule";
@@ -135,9 +137,55 @@ describe("lateRequirements", () => {
     ]);
   });
 
+  it("cannot compare a target saved before targets were validated", () => {
+    expect(
+      lateRequirements("H1 2027", [leaf("TL-1", "planned", "2027-Q3")]),
+    ).toEqual([]);
+    expect(
+      lateRequirements("2027-Q1", [leaf("TL-1", "planned", "H2 2027")]),
+    ).toEqual([]);
+    expect(
+      scheduleWarnings("H1 2027", [leaf("TL-1", "planned")], "2030-01-01")
+        .passed,
+    ).toBe(false);
+  });
+
   it("finds nothing when the outcome has no target", () => {
     expect(
       lateRequirements(null, [leaf("TL-1", "planned", "2027-Q3")]),
     ).toEqual([]);
+  });
+});
+
+describe("describeTargetMove", () => {
+  it.each([
+    ["2027-Q1", "2027-Q2", "Moved from Q1 2027 to Q2 2027."],
+    [null, "2027-03-31", "Now planned for 31 March 2027."],
+    ["2027-Q1", null, "The target date was removed."],
+    ["2027-Q1", "2027-Q1", null],
+  ])("describes %j to %j", (before, after, note) => {
+    expect(describeTargetMove(before, after)).toBe(note);
+  });
+});
+
+describe("scheduleWarnings", () => {
+  const roots = [leaf("TL-1", "planned", "2027-Q2"), leaf("TL-2", "done")];
+
+  it("reports late work and a passed target", () => {
+    expect(scheduleWarnings("2027-Q1", roots, "2027-04-01")).toMatchObject({
+      late: [{ key: "TL-1" }],
+      passed: true,
+    });
+  });
+
+  it("does not count a target as passed on its last day, or with nothing open", () => {
+    expect(scheduleWarnings("2027-Q1", roots, "2027-03-31").passed).toBe(false);
+    expect(
+      scheduleWarnings("2027-Q1", [leaf("TL-2", "done")], "2027-06-01"),
+    ).toEqual({ late: [], passed: false });
+    expect(scheduleWarnings(null, roots, "2027-06-01")).toEqual({
+      late: [],
+      passed: false,
+    });
   });
 });

@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadRoadmap, loadRecentChanges } from "@/core/roadmap";
-import { outcomes, proposals, requirements } from "@/db/schema";
+import { jobs, outcomes, proposals, requirements } from "@/db/schema";
 import { DEMO_SLUG, seedDemoProject } from "@/db/seed";
 import { createTestDb } from "@/db/test-db";
 
@@ -14,8 +14,10 @@ vi.mock(import("@/db/client"), async (importOriginal) => ({
   ...(await importOriginal()),
   getDb: () => state.db as TestDb,
 }));
-// Needs a Next.js request scope; what it refreshes is not under test here.
+// These need a Next.js request scope; what they refresh or schedule is checked through the mocks.
 vi.mock("next/cache", () => ({ refresh: vi.fn() }));
+const after = vi.hoisted(() => vi.fn());
+vi.mock("next/server", () => ({ after }));
 
 const { moveOutcome, saveTarget } = await import("./actions");
 
@@ -23,6 +25,7 @@ let db: TestDb;
 let projectId: string;
 
 beforeEach(async () => {
+  after.mockClear();
   db = await createTestDb();
   state.db = db;
   projectId = await seedDemoProject(db);
@@ -37,7 +40,7 @@ function form(fields: Record<string, string>): FormData {
 describe("moveOutcome", () => {
   it("reorders the outcomes and puts the move in the change feed", async () => {
     // Demo order: OUT-1, OUT-3, OUT-2, OUT-4, OUT-5.
-    expect(await moveOutcome(DEMO_SLUG, "OUT-4", 0)).toEqual({
+    expect(await moveOutcome(DEMO_SLUG, "OUT-4", "OUT-1")).toEqual({
       status: "idle",
     });
 
@@ -65,13 +68,32 @@ describe("moveOutcome", () => {
         ),
       );
     expect(proposal).toMatchObject({ source: "manual", status: "approved" });
+    // A reorder changes no dates, so there is nothing to check.
+    expect(after).not.toHaveBeenCalled();
+  });
+
+  it("moves down to the place of the outcome it was dropped on", async () => {
+    await moveOutcome(DEMO_SLUG, "OUT-1", "OUT-2");
+
+    const roadmap = await loadRoadmap(db, projectId);
+    expect(roadmap.map((o) => o.key)).toEqual([
+      "OUT-3",
+      "OUT-2",
+      "OUT-1",
+      "OUT-4",
+      "OUT-5",
+    ]);
   });
 
   it("refuses bad input", async () => {
-    expect(await moveOutcome(DEMO_SLUG, "OUT-4", -1)).toMatchObject({
+    expect(await moveOutcome(DEMO_SLUG, "OUT-4", "")).toMatchObject({
       status: "error",
     });
-    expect(await moveOutcome(DEMO_SLUG, "OUT-99", 0)).toEqual({
+    expect(await moveOutcome(DEMO_SLUG, "OUT-99", "OUT-1")).toEqual({
+      status: "error",
+      message: "Outcome not found.",
+    });
+    expect(await moveOutcome(DEMO_SLUG, "OUT-4", "OUT-99")).toEqual({
       status: "error",
       message: "Outcome not found.",
     });
@@ -98,6 +120,19 @@ describe("saveTarget", () => {
       note: "Moved from Q1 2027 to Q2 2027. Caching took longer than planned.",
       moved: true,
     });
+    // The new target is checked against the outcome's work after the response.
+    expect(await db.select().from(jobs)).toMatchObject([
+      { type: "slip_check", status: "queued" },
+    ]);
+    expect(after).toHaveBeenCalledOnce();
+  });
+
+  it("records nothing when a requirement's target is saved unchanged", async () => {
+    const before = await db.$count(proposals);
+    expect(
+      await save({ kind: "requirement", key: "TL-10", target: "2027-Q2" }),
+    ).toEqual({ status: "idle" });
+    expect(await db.$count(proposals)).toBe(before);
   });
 
   it("sets and clears a requirement's target", async () => {

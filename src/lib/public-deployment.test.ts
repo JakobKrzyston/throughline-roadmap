@@ -244,7 +244,7 @@ describe("on a public deployment", () => {
   });
 
   it("refuses planning changes on a project that is not a demo", async () => {
-    expect(await moveOutcome(REAL_SLUG, "OUT-1", 0)).toEqual({
+    expect(await moveOutcome(REAL_SLUG, "OUT-1", "OUT-2")).toEqual({
       status: "error",
       message: "This project is view-only on this server.",
     });

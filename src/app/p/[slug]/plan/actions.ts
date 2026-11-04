@@ -1,7 +1,8 @@
 "use server";
 /** Server actions behind the plan page: reorder outcomes and change targets. Exports moveOutcome, saveTarget and their state type. */
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { refresh } from "next/cache";
+import { after } from "next/server";
 import { z, ZodError } from "zod";
 
 import type { GraphOperationInput } from "@/core/operations";
@@ -11,10 +12,11 @@ import {
   savePlanningChange,
 } from "@/core/planning";
 import { ProposalError } from "@/core/proposals";
-import { loadRoadmap } from "@/core/roadmap";
+import { loadOutcomes } from "@/core/roadmap";
 import { formatTarget, targetSchema } from "@/core/schedule";
 import { getDb } from "@/db/client";
-import { projects } from "@/db/schema";
+import { projects, requirements } from "@/db/schema";
+import { runQueuedJobs } from "@/jobs";
 import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
 
 /** Recorded as the actor until there is sign-in (see the "Teams and permissions" issue). */
@@ -25,7 +27,7 @@ export type PlanState =
 
 const moveSchema = z.object({
   key: z.string().min(1),
-  toIndex: z.number().int().min(0),
+  toKey: z.string().min(1),
 });
 
 const targetFormSchema = z.object({
@@ -41,12 +43,15 @@ const targetFormSchema = z.object({
 });
 
 /**
- * Move one outcome to a new place in the priority order.
+ * Move one outcome to where another one is now in the priority order.
+ *
+ * The destination is named by key rather than position, so a page that is out of date because
+ * someone else reordered meanwhile still puts the outcome where the person dropped it.
  *
  * Args:
  *   slug: The project's slug.
  *   key: The outcome to move.
- *   toIndex: Its new position, 0 for the top.
+ *   toKey: The outcome whose place it takes; that one and those between shift by one.
  *
  * Returns:
  *   The idle state once saved (the page refreshes), or an error message to show.
@@ -54,22 +59,19 @@ const targetFormSchema = z.object({
 export async function moveOutcome(
   slug: string,
   key: string,
-  toIndex: number,
+  toKey: string,
 ): Promise<PlanState> {
-  const input = moveSchema.safeParse({ key, toIndex });
+  const input = moveSchema.safeParse({ key, toKey });
   if (!input.success) return fail("That request was not understood.");
 
   const project = await editableProject(slug);
   if ("status" in project) return project;
-  const roadmap = await loadRoadmap(getDb(), project.id);
-  const outcome = roadmap.find((o) => o.key === input.data.key);
-  if (!outcome) return fail("Outcome not found.");
+  const ordered = await loadOutcomes(getDb(), project.id);
+  const outcome = ordered.find((o) => o.key === input.data.key);
+  const toIndex = ordered.findIndex((o) => o.key === input.data.toKey);
+  if (!outcome || toIndex === -1) return fail("Outcome not found.");
 
-  const operations = moveOperations(
-    roadmap,
-    input.data.key,
-    input.data.toIndex,
-  );
+  const operations = moveOperations(ordered, input.data.key, toIndex);
   return save(
     project.id,
     `Move “${outcome.title}” in the priority order`,
@@ -114,11 +116,20 @@ export async function saveTarget(
   const shown = target ? formatTarget(target) : "no target";
 
   if (kind === "requirement") {
+    const [requirement] = await getDb()
+      .select({ target: requirements.target })
+      .from(requirements)
+      .where(
+        and(eq(requirements.projectId, project.id), eq(requirements.key, key)),
+      );
+    if (!requirement) return fail(`Requirement ${key} not found.`);
+    // An update must change something, so saving the same target is a no-op.
+    if (requirement.target === target) return { status: "idle" };
     return save(project.id, `Set ${key}'s target to ${shown}`, [
       { type: "update_requirement", requirement_key: key, target },
     ]);
   }
-  const outcome = (await loadRoadmap(getDb(), project.id)).find(
+  const outcome = (await loadOutcomes(getDb(), project.id)).find(
     (o) => o.key === key,
   );
   if (!outcome) return fail("Outcome not found.");
@@ -154,7 +165,15 @@ async function save(
 ): Promise<PlanState> {
   if (operations.length === 0) return { status: "idle" };
   try {
-    await savePlanningChange(getDb(), projectId, summary, operations, PLANNER);
+    const { checksQueued } = await savePlanningChange(
+      getDb(),
+      projectId,
+      summary,
+      operations,
+      PLANNER,
+    );
+    // A changed target is checked against the outcome's work again, after the response is sent.
+    if (checksQueued > 0) after(runQueuedJobs);
   } catch (error) {
     if (error instanceof ProposalError) return fail(`${error.message}.`);
     if (error instanceof ZodError) return fail("That change is not valid.");

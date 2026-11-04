@@ -2,7 +2,14 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { events, outcomes, projects, proposals } from "@/db/schema";
+import {
+  events,
+  jobs,
+  outcomes,
+  projects,
+  proposals,
+  requirements,
+} from "@/db/schema";
 import { createTestDb } from "@/db/test-db";
 
 import {
@@ -58,33 +65,27 @@ describe("moveOperations", () => {
 });
 
 describe("outcomeTargetOperations", () => {
-  it.each([
-    ["2027-Q1", "2027-Q2", "Moved from Q1 2027 to Q2 2027."],
-    [null, "2027-03-31", "Now planned for 31 March 2027."],
-    ["2027-Q1", null, "The target date was removed."],
-  ])("notes a change from %j to %j", (before, after, note) => {
-    expect(
-      outcomeTargetOperations({ key: "OUT-1", target: before }, after),
-    ).toEqual([
-      {
-        type: "update_outcome",
-        outcome_key: "OUT-1",
-        target: after,
-        product_note: note,
-      },
-    ]);
-  });
-
-  it("adds the reason and skips a change to the same target", () => {
+  it("sets the target and keeps only the reason, since the move is described when applied", () => {
     expect(
       outcomeTargetOperations(
         { key: "OUT-1", target: "2027-Q1" },
         "2027-Q2",
         "  We ship SSO first. ",
-      )[0],
-    ).toMatchObject({
-      product_note: "Moved from Q1 2027 to Q2 2027. We ship SSO first.",
-    });
+      ),
+    ).toEqual([
+      {
+        type: "update_outcome",
+        outcome_key: "OUT-1",
+        target: "2027-Q2",
+        product_note: "We ship SSO first.",
+      },
+    ]);
+    expect(
+      outcomeTargetOperations({ key: "OUT-1", target: "2027-Q1" }, null, " "),
+    ).toEqual([{ type: "update_outcome", outcome_key: "OUT-1", target: null }]);
+  });
+
+  it("skips a change to the same target", () => {
     expect(
       outcomeTargetOperations({ key: "OUT-1", target: "2027-Q1" }, "2027-Q1"),
     ).toEqual([]);
@@ -101,13 +102,45 @@ describe("savePlanningChange", () => {
       .insert(projects)
       .values({ name: "Test", slug: "test" })
       .returning();
-    await db
+    const [outcome] = await db
       .insert(outcomes)
-      .values({ projectId, key: "OUT-1", title: "SSO", target: "2027-Q1" });
+      .values({ projectId, key: "OUT-1", title: "SSO", target: "2027-Q1" })
+      .returning();
+    const [root] = await db
+      .insert(requirements)
+      .values({ projectId, key: "TL-1", outcomeId: outcome.id, title: "SAML" })
+      .returning();
+    await db.insert(requirements).values({
+      projectId,
+      key: "TL-2",
+      parentId: root.id,
+      title: "Okta metadata",
+      status: "planned",
+    });
   });
 
+  const pendingReschedule = async (): Promise<string> => {
+    const [row] = await db
+      .insert(proposals)
+      .values({
+        projectId,
+        source: "reschedule",
+        summary: "Move SSO to Q2 2027",
+        operations: [
+          { type: "update_outcome", outcome_key: "OUT-1", target: "2027-Q2" },
+        ],
+      })
+      .returning();
+    return row.id;
+  };
+
+  const statusOf = async (id: string) => {
+    const [row] = await db.select().from(proposals).where(eq(proposals.id, id));
+    return row.status;
+  };
+
   it("applies the change through an approved manual proposal with an event", async () => {
-    const proposalId = await savePlanningChange(
+    const { proposalId } = await savePlanningChange(
       db,
       projectId,
       "Move SSO to Q2 2027",
@@ -133,6 +166,55 @@ describe("savePlanningChange", () => {
         productNote: "Moved from Q1 2027 to Q2 2027.",
       },
     ]);
+  });
+
+  it("supersedes a pending reschedule and checks the outcome again when its target changes", async () => {
+    const stale = await pendingReschedule();
+
+    const { checksQueued } = await savePlanningChange(
+      db,
+      projectId,
+      "Move SSO to Q3 2027",
+      outcomeTargetOperations({ key: "OUT-1", target: "2027-Q1" }, "2027-Q3"),
+      "planner",
+    );
+
+    expect(await statusOf(stale)).toBe("superseded");
+    const [outcome] = await db.select().from(outcomes);
+    expect(checksQueued).toBe(1);
+    expect(await db.select().from(jobs)).toMatchObject([
+      { type: "slip_check", payload: { outcomeId: outcome.id } },
+    ]);
+  });
+
+  it("does the same when a requirement's target changes, at any depth", async () => {
+    const stale = await pendingReschedule();
+
+    await savePlanningChange(
+      db,
+      projectId,
+      "Date TL-2",
+      [{ type: "update_requirement", requirement_key: "TL-2", target: null }],
+      "planner",
+    );
+
+    expect(await statusOf(stale)).toBe("superseded");
+    expect(await db.$count(jobs)).toBe(1);
+  });
+
+  it("leaves reschedules alone when only the priority changes", async () => {
+    const pending = await pendingReschedule();
+
+    const { checksQueued } = await savePlanningChange(
+      db,
+      projectId,
+      "Move SSO",
+      [{ type: "update_outcome", outcome_key: "OUT-1", priority: 2 }],
+      "planner",
+    );
+
+    expect(checksQueued).toBe(0);
+    expect(await statusOf(pending)).toBe("pending");
   });
 
   it("saves nothing when the change cannot be applied", async () => {

@@ -125,7 +125,6 @@ describe("roadmap loaders", () => {
         type: "update_outcome",
         outcome_key: "OUT-4",
         target: "2027-Q2",
-        product_note: "Moved from Q1 2027 to Q2 2027.",
       },
       {
         type: "update_outcome",

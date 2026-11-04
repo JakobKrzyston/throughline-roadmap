@@ -7,6 +7,7 @@ import { enqueueReconcile, enqueueSlipCheck } from "@/jobs/queue";
 
 import { operationListSchema } from "./operations";
 import { applyProposal } from "./proposals";
+import { outcomeIdOf } from "./roadmap";
 import { isFinished } from "./work-items";
 
 /**
@@ -44,7 +45,7 @@ export async function approveProposal(
       .where(eq(proposals.id, proposalId));
     let queued = 0;
     if (proposal.source === "reconcile" && proposal.requirementId) {
-      const outcomeId = await outcomeOf(tx, proposal.requirementId);
+      const outcomeId = await outcomeIdOf(tx, proposal.requirementId);
       if (await enqueueSlipCheck(tx, { outcomeId })) queued++;
     }
 
@@ -82,21 +83,4 @@ export async function approveProposal(
     }
     return queued;
   });
-}
-
-/** The outcome a requirement belongs to, found by walking up its split history. */
-async function outcomeOf(db: Database, requirementId: string): Promise<string> {
-  let id = requirementId;
-  for (;;) {
-    const [row] = await db
-      .select({
-        outcomeId: requirements.outcomeId,
-        parentId: requirements.parentId,
-      })
-      .from(requirements)
-      .where(eq(requirements.id, id));
-    // Exactly one of the two is set, so this ends at the root.
-    if (row.outcomeId) return row.outcomeId;
-    id = row.parentId!;
-  }
 }

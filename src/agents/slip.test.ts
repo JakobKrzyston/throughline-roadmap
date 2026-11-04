@@ -122,7 +122,7 @@ describe("runSlipCheck", () => {
           outcome_key: "OUT-2",
           target: "2027-Q2",
           product_note:
-            "Moved from Q1 2027 to Q2 2027. Handling bounced emails turned out to be its own piece of work.",
+            "Handling bounced emails turned out to be its own piece of work.",
         },
       ],
     });
@@ -156,8 +156,10 @@ describe("runSlipCheck", () => {
     ).rejects.toThrow(LLMOutputError);
   });
 
-  it("proposes nothing when the model keeps the target", async () => {
-    const before = await pendingReschedules();
+  it("proposes nothing when the model keeps the target, and drops the older proposal", async () => {
+    // The seed leaves a pending proposal to move OUT-2; keeping the target makes it out of date.
+    const [older] = await pendingReschedules();
+
     expect(
       await runSlipCheck(
         db,
@@ -166,7 +168,12 @@ describe("runSlipCheck", () => {
         TODAY,
       ),
     ).toBe(null);
-    expect(await pendingReschedules()).toEqual(before);
+    expect(await pendingReschedules()).toEqual([]);
+    const [row] = await db
+      .select()
+      .from(proposals)
+      .where(eq(proposals.id, older.id));
+    expect(row).toMatchObject({ status: "superseded", decidedBy: "agent" });
   });
 
   it("does not call the model when nothing looks late", async () => {
@@ -179,5 +186,20 @@ describe("runSlipCheck", () => {
       null,
     );
     expect(llm.prompts).toEqual([]);
+    // Nothing is late any more, so the seed's proposal to move OUT-2 is out of date.
+    expect(await pendingReschedules()).toEqual([]);
+  });
+
+  it("changes nothing when the model fails", async () => {
+    const before = await pendingReschedules();
+    await expect(
+      runSlipCheck(
+        db,
+        fakeLLM(move("2027-Q1")),
+        await outcomeId("OUT-2"),
+        TODAY,
+      ),
+    ).rejects.toThrow(LLMOutputError);
+    expect(await pendingReschedules()).toEqual(before);
   });
 });

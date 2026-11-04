@@ -11,12 +11,7 @@ import {
   type RequirementTree,
 } from "@/core/roadmap";
 import { requirementProgress } from "@/core/rollup";
-import {
-  formatTarget,
-  hasOpenWork,
-  lateRequirements,
-  targetEnd,
-} from "@/core/schedule";
+import { formatTarget, scheduleWarnings } from "@/core/schedule";
 import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
 import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
@@ -24,6 +19,9 @@ import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
 import { ProjectNav } from "../project-nav";
 import { ViewOnlyNotice } from "../view-only-notice";
 import { PlanBoard, type PlanOutcome } from "./plan-board";
+
+// A target change can start a slip check after the response; allow it time to finish.
+export const maxDuration = 300;
 
 const STATUS_LABELS: Record<NonNullable<RequirementTree["status"]>, string> = {
   planned: "planned",
@@ -110,17 +108,18 @@ async function PlanView({
 }
 
 function toPlanOutcome(outcome: OutcomeTree, today: string): PlanOutcome {
-  const warnings = lateRequirements(outcome.target, outcome.requirements).map(
-    (r) =>
-      `${r.key} ${r.title} is due ${formatTarget(r.target!)}, after this outcome's target.`,
+  const { late, passed } = scheduleWarnings(
+    outcome.target,
+    outcome.requirements,
+    today,
   );
-  if (
-    outcome.target &&
-    targetEnd(outcome.target) < today &&
-    hasOpenWork(outcome.requirements)
-  ) {
-    warnings.push("This target has passed and work is still open.");
-  }
+  const warnings = [
+    ...late.map(
+      (r) =>
+        `${r.key} ${r.title} is due ${formatTarget(r.target!)}, after this outcome's target.`,
+    ),
+    ...(passed ? ["This target has passed and work is still open."] : []),
+  ];
 
   const flatten = (
     nodes: RequirementTree[],

@@ -47,7 +47,7 @@ describe("describeOperations", () => {
           type: "update_outcome",
           outcome_key: "OUT-1",
           target: "2027-Q1",
-          product_note: "Moved from Q4 2026 to Q1 2027.",
+          product_note: "Exports come first.",
         },
         { type: "update_requirement", requirement_key: "TL-4", target: null },
       ]),
@@ -56,7 +56,7 @@ describe("describeOperations", () => {
         heading: "Update outcome OUT-1: Customers can export reports",
         changes: [
           { field: "Target", before: "2026-Q4", after: "2027-Q1" },
-          { field: "Product note", after: "Moved from Q4 2026 to Q1 2027." },
+          { field: "Product note", after: "Exports come first." },
         ],
       },
       {

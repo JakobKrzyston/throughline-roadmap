@@ -1,15 +1,14 @@
 /** Slip check: after reconciliation changes an outcome's work, flags a target its open requirements make unlikely and proposes a new one. Exports runSlipCheck, loadSlipContext, buildSlipPrompt, slipOutputSchema, SLIP_TASK. */
-import { and, eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 import type { LLMProvider, StructuredPrompt } from "@/adapters/llm/provider";
-import { outcomeTargetOperations } from "@/core/planning";
+import { outcomeTargetOperations, supersedeReschedules } from "@/core/planning";
 import { loadRoadmap, type RequirementTree } from "@/core/roadmap";
 import {
   formatTarget,
-  hasOpenWork,
   isLater,
-  lateRequirements,
+  scheduleWarnings,
   targetEnd,
   targetSchema,
 } from "@/core/schedule";
@@ -40,6 +39,14 @@ export type SlipContext = {
   passed: boolean;
 };
 
+/** What the model returns. The note's "Moved from … to …" is added when the change is applied. */
+export type SlipOutput = {
+  new_target: string | null;
+  summary: string;
+  rationale: string;
+  reason: string;
+};
+
 /**
  * The schema the model's answer must match. A new target must fit what the context shows.
  *
@@ -50,7 +57,7 @@ export type SlipContext = {
  *   A schema whose new target, when given, is later than the current one, no earlier than any
  *   late requirement, and not already in the past.
  */
-export function slipOutputSchema(context: SlipContext) {
+export function slipOutputSchema(context: SlipContext): z.ZodType<SlipOutput> {
   const latest = context.late
     .map((requirement) => requirement.target)
     .reduce<string | null>(
@@ -95,8 +102,6 @@ export function slipOutputSchema(context: SlipContext) {
       }
     });
 }
-
-export type SlipOutput = z.output<ReturnType<typeof slipOutputSchema>>;
 
 const SYSTEM_PROMPT = `You check whether a product outcome will still land by its target date, for Throughline, a tool that keeps product and technical roadmaps in sync.
 
@@ -178,13 +183,14 @@ export async function loadSlipContext(
   const outcome = (await loadRoadmap(db, row.projectId)).find(
     (o) => o.id === outcomeId,
   );
-  if (!outcome?.target || !hasOpenWork(outcome.requirements)) return null;
+  if (!outcome?.target) return null;
 
-  const late = lateRequirements(outcome.target, outcome.requirements).map(
-    (r) => ({ key: r.key, title: r.title, target: r.target! }),
+  const warnings = scheduleWarnings(
+    outcome.target,
+    outcome.requirements,
+    today,
   );
-  const passed = targetEnd(outcome.target) < today;
-  if (late.length === 0 && !passed) return null;
+  if (warnings.late.length === 0 && !warnings.passed) return null;
 
   return {
     projectId: row.projectId,
@@ -196,16 +202,21 @@ export async function loadSlipContext(
       target: outcome.target,
     },
     requirements: outcome.requirements,
-    late,
-    passed,
+    late: warnings.late.map((r) => ({
+      key: r.key,
+      title: r.title,
+      target: r.target!,
+    })),
+    passed: warnings.passed,
   };
 }
 
 /**
  * Check one outcome's target and, if it should move, save a pending reschedule proposal.
  *
- * The model is only asked when there is a warning sign (see loadSlipContext). A new proposal
- * supersedes any older pending one for the same outcome, which was made with less in view.
+ * The model is only asked when there is a warning sign (see loadSlipContext). Any older pending
+ * reschedule proposal for the outcome is superseded whatever the answer: it was made with less in
+ * view, and when nothing should move any more it would slip an outcome that is on track.
  *
  * Args:
  *   db: Database to read and write.
@@ -217,7 +228,7 @@ export async function loadSlipContext(
  *   The new proposal's id, or null when nothing should move.
  *
  * Raises:
- *   LLMOutputError: The model did not produce valid output after one retry.
+ *   LLMOutputError: The model did not produce valid output after one retry. Nothing is changed.
  */
 export async function runSlipCheck(
   db: Database,
@@ -225,43 +236,40 @@ export async function runSlipCheck(
   outcomeId: string,
   today: string,
 ): Promise<string | null> {
+  const [outcome] = await db
+    .select({
+      projectId: outcomes.projectId,
+      key: outcomes.key,
+      target: outcomes.target,
+    })
+    .from(outcomes)
+    .where(eq(outcomes.id, outcomeId));
+  if (!outcome) return null;
   const context = await loadSlipContext(db, outcomeId, today);
-  if (!context) return null;
-  const output = await llm.generateStructured(
-    slipOutputSchema(context),
-    buildSlipPrompt(context),
-  );
-  if (output.new_target === null) return null;
+  const output = context
+    ? await llm.generateStructured(
+        slipOutputSchema(context),
+        buildSlipPrompt(context),
+      )
+    : null;
+  const newTarget = output?.new_target ?? null;
 
-  const { outcome } = context;
   return db.transaction(async (tx) => {
-    await tx
-      .update(proposals)
-      .set({
-        status: "superseded",
-        decidedBy: RECONCILE_ACTOR,
-        decidedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(proposals.projectId, context.projectId),
-          eq(proposals.source, "reschedule"),
-          eq(proposals.status, "pending"),
-          sql`${proposals.operations} @> ${JSON.stringify([{ outcome_key: outcome.key }])}::jsonb`,
-        ),
-      );
+    await supersedeReschedules(
+      tx,
+      outcome.projectId,
+      outcome.key,
+      RECONCILE_ACTOR,
+    );
+    if (!output || newTarget === null) return null;
     const [proposal] = await tx
       .insert(proposals)
       .values({
-        projectId: context.projectId,
+        projectId: outcome.projectId,
         source: "reschedule",
         summary: output.summary,
         rationale: output.rationale,
-        operations: outcomeTargetOperations(
-          outcome,
-          output.new_target,
-          output.reason,
-        ),
+        operations: outcomeTargetOperations(outcome, newTarget, output.reason),
       })
       .returning({ id: proposals.id });
     return proposal.id;

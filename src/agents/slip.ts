@@ -80,7 +80,7 @@ export function slipOutputSchema(context: SlipContext): z.ZodType<SlipOutput> {
         "Two to four sentences for the reviewer: which work makes the current target unlikely, and why you chose the new one.",
       ),
       reason: text.describe(
-        "One sentence for sales and leadership, in plain language with no ticket numbers or jargon, saying why the date moved. E.g. 'Handling bounced emails turned out to be its own piece of work.' It follows 'Moved from Q1 2027 to Q2 2027.'",
+        "One sentence for sales and leadership, in plain language with no ticket numbers or jargon, saying why the date moved. E.g. 'Handling bounced emails turned out to be its own piece of work.' It follows 'Moved from Q1 2027 to Q2 2027.', so do not repeat the dates.",
       ),
     })
     .superRefine((output, ctx) => {
@@ -114,7 +114,28 @@ Rules:
 - The new target must be later than the current one, no earlier than the latest target of the open work, and not in the past.
 - Pick the earliest target the evidence supports. Do not pad it.
 - Answer null for new_target only when the late work is clearly not needed for customers to get the outcome, for example a follow-up that can ship after it.
-- Write the reason for sales and leadership: plain language, no ticket numbers, branch names or engineering jargon.`;
+- Write the reason for sales and leadership: plain language, no ticket numbers, branch names or engineering jargon.
+- Do not repeat the old or new target in the reason. Throughline puts "Moved from <old> to <new>." in front of it.`;
+
+// "Moved from Q1 2027 to Q2 2027 because", "…2027.", "…2027, as" and the like. Lazy matches let a
+// date with a comma ("to 30 June, 2027") run on to the real separator.
+const REPEATED_MOVE =
+  /^\s*moved from .+? to .+?(?:[.;:](?:\s+|$)|,?\s+(?:because|since|as)\s+|\s+[—–-]\s+)/i;
+
+/**
+ * Drop a leading "Moved from … to …" the model wrote despite the prompt, since the feed adds its own.
+ *
+ * Args:
+ *   reason: The model's reason.
+ *
+ * Returns:
+ *   The reason without a leading move, trimmed and with its first letter capitalised. Empty when
+ *   the reason was only the move.
+ */
+function withoutRepeatedMove(reason: string): string {
+  const rest = reason.replace(REPEATED_MOVE, "").trim();
+  return rest.charAt(0).toUpperCase() + rest.slice(1);
+}
 
 /**
  * Build the prompt for one slip check.
@@ -269,7 +290,11 @@ export async function runSlipCheck(
         source: "reschedule",
         summary: output.summary,
         rationale: output.rationale,
-        operations: outcomeTargetOperations(outcome, newTarget, output.reason),
+        operations: outcomeTargetOperations(
+          outcome,
+          newTarget,
+          withoutRepeatedMove(output.reason),
+        ),
       })
       .returning({ id: proposals.id });
     return proposal.id;

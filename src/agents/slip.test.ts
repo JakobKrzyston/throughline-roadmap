@@ -136,6 +136,78 @@ describe("runSlipCheck", () => {
     );
   });
 
+  // The feed already starts the note with "Moved from … to …", so a reason that repeats it would
+  // say the dates twice.
+  it.each([
+    [
+      "Moved from Q1 2027 to Q2 2027 because handling bounced emails turned out to be its own piece of work.",
+    ],
+    [
+      "Moved from Q1 2027 to Q2 2027. Handling bounced emails turned out to be its own piece of work.",
+    ],
+    [
+      "moved from 2027-Q1 to 2027-Q2, as handling bounced emails turned out to be its own piece of work.",
+    ],
+    [
+      "Moved from Q1 2027 to June 30, 2027 because handling bounced emails turned out to be its own piece of work.",
+    ],
+  ])("drops a repeated move from the reason: %s", async (reason) => {
+    const llm = fakeLLM({ ...move("2027-Q2"), reason });
+
+    const proposalId = await runSlipCheck(
+      db,
+      llm,
+      await outcomeId("OUT-2"),
+      TODAY,
+    );
+
+    const [proposal] = await db
+      .select()
+      .from(proposals)
+      .where(eq(proposals.id, proposalId!));
+    expect(proposal.operations).toEqual([
+      {
+        type: "update_outcome",
+        outcome_key: "OUT-2",
+        target: "2027-Q2",
+        product_note:
+          "Handling bounced emails turned out to be its own piece of work.",
+      },
+    ]);
+  });
+
+  it("leaves out the note when the reason only repeats the move", async () => {
+    const llm = fakeLLM({
+      ...move("2027-Q2"),
+      reason: "Moved from Q1 2027 to Q2 2027.",
+    });
+
+    const proposalId = await runSlipCheck(
+      db,
+      llm,
+      await outcomeId("OUT-2"),
+      TODAY,
+    );
+
+    const [proposal] = await db
+      .select()
+      .from(proposals)
+      .where(eq(proposals.id, proposalId!));
+    expect(proposal.operations).toEqual([
+      { type: "update_outcome", outcome_key: "OUT-2", target: "2027-Q2" },
+    ]);
+  });
+
+  it("tells the model not to repeat the dates in the reason", async () => {
+    const llm = fakeLLM(move("2027-Q2"));
+
+    await runSlipCheck(db, llm, await outcomeId("OUT-2"), TODAY);
+
+    expect(llm.prompts[0].system).toContain(
+      "Do not repeat the old or new target in the reason",
+    );
+  });
+
   it("asks again when the new target is earlier than the late work", async () => {
     const llm = fakeLLM(move("2027-03-01"), move("2027-Q2"));
 

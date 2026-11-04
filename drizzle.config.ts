@@ -5,8 +5,8 @@ import { defineConfig } from "drizzle-kit";
 loadEnvConfig(process.cwd());
 
 const databaseUrl = process.env.DATABASE_URL;
-// Same directory as LOCAL_DATA_DIR in src/db/client.ts.
-const localDataDir = ".pglite";
+// Same directory as localDataDir() in src/db/client.ts.
+const localDataDir = process.env.PGLITE_DATA_DIR || ".pglite";
 
 export default defineConfig({
   dialect: "postgresql",

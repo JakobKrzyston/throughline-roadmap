@@ -26,7 +26,7 @@ pnpm db:seed      # load the "Acme Analytics" demo project
 pnpm dev
 ```
 
-Open http://localhost:3000. No environment variables are needed: the app stores data in an embedded Postgres (PGlite) under `./.pglite`. To use a Postgres server such as Neon, copy `.env.example` to `.env.local` and set `DATABASE_URL`.
+Open http://localhost:3000/p/acme-analytics for the product view: what customers can use today and what changed this week. The technical view at http://localhost:3000/p/acme-analytics/tech shows every requirement, its linked issues and pull requests, and how requirements were split. No environment variables are needed: the app stores data in an embedded Postgres (PGlite) under `./.pglite`. To use a Postgres server such as Neon, copy `.env.example` to `.env.local` and set `DATABASE_URL`.
 
 To turn a pasted roadmap into a proposal, open http://localhost:3000/p/acme-analytics/import. Without `ANTHROPIC_API_KEY` the import returns a sample proposal; set the key in `.env.local` to use Claude.
 
@@ -38,6 +38,8 @@ Checks that CI runs on every pull request:
 
 ```bash
 pnpm lint && pnpm format:check && pnpm typecheck && pnpm test
+pnpm exec playwright install chromium   # once
+pnpm test:e2e                           # builds the app and loads both views
 ```
 
 ## Learn more

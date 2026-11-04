@@ -2,6 +2,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
+  bigint,
   boolean,
   check,
   integer,
@@ -207,6 +208,8 @@ export const proposals = pgTable("proposals", {
 
 export const events = pgTable("events", {
   id: uuid("id").primaryKey().defaultRandom(),
+  // Insertion order. Events from one transaction share created_at, so order by this instead.
+  seq: bigint("seq", { mode: "number" }).generatedAlwaysAsIdentity(),
   projectId: uuid("project_id")
     .notNull()
     .references(() => projects.id, { onDelete: "cascade" }),

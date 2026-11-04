@@ -34,8 +34,13 @@ yarn-error.log*
 .env*
 !.env.example
 
-# local PGlite database
+# local PGlite databases (the end-to-end tests use .pglite-e2e)
 /.pglite/
+/.pglite-e2e/
+
+# Playwright
+/test-results/
+/playwright-report/
 
 # vercel
 .vercel

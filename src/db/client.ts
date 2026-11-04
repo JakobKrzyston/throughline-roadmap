@@ -14,8 +14,17 @@ import * as schema from "./schema";
  */
 export type Database = PgDatabase<PgQueryResultHKT, typeof schema>;
 
-/** Directory where local PGlite keeps its data between runs. */
-export const LOCAL_DATA_DIR = ".pglite";
+/**
+ * Directory where local PGlite keeps its data between runs. The end-to-end tests use their own.
+ *
+ * Read on each call, not at import, so scripts that load .env files in main() still see PGLITE_DATA_DIR.
+ *
+ * Returns:
+ *   PGLITE_DATA_DIR if set, otherwise ".pglite".
+ */
+export function localDataDir(): string {
+  return process.env.PGLITE_DATA_DIR || ".pglite";
+}
 
 /**
  * Create a Drizzle client backed by embedded PGlite.
@@ -49,12 +58,12 @@ const globalForDb = globalThis as { db?: Database };
  * Return the app's shared database client, creating it on first use.
  *
  * Returns:
- *   A Postgres client when DATABASE_URL is set, otherwise a PGlite client stored in LOCAL_DATA_DIR.
+ *   A Postgres client when DATABASE_URL is set, otherwise a PGlite client stored in localDataDir().
  */
 export function getDb(): Database {
   // Cached on globalThis so dev hot reloads reuse one client; two PGlite instances must not open the same directory.
   globalForDb.db ??= process.env.DATABASE_URL
     ? createPostgresDb(process.env.DATABASE_URL)
-    : createPgliteDb(LOCAL_DATA_DIR);
+    : createPgliteDb(localDataDir());
   return globalForDb.db;
 }

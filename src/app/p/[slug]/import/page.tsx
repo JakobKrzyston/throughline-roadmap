@@ -9,6 +9,7 @@ import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
 import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
 
+import { ProjectNav } from "../project-nav";
 import { ViewOnlyNotice } from "../view-only-notice";
 import { ImportForm } from "./import-form";
 
@@ -61,9 +62,7 @@ async function ProjectImport({
 
   return (
     <>
-      <p className="text-sm text-muted-foreground">
-        Project: <span className="font-medium">{project.name}</span>
-      </p>
+      <ProjectNav slug={slug} name={project.name} current="/import" />
       {isViewOnly(project) ? (
         <ViewOnlyNotice />
       ) : (

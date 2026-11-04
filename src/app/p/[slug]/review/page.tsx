@@ -16,6 +16,7 @@ import {
 } from "@/db/schema";
 import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
 
+import { ProjectNav } from "../project-nav";
 import { ViewOnlyNotice } from "../view-only-notice";
 import { type ProposalView, ProposalCard } from "./proposal-card";
 
@@ -116,9 +117,7 @@ async function PendingProposals({
 
   return (
     <>
-      <p className="text-sm text-muted-foreground">
-        Project: <span className="font-medium">{project.name}</span>
-      </p>
+      <ProjectNav slug={slug} name={project.name} current="/review" />
       {viewOnly && <ViewOnlyNotice />}
       {views.length === 0 ? (
         <p className="rounded-md border border-border p-6 text-center text-muted-foreground">

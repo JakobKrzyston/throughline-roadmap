@@ -10,6 +10,7 @@ import { projects, repositories } from "@/db/schema";
 import { type BackfillStatus, backfillStatuses } from "@/jobs/backfill";
 import { isPublicDeployment } from "@/lib/public-deployment";
 
+import { ProjectNav } from "../project-nav";
 import { ConnectForm } from "./connect-form";
 
 // The connect action imports the repository's history after responding; allow it time to finish.
@@ -74,9 +75,7 @@ async function ProjectSettings({
 
   return (
     <>
-      <p className="text-sm text-muted-foreground">
-        Project: <span className="font-medium">{project.name}</span>
-      </p>
+      <ProjectNav slug={slug} name={project.name} current="/settings" />
 
       <section className="flex flex-col gap-3">
         <h2 className="text-xl font-semibold">GitHub repositories</h2>

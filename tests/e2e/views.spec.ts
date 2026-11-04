@@ -67,3 +67,25 @@ test("an unknown project gets a plain-language, unindexed page", async ({
     ).toBeVisible();
   }
 });
+
+test("every project page links to the others", async ({ page }) => {
+  await page.goto("/p/acme-analytics/review");
+  const nav = page.getByRole("navigation", { name: "Acme Analytics pages" });
+
+  for (const [link, heading] of [
+    ["Import", "Import a roadmap"],
+    ["Settings", "Settings"],
+    ["Technical view", "Technical roadmap"],
+    ["Review queue", "Review queue"],
+    ["Product view", "Product roadmap"],
+  ]) {
+    await nav.getByRole("link", { name: link }).click();
+    await expect(
+      page.getByRole("heading", { name: heading, exact: true }),
+    ).toBeVisible();
+    await expect(nav.getByRole("link", { name: link })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  }
+});

@@ -14,7 +14,10 @@ import {
   requirements,
   workItems,
 } from "@/db/schema";
+import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
 
+import { ProjectNav } from "../project-nav";
+import { ViewOnlyNotice } from "../view-only-notice";
 import { type ProposalView, ProposalCard } from "./proposal-card";
 
 // Approving a link can start a reconciliation after the response; allow it time to finish.
@@ -45,8 +48,7 @@ export default function ReviewPage({
         <h1 className="text-3xl font-semibold tracking-tight">Review queue</h1>
         <p className="text-muted-foreground">
           Throughline&rsquo;s agents suggest changes to the roadmap here.
-          Nothing changes until you approve a proposal, and you can edit its
-          wording first.
+          Nothing changes until you approve a proposal.
         </p>
       </div>
       {/* The proposals are read per request; the heading above is the static shell. */}
@@ -65,7 +67,7 @@ async function PendingProposals({
   await connection();
   const db = getDb();
   const [project] = await db
-    .select({ id: projects.id, name: projects.name })
+    .select({ id: projects.id, name: projects.name, isDemo: projects.isDemo })
     .from(projects)
     .where(eq(projects.slug, slug));
   if (!project) notFound();
@@ -95,6 +97,7 @@ async function PendingProposals({
   });
   const graph = await loadSnapshot(project.id, workItemIds);
 
+  const viewOnly = isViewOnly(project);
   const views = pending.map((proposal, i): ProposalView => {
     const parsed = parsedOperations[i];
     const trigger = proposal.triggerWorkItemId
@@ -114,9 +117,8 @@ async function PendingProposals({
 
   return (
     <>
-      <p className="text-sm text-muted-foreground">
-        Project: <span className="font-medium">{project.name}</span>
-      </p>
+      <ProjectNav slug={slug} name={project.name} current="/review" />
+      {viewOnly && <ViewOnlyNotice />}
       {views.length === 0 ? (
         <p className="rounded-md border border-border p-6 text-center text-muted-foreground">
           Nothing to review. Proposals appear here when you import a roadmap or
@@ -126,7 +128,13 @@ async function PendingProposals({
         <ol className="flex flex-col gap-6">
           {views.map((view) => (
             <li key={view.id}>
-              <ProposalCard slug={slug} proposal={view} />
+              <ProposalCard
+                slug={slug}
+                proposal={view}
+                viewOnly={viewOnly}
+                // Visitors' edits would show on the public demo until the nightly reset.
+                canEdit={!isPublicDeployment()}
+              />
             </li>
           ))}
         </ol>

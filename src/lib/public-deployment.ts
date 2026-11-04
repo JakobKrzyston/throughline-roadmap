@@ -1,0 +1,28 @@
+/** Rules for a public deployment with no sign-in (PUBLIC_DEPLOYMENT=true). Exports isPublicDeployment, isViewOnly. */
+
+/**
+ * Whether this server is open to the public with no sign-in.
+ *
+ * Then visitors may change only demo projects, demo imports use sample results instead of the AI
+ * key, and repositories are connected by the owner from a local copy of the app.
+ *
+ * Returns:
+ *   True when PUBLIC_DEPLOYMENT is "true" or "1", ignoring case and surrounding spaces.
+ */
+export function isPublicDeployment(): boolean {
+  const value = process.env.PUBLIC_DEPLOYMENT?.trim().toLowerCase();
+  return value === "true" || value === "1";
+}
+
+/**
+ * Whether visitors may look at a project but not change it.
+ *
+ * Args:
+ *   project: The project's demo flag.
+ *
+ * Returns:
+ *   True for a project that is not a demo on a public deployment.
+ */
+export function isViewOnly(project: { isDemo: boolean }): boolean {
+  return isPublicDeployment() && !project.isDemo;
+}

@@ -1,10 +1,16 @@
 /** Runs the app's queued jobs with their real handlers. Exports runQueuedJobs. */
+import { eq } from "drizzle-orm";
+
 import { getGitHubAdapter, isGitHubConfigured } from "@/adapters/github";
 import { getLLMProvider } from "@/adapters/llm";
+import { FakeLLMProvider } from "@/adapters/llm/fake";
+import type { LLMProvider } from "@/adapters/llm/provider";
+import type { SourceAdapter } from "@/adapters/source";
 import { DEMO_LLM_FIXTURES } from "@/agents/fixtures";
 import { runLinkSuggest } from "@/agents/link-suggest";
 import { runReconcile } from "@/agents/reconcile";
 import { getDb } from "@/db/client";
+import { projects, workItems } from "@/db/schema";
 
 import { runBackfill } from "./backfill";
 import { runJobs } from "./queue";
@@ -13,6 +19,9 @@ import { runJobs } from "./queue";
  * Run due jobs against the app database.
  *
  * Without GitHub credentials the agents still run, on the work item's title and description alone.
+ * Agents for demo projects always use sample results and skip GitHub, wherever the job runs: on a
+ * public site visitors queue these jobs and must not spend the AI key, and the demo's repository
+ * is made up.
  *
  * Returns:
  *   How many jobs finished and how many failed.
@@ -24,13 +33,30 @@ export async function runQueuedJobs(): Promise<{
   const db = getDb();
   const llm = getLLMProvider(DEMO_LLM_FIXTURES);
   const source = isGitHubConfigured() ? getGitHubAdapter() : null;
+
+  async function agentsFor(
+    workItemId: string,
+  ): Promise<{ llm: LLMProvider; source: SourceAdapter | null }> {
+    const [row] = await db
+      .select({ isDemo: projects.isDemo })
+      .from(workItems)
+      .innerJoin(projects, eq(workItems.projectId, projects.id))
+      .where(eq(workItems.id, workItemId));
+    if (row?.isDemo) {
+      return { llm: new FakeLLMProvider(DEMO_LLM_FIXTURES), source: null };
+    }
+    return { llm, source };
+  }
+
   return runJobs(db, {
     backfill: (payload) => runBackfill(db, getGitHubAdapter(), payload),
     reconcile: async (payload) => {
-      await runReconcile(db, llm, source, payload);
+      const agents = await agentsFor(payload.workItemId);
+      await runReconcile(db, agents.llm, agents.source, payload);
     },
     link_suggest: async (payload) => {
-      await runLinkSuggest(db, llm, source, payload);
+      const agents = await agentsFor(payload.workItemId);
+      await runLinkSuggest(db, agents.llm, agents.source, payload);
     },
   });
 }

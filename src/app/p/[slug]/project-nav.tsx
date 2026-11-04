@@ -6,10 +6,12 @@ const VIEWS = [
   { path: "", label: "Product view" },
   { path: "/tech", label: "Technical view" },
   { path: "/review", label: "Review queue" },
+  { path: "/import", label: "Import" },
+  { path: "/settings", label: "Settings" },
 ] as const;
 
 /**
- * The project name and links to its product, technical and review pages.
+ * The project name and links to each of its pages.
  *
  * Args:
  *   slug: The project slug.

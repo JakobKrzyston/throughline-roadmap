@@ -70,13 +70,19 @@ const NULLABLE = new Set(["target", "product_note"]);
  * Args:
  *   slug: The project's slug.
  *   proposal: The proposal to show.
+ *   viewOnly: True to show the proposal without the decision buttons.
+ *   canEdit: False to offer approve and reject only.
  */
 export function ProposalCard({
   slug,
   proposal,
+  viewOnly,
+  canEdit,
 }: {
   slug: string;
   proposal: ProposalView;
+  viewOnly: boolean;
+  canEdit: boolean;
 }): ReactElement {
   const [state, formAction, pending] = useActionState<DecideState, FormData>(
     decideProposal.bind(null, slug),
@@ -142,60 +148,63 @@ export function ProposalCard({
         )}
       </section>
 
-      <form action={formAction} className="flex flex-wrap items-center gap-2">
-        <input type="hidden" name="proposalId" value={proposal.id} />
-        {editing && (
-          <input
-            type="hidden"
-            name="operations"
-            value={JSON.stringify(draft)}
-          />
-        )}
-        {proposal.operations !== null && (
-          <Button
-            type="submit"
-            name="decision"
-            value="approve"
-            disabled={pending}
-          >
-            {editing ? "Approve with edits" : "Approve"}
-          </Button>
-        )}
-        {proposal.operations !== null &&
-          (editing ? (
+      {!viewOnly && (
+        <form action={formAction} className="flex flex-wrap items-center gap-2">
+          <input type="hidden" name="proposalId" value={proposal.id} />
+          {editing && (
+            <input
+              type="hidden"
+              name="operations"
+              value={JSON.stringify(draft)}
+            />
+          )}
+          {proposal.operations !== null && (
             <Button
-              type="button"
-              variant="outline"
+              type="submit"
+              name="decision"
+              value="approve"
               disabled={pending}
-              onClick={() => setDraft(null)}
             >
-              Cancel edits
+              {editing ? "Approve with edits" : "Approve"}
             </Button>
-          ) : (
+          )}
+          {proposal.operations !== null &&
+            canEdit &&
+            (editing ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pending}
+                onClick={() => setDraft(null)}
+              >
+                Cancel edits
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pending}
+                onClick={() => setDraft(structuredClone(proposal.operations))}
+              >
+                Edit
+              </Button>
+            ))}
+          {!editing && (
             <Button
-              type="button"
-              variant="outline"
+              type="submit"
+              name="decision"
+              value="reject"
+              variant="destructive"
               disabled={pending}
-              onClick={() => setDraft(structuredClone(proposal.operations))}
             >
-              Edit
+              Reject
             </Button>
-          ))}
-        {!editing && (
-          <Button
-            type="submit"
-            name="decision"
-            value="reject"
-            variant="destructive"
-            disabled={pending}
-          >
-            Reject
-          </Button>
-        )}
-        {pending && (
-          <span className="text-sm text-muted-foreground">Saving…</span>
-        )}
-      </form>
+          )}
+          {pending && (
+            <span className="text-sm text-muted-foreground">Saving…</span>
+          )}
+        </form>
+      )}
       <div aria-live="polite">
         {state.status === "error" && (
           <p className="text-sm whitespace-pre-line text-destructive">

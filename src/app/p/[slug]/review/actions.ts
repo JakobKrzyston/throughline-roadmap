@@ -10,6 +10,7 @@ import { approveProposal } from "@/core/review";
 import { getDb } from "@/db/client";
 import { projects, proposals } from "@/db/schema";
 import { runQueuedJobs } from "@/jobs";
+import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
 
 /** Recorded as the decider until there is sign-in (see the "Teams and permissions" issue). */
 const REVIEWER = "reviewer";
@@ -46,6 +47,12 @@ export async function decideProposal(
   if (!input.success) return fail("That request was not understood.");
   const { proposalId, decision, operations } = input.data;
 
+  // Visitors' wording would show on the public demo until the nightly reset.
+  if (operations !== undefined && isPublicDeployment()) {
+    return fail(
+      "Editing is turned off on this server. Approve or reject instead.",
+    );
+  }
   let edited: unknown;
   if (operations !== undefined) {
     try {
@@ -58,11 +65,13 @@ export async function decideProposal(
   // Only decide proposals that belong to the project in the URL.
   const db = getDb();
   const [found] = await db
-    .select({ id: proposals.id })
+    .select({ id: proposals.id, isDemo: projects.isDemo })
     .from(proposals)
     .innerJoin(projects, eq(proposals.projectId, projects.id))
     .where(and(eq(projects.slug, slug), eq(proposals.id, proposalId)));
   if (!found) return fail("Proposal not found.");
+  if (isViewOnly(found))
+    return fail("This project is view-only on this server.");
 
   try {
     if (decision === "reject") {

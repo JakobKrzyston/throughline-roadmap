@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LLMProvider } from "@/adapters/llm/provider";
+import { SAMPLE_IMPORT_OUTPUT } from "@/agents/fixtures";
 import {
   jobs,
   projects,
@@ -81,6 +82,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 async function queueDemoReconcile(): Promise<void> {
@@ -170,6 +172,66 @@ describe("on a public deployment", () => {
   });
 
   it("imports into the demo with sample results, not the AI key", async () => {
+    const result = await generateImportProposal(
+      DEMO_SLUG,
+      { status: "idle" },
+      form({ roadmap: "Ship it" }),
+    );
+
+    expect(result).toMatchObject({ status: "success" });
+  });
+
+  it("imports into the demo with the free OpenRouter model when one is set", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "or-test");
+    const fetchStub = vi.fn(async () =>
+      Response.json({
+        choices: [
+          {
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: "call_1",
+                  type: "function",
+                  function: {
+                    name: "roadmap_import",
+                    arguments: JSON.stringify({
+                      ...SAMPLE_IMPORT_OUTPUT,
+                      rationale: "From the free model",
+                    }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchStub);
+
+    const result = await generateImportProposal(
+      DEMO_SLUG,
+      { status: "idle" },
+      form({ roadmap: "Ship it" }),
+    );
+
+    expect(result).toMatchObject({ status: "success" });
+    expect(fetchStub).toHaveBeenCalledOnce();
+    const [proposal] = await db
+      .select()
+      .from(proposals)
+      .where(eq(proposals.rationale, "From the free model"));
+    expect(proposal).toBeDefined();
+  });
+
+  it("falls back to sample results when the free model fails", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "or-test");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("rate limited", { status: 429 })),
+    );
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
     const result = await generateImportProposal(
       DEMO_SLUG,
       { status: "idle" },

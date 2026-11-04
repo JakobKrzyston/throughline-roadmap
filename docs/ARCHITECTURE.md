@@ -134,18 +134,18 @@ Many-to-many between requirements and work items. Fields: `requirement_id`, `wor
 
 The review queue.
 
-| Field                      | Notes                                                  |
-| -------------------------- | ------------------------------------------------------ |
-| `id`                       |                                                        |
-| `project_id`               |                                                        |
-| `source`                   | `import`, `reconcile`, `link_suggest`, `explicit_link` |
-| `status`                   | `pending`, `approved`, `rejected`, `superseded`        |
-| `summary`                  | One plain-language line for the queue                  |
-| `rationale`                | Why the agent suggests this                            |
-| `operations`               | JSON array of typed graph operations (see below)       |
-| `trigger_work_item_id`     | The PR or issue that caused it, if any                 |
-| `requirement_id`           | The requirement a `reconcile` proposal is about        |
-| `decided_by`, `decided_at` |                                                        |
+| Field                      | Notes                                                                  |
+| -------------------------- | ---------------------------------------------------------------------- |
+| `id`                       |                                                                        |
+| `project_id`               |                                                                        |
+| `source`                   | `import`, `reconcile`, `link_suggest`, `explicit_link`, `work_started` |
+| `status`                   | `pending`, `approved`, `rejected`, `superseded`                        |
+| `summary`                  | One plain-language line for the queue                                  |
+| `rationale`                | Why the agent suggests this                                            |
+| `operations`               | JSON array of typed graph operations (see below)                       |
+| `trigger_work_item_id`     | The PR or issue that caused it, if any                                 |
+| `requirement_id`           | The requirement a `reconcile` proposal is about                        |
+| `decided_by`, `decided_at` |                                                                        |
 
 ### `events`
 
@@ -159,7 +159,7 @@ Append-only audit log. Fields: `id`, `seq`, `project_id`, `type`, `entity_type`,
 
 A minimal job queue for agent runs. Fields: `id`, `type`, `payload`, `status` (`queued`, `running`, `done`, `failed`), `attempts`, `last_error`, `run_after`.
 
-Job types are `backfill` (`{ repositoryId, mergedSince?, cursor? }`), `reconcile` (`{ workItemId, requirementId }`) and `link_suggest` (`{ workItemId }`). `enqueue()` and `runJobs()` live in `src/jobs/queue.ts`. A runner claims one job at a time with `FOR UPDATE SKIP LOCKED`, so concurrent runners never share a job. A failed job is retried after a delay, up to three attempts, then marked `failed`. A job left `running` for 15 minutes (for example, cut off by a serverless timeout) is claimed again. Job types without a handler stay `queued`. A handler may return the payload of a follow-up job of the same type; it is queued in the same transaction that marks the job done, so a job cut off before that point never queues its follow-up twice.
+Job types are `backfill` (`{ repositoryId, mergedSince?, cursor? }`), `reconcile` (`{ workItemId, requirementId }`) and `link_suggest` (`{ workItemId }`). `enqueue()`, `enqueueReconcile()` and `runJobs()` live in `src/jobs/queue.ts`. `enqueueReconcile` folds a reconciliation into a `queued` job for the same requirement instead of adding another, pointing that job at the newest work item: the agent judges the requirement as a whole and sees every work item linked to it, so when several pull requests merge before the first job runs, one run covers them all. A job that is already `running` is left alone, and the new job's proposal supersedes its proposal. A runner claims one job at a time with `FOR UPDATE SKIP LOCKED`, so concurrent runners never share a job. A failed job is retried after a delay, up to three attempts, then marked `failed`. A job left `running` for 15 minutes (for example, cut off by a serverless timeout) is claimed again. Job types without a handler stay `queued`. A handler may return the payload of a follow-up job of the same type; it is queued in the same transaction that marks the job done, so a job cut off before that point never queues its follow-up twice.
 
 ## Graph operations
 
@@ -200,6 +200,7 @@ Computed on read by pure functions in `src/core/rollup.ts`.
 
 1. **Explicit:** a PR body or title containing `Implements TL-12` or `Part of TL-12` creates a link automatically. This is deterministic and needs no review. Matching is case-insensitive, one phrase can list several keys (`Part of TL-3, TL-4 and TL-5`), and keys that are not in the project are ignored (`src/core/references.ts`). The links still go through a proposal with source `explicit_link`, approved at once by the `github-sync` actor, so `applyProposal` stays the only code that changes the graph and every link has an event. Removing a reference from a PR later does not remove the link.
 2. **Suggested:** if a merged PR has no reference, the link agent compares it to the project's requirements and proposes the best match. A person approves it.
+3. **Work started:** an open PR that is linked to a `planned` leaf moves it to `in_progress`, through a `work_started` proposal approved at once by `github-sync`, like an explicit link. Requirements that are already started, finished, dropped or split are left alone, issues never start work, and closing a PR without merging does not move the requirement back. This is what makes an outcome show "in progress" before anything has shipped.
 
 ## Agents
 
@@ -207,7 +208,9 @@ All agents call `LLMProvider.generateStructured(schema, prompt)` (`src/adapters/
 
 - `AnthropicProvider` offers Claude a single tool whose input schema is generated from the Zod schema, and reads the answer from the tool call. Current Claude models reject forced `tool_choice`, so the system prompt asks for the call and a reply without one counts as invalid output. The model comes from `ANTHROPIC_MODEL` (default `claude-sonnet-5-5`).
 - Output that fails Zod validation is retried **once**: the validation error goes back to the model as a failed tool result. If the second attempt also fails, the provider raises `LLMOutputError`, whose message is shown to the user. Agents write nothing until they have valid output, so a failed run never leaves a partial proposal.
-- `FakeLLMProvider` serves fixtures per task name with the same validation and retry. Tests use it, and so does the app when `ANTHROPIC_API_KEY` is unset (demo mode), so nothing needs an API key.
+- `OpenRouterProvider` (`src/adapters/llm/openrouter.ts`) does the same against OpenRouter's OpenAI-compatible API with plain `fetch`, so any model there works, including free ones. It asks for a tool call but also accepts JSON in the reply text, since free models do not all honour `tool_choice`. `OPENROUTER_MODEL` is a comma-separated list in fallback order, sent as OpenRouter's `models` parameter so OpenRouter itself moves to the next model when one is rate-limited or down (default: free models with tool calling).
+- `FakeLLMProvider` serves fixtures per task name with the same validation and retry. Tests use it, and so does the app when no model key is set (demo mode), so nothing needs an API key.
+- `getLLMProvider` (`src/adapters/llm/index.ts`) picks Anthropic when `ANTHROPIC_API_KEY` is set, else OpenRouter when `OPENROUTER_API_KEY` is set, else the fake. `getDemoLLMProvider` is for demo projects, whose agents visitors can trigger: OpenRouter when its key is set, wrapped in `FallbackLLMProvider` so sample results take over when the model is rate-limited or answers badly, and never the Anthropic key.
 
 ### Roadmap import agent
 
@@ -241,7 +244,7 @@ The proposal records its `requirement_id`. Saving it marks any older pending `re
 
 ### Link suggestion agent
 
-`src/agents/link-suggest.ts`. Runs as a `link_suggest` job when a PR merges with no link at all (not during a backfill). The model sees the PR's title, description and changed files, and every leaf requirement that is not dropped, with its outcome. Finished requirements stay in, since a fix to finished work belongs with it. The answer must be one of those keys, or null when nothing fits well. A match becomes a pending `link_suggest` proposal with a `suggested` link; no match proposes nothing. A PR that has been linked since, or already has a pending suggestion, is skipped. If the PR later gains an explicit reference, the sync marks its pending suggestion `superseded`.
+`src/agents/link-suggest.ts`. Runs as a `link_suggest` job when a PR merges with no link at all (not during a backfill). The model sees the PR's title, description and changed files, and the leaf requirements that are not dropped, with their outcomes. Finished requirements stay in, since a fix to finished work belongs with it. A project with more than `MAX_CANDIDATES` (40) leaves is narrowed first by `rankCandidates`: requirements are scored by how many of their words appear in the PR's title, description and changed files, ties go to unfinished work, and the prompt says how many were left out so the model knows to answer null when the right one is missing. This keeps the prompt bounded on large roadmaps; a retrieval index is the next step if word overlap proves too crude. The answer must be one of those keys, or null when nothing fits well. A match becomes a pending `link_suggest` proposal with a `suggested` link; no match proposes nothing. A PR that has been linked since, or already has a pending suggestion, is skipped. If the PR later gains an explicit reference, the sync marks its pending suggestion `superseded`.
 
 ## GitHub integration
 
@@ -249,7 +252,7 @@ The proposal records its `requirement_id`. Saving it marks any older pending `re
 - `SourceAdapter` (`src/adapters/source.ts`) is the interface a source implements: look up a repository, list the items to backfill a page at a time, and list a PR's changed files for the agents. `GitHubAdapter` (`src/adapters/github/`) implements it with Octokit, authenticated as the app installation on each repository. Webhook signature checks and payload parsing also live there, and both webhook payloads and REST responses are validated with the same Zod schemas.
 - Repositories are connected on `/p/[slug]/settings`. Connecting checks that the repository's owner is in `GITHUB_ALLOWED_OWNERS` (v1 has no sign-in, so this stands in for permissions until #11) and that the app is installed on it, stores it, and enqueues a **backfill**: open issues plus PRs merged in the last 90 days. The backfill links explicit references but queues no reconciliation, since that work finished before Throughline was watching. It runs one page (up to 100 items) per job: each job syncs its page and returns the next page's job, carrying the source's cursor and the cut-off date the first page chose. A run therefore does a bounded amount of work, and a retry repeats only the page that failed. The settings page shows each repository's import as in progress, retrying (with the error), or failed (with the error), from its newest backfill job.
 - `POST /api/github/webhook` verifies the `X-Hub-Signature-256` header against the raw body (401 if it does not match), then hands the work item to `syncWorkItem` (`src/core/work-items.ts`) for every project the repository is connected to.
-- `syncWorkItem` upserts the work item, creates explicit links, and enqueues a `reconcile` job per linked requirement when the item first becomes merged (or, for an issue, closed as done; `not_planned` does not count), and for each link added to an item that has already finished. A PR that merges with no links at all gets a `link_suggest` job instead. Replaying a delivery therefore changes nothing: the work item is keyed by `(project, source, external_id)`, existing links are skipped, and no state change means no new job. Concurrent deliveries for the same item are serialised by a row lock.
+- `syncWorkItem` upserts the work item, creates explicit links, starts work on the planned requirements an open PR is linked to, and queues a reconciliation per linked requirement (through `enqueueReconcile`, so near-simultaneous merges share one job) when the item first becomes merged (or, for an issue, closed as done; `not_planned` does not count), and for each link added to an item that has already finished. A PR that merges with no links at all gets a `link_suggest` job instead. Replaying a delivery therefore changes nothing: the work item is keyed by `(project, source, external_id)`, existing links are skipped, and no state change means no new job. Concurrent deliveries for the same item are serialised by a row lock.
 - Jobs run from `/api/jobs/run` (`GET` for Vercel cron, `POST` otherwise), and through Next.js `after()` once the response is sent, so responses stay fast: after connecting a repository, and after every webhook delivery with a valid signature, whether or not it queued anything. Running on every delivery is what picks up retries and jobs cut off by a timeout; when nothing is due it costs one lookup. The cron entry in `vercel.json` is a daily safety net, the most often Vercel's Hobby plan allows. When `CRON_SECRET` is set the route requires it as a bearer token.
 - Trade-off: a retry, or the rest of a long import, runs with the next delivery from any connected repository. On an active installation that is soon; when no deliveries arrive it waits for the daily cron. Each run handles at most 20 jobs, so on a quiet installation a repository with thousands of open issues finishes importing over the following runs rather than at once. On a Vercel plan that allows it, a cron every few minutes removes the wait; it was not used here because Hobby rejects it.
 
@@ -294,10 +297,10 @@ v1 has no sign-in, so a public site sets `PUBLIC_DEPLOYMENT=true` (`src/lib/publ
 
 - Only projects with `is_demo` accept changes. For any other project the import, review and connect server actions refuse with "view-only", and the pages hide their forms.
 - Proposals can be approved or rejected but not edited first: the review action refuses edited operations and the Edit button is hidden, so visitors cannot put their own wording on the public demo. The owner changes their own projects from a local copy of the app pointed at the production database (see `docs/DEPLOY.md`).
-- Imports into demo projects use `FakeLLMProvider`, so visitors cannot spend the Anthropic key. Queued agent jobs for demo projects always do, and skip GitHub, with or without the variable: a job a visitor queued may run on the owner's machine, and the demo's repository is made up.
+- Agents for demo projects use `getDemoLLMProvider`: a free model through OpenRouter when `OPENROUTER_API_KEY` is set, with sample results as the fallback, and sample results alone otherwise. They never use the Anthropic key, so visitors cannot spend it. Queued jobs for demo projects do the same, and skip GitHub, with or without the variable: a job a visitor queued may run on the owner's machine, and the demo's repository is made up.
 - No repository can be connected from the site.
 
-Without the variable, as when running locally, every project accepts changes and the AI key is used whenever it is set.
+Without the variable, as when running locally, every project accepts changes and imports use the owner's provider whenever a key is set.
 
 ## Moving to production
 

@@ -2,8 +2,7 @@
 import { eq } from "drizzle-orm";
 
 import { getGitHubAdapter, isGitHubConfigured } from "@/adapters/github";
-import { getLLMProvider } from "@/adapters/llm";
-import { FakeLLMProvider } from "@/adapters/llm/fake";
+import { getDemoLLMProvider, getLLMProvider } from "@/adapters/llm";
 import type { LLMProvider } from "@/adapters/llm/provider";
 import type { SourceAdapter } from "@/adapters/source";
 import { DEMO_LLM_FIXTURES } from "@/agents/fixtures";
@@ -19,9 +18,9 @@ import { runJobs } from "./queue";
  * Run due jobs against the app database.
  *
  * Without GitHub credentials the agents still run, on the work item's title and description alone.
- * Agents for demo projects always use sample results and skip GitHub, wherever the job runs: on a
- * public site visitors queue these jobs and must not spend the AI key, and the demo's repository
- * is made up.
+ * Agents for demo projects use the demo provider (a free OpenRouter model, else sample results)
+ * and skip GitHub, wherever the job runs: on a public site visitors queue these jobs and must not
+ * spend the Anthropic key, and the demo's repository is made up.
  *
  * Returns:
  *   How many jobs finished and how many failed.
@@ -43,7 +42,7 @@ export async function runQueuedJobs(): Promise<{
       .innerJoin(projects, eq(workItems.projectId, projects.id))
       .where(eq(workItems.id, workItemId));
     if (row?.isDemo) {
-      return { llm: new FakeLLMProvider(DEMO_LLM_FIXTURES), source: null };
+      return { llm: getDemoLLMProvider(DEMO_LLM_FIXTURES), source: null };
     }
     return { llm, source };
   }

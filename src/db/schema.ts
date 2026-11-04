@@ -44,6 +44,8 @@ export const proposalSource = pgEnum("proposal_source", [
   "link_suggest",
   // PR references like "Implements TL-12": approved automatically by the sync, never by a person.
   "explicit_link",
+  // An open PR references a planned requirement, so work on it has started. Also automatic.
+  "work_started",
 ]);
 export const proposalStatus = pgEnum("proposal_status", [
   "pending",

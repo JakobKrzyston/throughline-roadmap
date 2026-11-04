@@ -51,3 +51,4 @@ next-env.d.ts
 
 # wt worktree config, generated per machine
 .wt.toml
+.neon

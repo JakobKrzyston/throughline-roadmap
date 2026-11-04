@@ -1,10 +1,10 @@
-/** Picks the app's LLM providers from the environment. Exports getLLMProvider, getDemoLLMProvider, isDemoLLM, demoModel. */
+/** Picks the app's LLM providers from the environment. Exports getLLMProvider, getDemoLLMProvider, isDemoLLM, demoModels. */
 import Anthropic from "@anthropic-ai/sdk";
 
 import { AnthropicProvider, DEFAULT_MODEL } from "./anthropic";
 import { type FakeFixtures, FakeLLMProvider } from "./fake";
 import { FallbackLLMProvider } from "./fallback";
-import { OPENROUTER_DEFAULT_MODEL, OpenRouterProvider } from "./openrouter";
+import { OPENROUTER_DEFAULT_MODELS, OpenRouterProvider } from "./openrouter";
 import type { LLMProvider } from "./provider";
 
 /**
@@ -18,14 +18,19 @@ export function isDemoLLM(): boolean {
 }
 
 /**
- * The OpenRouter model demo projects use, or null when OPENROUTER_API_KEY is unset.
+ * The OpenRouter models demo projects use, in fallback order, or null when OPENROUTER_API_KEY is unset.
  *
  * Returns:
- *   OPENROUTER_MODEL, or the default free model when the key is set and the model is not.
+ *   OPENROUTER_MODEL split on commas, or the default free models when the key is set and the
+ *   variable is not.
  */
-export function demoModel(): string | null {
+export function demoModels(): string[] | null {
   if (!process.env.OPENROUTER_API_KEY) return null;
-  return process.env.OPENROUTER_MODEL || OPENROUTER_DEFAULT_MODEL;
+  const configured = (process.env.OPENROUTER_MODEL ?? "")
+    .split(",")
+    .map((model) => model.trim())
+    .filter(Boolean);
+  return configured.length ? configured : OPENROUTER_DEFAULT_MODELS;
 }
 
 /**
@@ -70,5 +75,5 @@ export function getDemoLLMProvider(demoFixtures: FakeFixtures): LLMProvider {
 function openRouterProvider(): OpenRouterProvider | null {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) return null;
-  return new OpenRouterProvider(key, demoModel()!);
+  return new OpenRouterProvider(key, demoModels()!);
 }

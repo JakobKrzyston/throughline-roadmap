@@ -1,4 +1,4 @@
-/** OpenRouterProvider: structured output from any OpenRouter model through tool calling, over fetch. Exports OpenRouterProvider, OPENROUTER_DEFAULT_MODEL, OPENROUTER_ENDPOINT. */
+/** OpenRouterProvider: structured output from any OpenRouter model through tool calling, over fetch, with OpenRouter's own model fallbacks. Exports OpenRouterProvider, OPENROUTER_DEFAULT_MODELS, OPENROUTER_ENDPOINT. */
 import { z } from "zod";
 
 import {
@@ -7,9 +7,14 @@ import {
   type StructuredPrompt,
 } from "./provider";
 
-/** A free model with tool calling at the time of writing. Free models come and go; docs/DEPLOY.md says how to pick another. */
-export const OPENROUTER_DEFAULT_MODEL =
-  "nvidia/nemotron-3-ultra-550b-a55b:free";
+/**
+ * Free models with tool calling at the time of writing, in the order OpenRouter tries them.
+ * Free models come and go; docs/DEPLOY.md says how to pick others.
+ */
+export const OPENROUTER_DEFAULT_MODELS = [
+  "nvidia/nemotron-3.5-super-vl:free",
+  "liquid/lfm-2.5-2.6b:free",
+];
 
 export const OPENROUTER_ENDPOINT =
   "https://openrouter.ai/api/v1/chat/completions";
@@ -46,12 +51,14 @@ export class OpenRouterProvider implements LLMProvider {
   /**
    * Args:
    *   apiKey: OpenRouter API key.
-   *   model: OpenRouter model id, e.g. `google/gemma-4-31b-it:free`.
+   *   models: OpenRouter model ids in priority order, e.g. `["google/gemma-4-31b-it:free"]`. The
+   *     first is tried first; OpenRouter moves to the next when it is rate-limited, down, or
+   *     rejects the request. Billing follows the model that answers, so list only free models to stay free.
    *   fetchFn: HTTP client; tests pass a stub.
    */
   constructor(
     private readonly apiKey: string,
-    private readonly model: string = OPENROUTER_DEFAULT_MODEL,
+    private readonly models: string[] = OPENROUTER_DEFAULT_MODELS,
     private readonly fetchFn: typeof fetch = fetch,
   ) {}
 
@@ -124,7 +131,9 @@ export class OpenRouterProvider implements LLMProvider {
           "X-Title": "Throughline",
         },
         body: JSON.stringify({
-          model: this.model,
+          model: this.models[0],
+          // OpenRouter's model fallbacks: see docs/guides/routing/model-fallbacks.
+          ...(this.models.length > 1 ? { models: this.models } : {}),
           messages,
           tools: [tool],
           tool_choice: { type: "function", function: { name: prompt.task } },

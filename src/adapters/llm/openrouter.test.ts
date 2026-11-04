@@ -49,7 +49,7 @@ function requestBody(fetchFn: ReturnType<typeof stubFetch>, call = 0) {
 describe("OpenRouterProvider", () => {
   it("offers one tool built from the schema and returns its validated arguments", async () => {
     const fetchFn = stubFetch(toolReply("call_1", { answer: 42 }));
-    const llm = new OpenRouterProvider("key", "test/model:free", fetchFn);
+    const llm = new OpenRouterProvider("key", ["test/model:free"], fetchFn);
 
     await expect(llm.generateStructured(schema, prompt)).resolves.toEqual({
       answer: 42,
@@ -60,6 +60,7 @@ describe("OpenRouterProvider", () => {
     expect(init!.headers).toMatchObject({ Authorization: "Bearer key" });
     const body = requestBody(fetchFn);
     expect(body.model).toBe("test/model:free");
+    expect(body).not.toHaveProperty("models");
     expect(body.tool_choice).toEqual({
       type: "function",
       function: { name: "test_task" },
@@ -73,9 +74,25 @@ describe("OpenRouterProvider", () => {
     expect(body.messages[0].content).toContain("calling the test_task tool");
   });
 
+  it("lists fallback models for OpenRouter to try in order", async () => {
+    const fetchFn = stubFetch(toolReply("call_1", { answer: 42 }));
+    const llm = new OpenRouterProvider(
+      "key",
+      ["a/one:free", "b/two:free"],
+      fetchFn,
+    );
+
+    await llm.generateStructured(schema, prompt);
+
+    expect(requestBody(fetchFn)).toMatchObject({
+      model: "a/one:free",
+      models: ["a/one:free", "b/two:free"],
+    });
+  });
+
   it("accepts JSON in the message text, with or without a code fence", async () => {
     const fetchFn = stubFetch(textReply('```json\n{"answer": 42}\n```'));
-    const llm = new OpenRouterProvider("key", "m", fetchFn);
+    const llm = new OpenRouterProvider("key", ["m"], fetchFn);
 
     await expect(llm.generateStructured(schema, prompt)).resolves.toEqual({
       answer: 42,
@@ -87,7 +104,7 @@ describe("OpenRouterProvider", () => {
       toolReply("call_1", { answer: "forty-two" }),
       toolReply("call_2", { answer: 42 }),
     );
-    const llm = new OpenRouterProvider("key", "m", fetchFn);
+    const llm = new OpenRouterProvider("key", ["m"], fetchFn);
 
     await expect(llm.generateStructured(schema, prompt)).resolves.toEqual({
       answer: 42,
@@ -108,7 +125,7 @@ describe("OpenRouterProvider", () => {
       textReply("It is 42."),
       toolReply("call_1", { answer: 42 }),
     );
-    const llm = new OpenRouterProvider("key", "m", fetchFn);
+    const llm = new OpenRouterProvider("key", ["m"], fetchFn);
 
     await expect(llm.generateStructured(schema, prompt)).resolves.toEqual({
       answer: 42,
@@ -123,7 +140,7 @@ describe("OpenRouterProvider", () => {
 
   it("gives up after the second invalid answer", async () => {
     const fetchFn = stubFetch(textReply("no"), textReply("still no"));
-    const llm = new OpenRouterProvider("key", "m", fetchFn);
+    const llm = new OpenRouterProvider("key", ["m"], fetchFn);
 
     await expect(llm.generateStructured(schema, prompt)).rejects.toBeInstanceOf(
       LLMOutputError,
@@ -134,7 +151,7 @@ describe("OpenRouterProvider", () => {
     const fetchFn = stubFetch(
       new Response("Rate limit exceeded", { status: 429 }),
     );
-    const llm = new OpenRouterProvider("key", "m", fetchFn);
+    const llm = new OpenRouterProvider("key", ["m"], fetchFn);
 
     await expect(llm.generateStructured(schema, prompt)).rejects.toThrow(
       "status 429: Rate limit exceeded",

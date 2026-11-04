@@ -42,7 +42,7 @@ Run `pnpm db:migrate` the same way before deploying any change that adds a migra
 | `CRON_SECRET`        | A random string, e.g. from `openssl rand -hex 32`. Vercel cron sends it; other callers of the cron routes get 401. |
 | `ANTHROPIC_API_KEY`  | Optional. Used by the agents for your own projects, never for the demo.                                            |
 | `OPENROUTER_API_KEY` | Optional. Lets the demo's agents answer with a real model. Point it at a free one (see below).                     |
-| `OPENROUTER_MODEL`   | Optional. An OpenRouter model id. Defaults to a free model with tool calling.                                      |
+| `OPENROUTER_MODEL`   | Optional. OpenRouter model ids, comma-separated in fallback order. Defaults to free models with tool calling.      |
 | `GITHUB_*`           | Optional. The GitHub App settings from [`GITHUB_APP.md`](GITHUB_APP.md), to follow a real repository.              |
 
 3. Deploy. Vercel registers the two cron jobs in `vercel.json`:
@@ -82,7 +82,21 @@ curl -s https://openrouter.ai/api/v1/models | jq -r '
   | select(.supported_parameters | index("tools")) | .id'
 ```
 
-Set `OPENROUTER_MODEL` to one of them, or leave it unset for the default in `src/adapters/llm/openrouter.ts`. Free models come and go; if the default disappears, imports on the demo fall back to sample results and the server log shows the OpenRouter error. Larger models give better reconciliation results; a small one may fail validation more often, which also falls back to a sample result.
+Set `OPENROUTER_MODEL` to a comma-separated list of them in the order to try, for example:
+
+```
+OPENROUTER_MODEL=nvidia/nemotron-3.5-super-vl:free,liquid/lfm-2.5-2.6b:free
+```
+
+Throughline sends the list as OpenRouter's [`models` fallback parameter](https://openrouter.ai/docs/guides/routing/model-fallbacks): the first model is tried first, and when it is rate-limited, down or rejects the request, OpenRouter tries the next one. Billing follows the model that answers, so keep every entry a `:free` model. Leave the variable unset for the default list in `src/adapters/llm/openrouter.ts`. Free models come and go; if every listed model disappears, imports on the demo fall back to sample results and the server log shows the OpenRouter error. Larger models give better reconciliation results; a very small one may fail validation more often, which also falls back to a sample result, so put the largest first.
+
+To set the key and models on Vercel from the command line:
+
+```bash
+printf '%s' 'sk-or-v1-...' | vercel env add OPENROUTER_API_KEY production
+printf '%s' 'nvidia/nemotron-3.5-super-vl:free,liquid/lfm-2.5-2.6b:free' | vercel env add OPENROUTER_MODEL production
+vercel redeploy --prod   # environment changes apply on the next deployment
+```
 
 Your own projects use `ANTHROPIC_API_KEY` when it is set, and otherwise the same OpenRouter model. A free model is fine for trying the tool on a real repository; for a roadmap you rely on, use Claude.
 

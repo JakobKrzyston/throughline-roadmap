@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { LLMProvider, StructuredPrompt } from "@/adapters/llm/provider";
 import type { GraphOperationInput } from "@/core/operations";
+import { targetSchema } from "@/core/schedule";
 import type { Database } from "@/db/client";
 import { proposals } from "@/db/schema";
 
@@ -31,10 +32,7 @@ export const importOutputSchema = z.object({
         description: z
           .string()
           .describe("One or two plain-language sentences. No jargon."),
-        target: z
-          .union([z.string().regex(/^\d{4}-Q[1-4]$/), z.iso.date()], {
-            error: "Use a quarter like 2027-Q1 or a real date like 2027-01-11",
-          })
+        target: targetSchema
           .nullable()
           .describe(
             "When the roadmap says this should land, as a quarter ('2027-Q1') or, for a fixed deadline day, a date ('2027-01-11'). Turn a month into its quarter ('June 2027' is '2027-Q2') and a bare year into its last quarter ('2028' is '2028-Q4'). Null if the roadmap gives no timing.",

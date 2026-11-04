@@ -2,6 +2,7 @@
 import { and, eq } from "drizzle-orm";
 
 import type { GraphOperationInput } from "@/core/operations";
+import { outcomeTargetOperations, savePlanningChange } from "@/core/planning";
 import { applyProposal } from "@/core/proposals";
 
 import type { Database } from "./client";
@@ -72,7 +73,7 @@ const ROADMAP: GraphOperationInput[] = [
   { type: "create_requirement", key: "TL-15", outcome_key: "OUT-4", title: "Query result cache" },
   { type: "create_requirement", key: "TL-20", outcome_key: "OUT-4", title: "Lazy-load dashboard widgets", user_visible: true },
 
-  { type: "create_outcome", key: "OUT-5", title: "Customers can share a dashboard with a link", description: "Send a read-only dashboard to someone without an Acme account.", target: "2027-Q2", priority: 4 },
+  { type: "create_outcome", key: "OUT-5", title: "Customers can share a dashboard with a link", description: "Send a read-only dashboard to someone without an Acme account.", target: "2027-Q1", priority: 4 },
   { type: "create_requirement", key: "TL-21", outcome_key: "OUT-5", title: "Public link tokens" },
   { type: "create_requirement", key: "TL-22", outcome_key: "OUT-5", title: "Share dialog", user_visible: true },
 ];
@@ -212,7 +213,7 @@ export async function seedDemoProject(db: Database): Promise<string> {
     inserted.find((item) => item.externalId === `${REPO_ID}#${number}`)!.id;
 
   async function propose(
-    source: "import" | "reconcile" | "link_suggest",
+    source: "import" | "reconcile" | "link_suggest" | "reschedule",
     summary: string,
     operations: GraphOperationInput[],
     extra: { trigger?: number; rationale?: string; requirement?: string } = {},
@@ -264,6 +265,42 @@ export async function seedDemoProject(db: Database): Promise<string> {
     })),
   );
 
+  // A PM's own planning: dates for some requirements, and one outcome moved back a quarter.
+  await savePlanningChange(
+    db,
+    project.id,
+    "Plan dates for the scheduled reports work",
+    [
+      {
+        type: "update_requirement",
+        requirement_key: "TL-7",
+        target: "2027-Q1",
+      },
+      {
+        type: "update_requirement",
+        requirement_key: "TL-10",
+        target: "2027-Q2",
+      },
+      {
+        type: "update_requirement",
+        requirement_key: "TL-11",
+        target: "2027-Q1",
+      },
+    ],
+    SEED_ACTOR,
+  );
+  await savePlanningChange(
+    db,
+    project.id,
+    "Move dashboard share links to Q2 2027",
+    outcomeTargetOperations(
+      { key: "OUT-5", target: "2027-Q1" },
+      "2027-Q2",
+      "Single sign-on and exports come first.",
+    ),
+    SEED_ACTOR,
+  );
+
   // Left pending so the review queue has something in it.
   await propose(
     "reconcile",
@@ -299,6 +336,19 @@ export async function seedDemoProject(db: Database): Promise<string> {
       trigger: 124,
       rationale:
         "The pull request has no requirement reference, but it only changes tests for the CSV export endpoint.",
+    },
+  );
+  await propose(
+    "reschedule",
+    "Move scheduled email reports to Q2 2027",
+    outcomeTargetOperations(
+      { key: "OUT-2", target: "2027-Q1" },
+      "2027-Q2",
+      "Making sure bounced report emails are retried turned out to be its own piece of work.",
+    ),
+    {
+      rationale:
+        "Retry and bounce handling (TL-10) is planned for Q2 2027, after the outcome's Q1 2027 target, and scheduled reports should not ship while failed emails are silently lost.",
     },
   );
   await propose(

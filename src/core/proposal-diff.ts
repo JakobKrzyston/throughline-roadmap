@@ -30,6 +30,7 @@ export type GraphSnapshot = {
       status: LeafStatus | null;
       userVisible: boolean;
       productNote: string | null;
+      target: string | null;
     }
   >;
   workItems: Map<string, { title: string; kind: "issue" | "pull_request" }>;
@@ -77,6 +78,10 @@ export function describeOperations(
             change("Description", current?.description, op.description),
             change("Target", current?.target, op.target),
             change("Priority", current?.priority, op.priority),
+            // Outcomes keep no note of their own; it only goes on the change feed.
+            ...(op.product_note
+              ? [{ field: "Product note", after: op.product_note }]
+              : []),
           ].filter((c) => c !== null),
         };
       }
@@ -88,6 +93,7 @@ export function describeOperations(
             { field: "Description", after: op.description || null },
             { field: "Visible to customers", after: yesNo(op.user_visible) },
             { field: "Product note", after: op.product_note ?? null },
+            ...(op.target ? [{ field: "Target", after: op.target }] : []),
           ],
         };
 
@@ -126,6 +132,7 @@ export function describeOperations(
                 : yesNo(op.user_visible),
             ),
             change("Product note", current?.productNote, op.product_note),
+            change("Target", current?.target, op.target),
           ].filter((c) => c !== null),
         };
       }

@@ -6,6 +6,7 @@ import type { LLMProvider } from "@/adapters/llm/provider";
 import { SAMPLE_IMPORT_OUTPUT } from "@/agents/fixtures";
 import {
   jobs,
+  outcomes,
   projects,
   proposals,
   requirements,
@@ -42,6 +43,7 @@ const { decideProposal } = await import("@/app/p/[slug]/review/actions");
 const { generateImportProposal } =
   await import("@/app/p/[slug]/import/actions");
 const { connectRepository } = await import("@/app/p/[slug]/settings/actions");
+const { moveOutcome, saveTarget } = await import("@/app/p/[slug]/plan/actions");
 const { runQueuedJobs } = await import("@/jobs");
 const { isPublicDeployment } = await import("./public-deployment");
 
@@ -239,6 +241,33 @@ describe("on a public deployment", () => {
     );
 
     expect(result).toMatchObject({ status: "success" });
+  });
+
+  it("refuses planning changes on a project that is not a demo", async () => {
+    expect(await moveOutcome(REAL_SLUG, "OUT-1", 0)).toEqual({
+      status: "error",
+      message: "This project is view-only on this server.",
+    });
+  });
+
+  it("takes target changes on the demo, but not visitors' own wording", async () => {
+    const change = (fields: Record<string, string>) =>
+      saveTarget(
+        DEMO_SLUG,
+        { status: "idle" },
+        form({ kind: "outcome", key: "OUT-4", target: "2027-Q2", ...fields }),
+      );
+
+    expect(await change({ reason: "Because I said so." })).toEqual({
+      status: "error",
+      message: "Notes are turned off on this server. Save without one.",
+    });
+    expect(await change({})).toEqual({ status: "idle" });
+    const [outcome] = await db
+      .select()
+      .from(outcomes)
+      .where(eq(outcomes.key, "OUT-4"));
+    expect(outcome.target).toBe("2027-Q2");
   });
 
   it("does not let visitors connect repositories", async () => {

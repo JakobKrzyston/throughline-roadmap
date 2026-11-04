@@ -80,7 +80,7 @@ describe("seedDemoProject", () => {
       .select()
       .from(proposals)
       .where(eq(proposals.status, "pending"));
-    expect(pending).toHaveLength(3);
+    expect(pending).toHaveLength(4);
 
     for (const proposal of pending) {
       await applyProposal(db, proposal.id, "pm");

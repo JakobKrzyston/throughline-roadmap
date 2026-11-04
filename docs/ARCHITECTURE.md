@@ -109,6 +109,7 @@ Technical work, arranged as a tree under each outcome.
 | `user_visible`         | True if finishing this gives customers something they can see or use              |
 | `product_note`         | Plain-language explanation shown in the product view                              |
 | `split_reason`         | Why this requirement was split, if it was                                         |
+| `target`               | Optional quarter or date, compared with the outcome's target (see "Schedule")     |
 
 ### `work_items`
 
@@ -134,18 +135,18 @@ Many-to-many between requirements and work items. Fields: `requirement_id`, `wor
 
 The review queue.
 
-| Field                      | Notes                                                                  |
-| -------------------------- | ---------------------------------------------------------------------- |
-| `id`                       |                                                                        |
-| `project_id`               |                                                                        |
-| `source`                   | `import`, `reconcile`, `link_suggest`, `explicit_link`, `work_started` |
-| `status`                   | `pending`, `approved`, `rejected`, `superseded`                        |
-| `summary`                  | One plain-language line for the queue                                  |
-| `rationale`                | Why the agent suggests this                                            |
-| `operations`               | JSON array of typed graph operations (see below)                       |
-| `trigger_work_item_id`     | The PR or issue that caused it, if any                                 |
-| `requirement_id`           | The requirement a `reconcile` proposal is about                        |
-| `decided_by`, `decided_at` |                                                                        |
+| Field                      | Notes                                                                                          |
+| -------------------------- | ---------------------------------------------------------------------------------------------- |
+| `id`                       |                                                                                                |
+| `project_id`               |                                                                                                |
+| `source`                   | `import`, `reconcile`, `link_suggest`, `explicit_link`, `work_started`, `manual`, `reschedule` |
+| `status`                   | `pending`, `approved`, `rejected`, `superseded`                                                |
+| `summary`                  | One plain-language line for the queue                                                          |
+| `rationale`                | Why the agent suggests this                                                                    |
+| `operations`               | JSON array of typed graph operations (see below)                                               |
+| `trigger_work_item_id`     | The PR or issue that caused it, if any                                                         |
+| `requirement_id`           | The requirement a `reconcile` proposal is about                                                |
+| `decided_by`, `decided_at` |                                                                                                |
 
 ### `events`
 
@@ -159,7 +160,7 @@ Append-only audit log. Fields: `id`, `seq`, `project_id`, `type`, `entity_type`,
 
 A minimal job queue for agent runs. Fields: `id`, `type`, `payload`, `status` (`queued`, `running`, `done`, `failed`), `attempts`, `last_error`, `run_after`.
 
-Job types are `backfill` (`{ repositoryId, mergedSince?, cursor? }`), `reconcile` (`{ workItemId, requirementId }`) and `link_suggest` (`{ workItemId }`). `enqueue()`, `enqueueReconcile()` and `runJobs()` live in `src/jobs/queue.ts`. `enqueueReconcile` folds a reconciliation into a `queued` job for the same requirement instead of adding another, pointing that job at the newest work item: the agent judges the requirement as a whole and sees every work item linked to it, so when several pull requests merge before the first job runs, one run covers them all. A job that is already `running` is left alone, and the new job's proposal supersedes its proposal. A runner claims one job at a time with `FOR UPDATE SKIP LOCKED`, so concurrent runners never share a job. A failed job is retried after a delay, up to three attempts, then marked `failed`. A job left `running` for 15 minutes (for example, cut off by a serverless timeout) is claimed again. Job types without a handler stay `queued`. A handler may return the payload of a follow-up job of the same type; it is queued in the same transaction that marks the job done, so a job cut off before that point never queues its follow-up twice.
+Job types are `backfill` (`{ repositoryId, mergedSince?, cursor? }`), `reconcile` (`{ workItemId, requirementId }`), `link_suggest` (`{ workItemId }`) and `slip_check` (`{ outcomeId }`). `enqueue()`, `enqueueReconcile()`, `enqueueSlipCheck()` and `runJobs()` live in `src/jobs/queue.ts`. `enqueueSlipCheck` adds nothing when a check for the same outcome is already queued, since the check reads the outcome as it is when it runs. `enqueueReconcile` folds a reconciliation into a `queued` job for the same requirement instead of adding another, pointing that job at the newest work item: the agent judges the requirement as a whole and sees every work item linked to it, so when several pull requests merge before the first job runs, one run covers them all. A job that is already `running` is left alone, and the new job's proposal supersedes its proposal. A runner claims one job at a time with `FOR UPDATE SKIP LOCKED`, so concurrent runners never share a job. A failed job is retried after a delay, up to three attempts, then marked `failed`. A job left `running` for 15 minutes (for example, cut off by a serverless timeout) is claimed again. Job types without a handler stay `queued`. A handler may return the payload of a follow-up job of the same type; it is queued in the same transaction that marks the job done, so a job cut off before that point never queues its follow-up twice.
 
 ## Graph operations
 
@@ -168,10 +169,10 @@ Proposals carry a list of typed operations. Applying a proposal runs them in one
 | Operation            | Effect                                                                                   |
 | -------------------- | ---------------------------------------------------------------------------------------- |
 | `create_outcome`     | Add a product outcome                                                                    |
-| `update_outcome`     | Change title, description, target or priority                                            |
-| `create_requirement` | Add a root requirement under an outcome                                                  |
+| `update_outcome`     | Change title, description, target or priority; its product note goes on the event only   |
+| `create_requirement` | Add a root requirement under an outcome, optionally with a target                        |
 | `split_requirement`  | Turn a leaf into a parent with N new children; records `split_reason` and a product note |
-| `update_requirement` | Change title, description, `user_visible` or product note                                |
+| `update_requirement` | Change title, description, `user_visible`, product note or target                        |
 | `set_status`         | Set a leaf's status                                                                      |
 | `link_work_item`     | Link a work item to a requirement                                                        |
 | `unlink_work_item`   | Remove a link                                                                            |
@@ -242,6 +243,14 @@ Every proposal it makes includes a product note in plain language, for example: 
 
 The proposal records its `requirement_id`. Saving it marks any older pending `reconcile` proposal for the same requirement `superseded` (decided by `agent`): the newer one was made with more of the work in view, since it sees every work item linked so far, and the prompt asks for a verdict on the requirement as a whole.
 
+### Slip check
+
+`src/agents/slip.ts`. Approving a `reconcile` proposal changes what is left to do under an outcome, so `approveProposal` queues a `slip_check` job for that outcome. The check first looks for a warning sign without the model (`loadSlipContext`): an unfinished requirement whose target is after the outcome's (`lateRequirements` in `src/core/schedule.ts`), or an outcome target that has passed while work is still open. An outcome with no target, no open work or no warning sign is left alone and the model is not called.
+
+Otherwise the model sees the outcome, today's date, every requirement under it with its status, target and split reason, and the warning signs. It answers with a new target, or null when the late work is not needed for customers to get the outcome. Zod checks that a new target is a quarter or a date, later than the current one, no earlier than the latest late requirement, and not already past, so an impossible answer gets the usual single retry. A new target becomes a pending `reschedule` proposal with one `update_outcome` operation. Its product note says what moved and why, for example "Moved from Q1 2027 to Q2 2027. Handling bounced emails turned out to be its own piece of work.": the agent writes only the reason, and `outcomeTargetOperations` adds the move itself, as it does for a person's edits. Saving it supersedes any older pending `reschedule` proposal for the same outcome.
+
+Trade-off: the check runs when reconciled work changes the plan, not when time passes. An outcome whose target passes with no merges is flagged the next time its work is reconciled. A daily check would cover that once there is a cron that runs often enough.
+
 ### Link suggestion agent
 
 `src/agents/link-suggest.ts`. Runs as a `link_suggest` job when a PR merges with no link at all (not during a backfill). The model sees the PR's title, description and changed files, and the leaf requirements that are not dropped, with their outcomes. Finished requirements stay in, since a fix to finished work belongs with it. A project with more than `MAX_CANDIDATES` (40) leaves is narrowed first by `rankCandidates`: requirements are scored by how many of their words appear in the PR's title, description and changed files, ties go to unfinished work, and the prompt says how many were left out so the model knows to answer null when the right one is missing. This keeps the prompt bounded on large roadmaps; a retrieval index is the next step if word overlap proves too crude. The answer must be one of those keys, or null when nothing fits well. A match becomes a pending `link_suggest` proposal with a `suggested` link; no match proposes nothing. A PR that has been linked since, or already has a pending suggestion, is skipped. If the PR later gains an explicit reference, the sync marks its pending suggestion `superseded`.
@@ -267,6 +276,25 @@ For sales, leadership and anyone non-technical.
 - A "What changed this week" feed built from the last 7 days of events with product notes, each labelled with the outcome it belongs to. Changes under archived outcomes are left out, as they are from split history.
 - No ticket numbers by default. The "Show technical detail" toggle is a link to `?detail=1`, so keys are only rendered on request and never sent to the browser otherwise.
 
+### Schedule
+
+Targets are a quarter (`2027-Q1`) or a date (`2027-01-11`), checked by `targetSchema` in `src/core/schedule.ts` wherever they enter: operations, the import agent, the slip check and the plan page. A quarter ends on its last day, so `2027-03-31` is not later than `2027-Q1`. Requirements may have a target too; an unfinished requirement whose target is after its outcome's is late. Lateness is computed on read, like the rollups, never stored.
+
+The product view says "Some of the remaining work is planned after this date, so it may move" under the target, with keys only in technical detail. The technical view shows each requirement's due date and marks late ones "After the outcome's target". The plan page lists them by key.
+
+### Plan (`/p/[slug]/plan`)
+
+For the PM, to reschedule and reprioritise in place.
+
+- Outcomes in priority order. Drag one to a new place, or use its Up and Down buttons, which also work from the keyboard and on touch screens. A move renumbers priorities 1, 2, 3… in the new order, and only the moved outcome gets a product note ("Now comes before “Customers can export reports”."), so a move is one entry in the change feed (`moveOperations` in `src/core/planning.ts`).
+- Each outcome's target can be changed in place, with an optional reason for the change feed. The note says what moved ("Moved from Q1 2027 to Q2 2027.") followed by the reason (`outcomeTargetOperations`). Requirement targets are edited the same way, without a note: they are technical detail.
+- Warnings for late requirements and for a target that has passed with work still open.
+- Every edit goes through `savePlanningChange`: it saves a `manual` proposal and approves it at once with `applyProposal`, in one transaction, so a person's edits take the same path as the agents' and each has an event. v1 has no sign-in, so the actor is `planner`.
+
+Moves of a target or priority are marked "Plan change" in the product view's change feed (`moved` on each `RecentChange`).
+
+Out of scope: sprints, story points, estimates and task-level scheduling. Those belong to the issue tracker Throughline reads from; Throughline plans at the outcome and requirement level.
+
 ### Technical view (`/p/[slug]/tech`)
 
 For engineering.
@@ -282,21 +310,21 @@ For the PM.
 
 - Pending proposals, newest first, each with its source, the work item that prompted it, a summary, rationale and a readable diff of its operations: current values struck through next to the proposed ones.
 - Approve, edit then approve, or reject. Editing offers the fields an edit may change (see "Graph operations").
-- Approving goes through `approveProposal` (`src/core/review.ts`): it applies the proposal and, for each work item the proposal links that has already finished, queues a `reconcile` job, just as a PR that references a requirement would. This is how an approved link suggestion leads to reconciliation.
+- Approving goes through `approveProposal` (`src/core/review.ts`): it applies the proposal and, for each work item the proposal links that has already finished, queues a `reconcile` job, just as a PR that references a requirement would. This is how an approved link suggestion leads to reconciliation. Approving a `reconcile` proposal also queues a `slip_check` for its outcome (see "Slip check").
 - v1 has no sign-in, so decisions are recorded with the actor `reviewer`.
 
 ## Demo mode
 
 A seeded project called "Acme Analytics" lets anyone explore Throughline without signing in or providing an API key. Demo proposals are pre-generated fixtures. "Open demo" on the home page goes straight to it.
 
-`pnpm db:seed` (`src/db/seed.ts`) builds the demo graph by approving proposals, so it has the same event history a real project would, then leaves three proposals pending for the review queue. Running it again replaces the demo project. `/api/demo/reset` does the same inside one transaction, so visitors see the old demo until the new one is complete; a Vercel cron calls it nightly, guarded by `CRON_SECRET`, and refused outright when the secret is unset.
+`pnpm db:seed` (`src/db/seed.ts`) builds the demo graph by approving proposals, so it has the same event history a real project would, including a planning change that moves one outcome back a quarter and dates for some requirements, then leaves four proposals pending for the review queue, one of them a `reschedule` proposal for an outcome whose bounce-handling work is planned after its target. Running it again replaces the demo project. `/api/demo/reset` does the same inside one transaction, so visitors see the old demo until the new one is complete; a Vercel cron calls it nightly, guarded by `CRON_SECRET`, and refused outright when the secret is unset.
 
 ### Public deployment
 
 v1 has no sign-in, so a public site sets `PUBLIC_DEPLOYMENT=true` (`src/lib/public-deployment.ts`). Then:
 
-- Only projects with `is_demo` accept changes. For any other project the import, review and connect server actions refuse with "view-only", and the pages hide their forms.
-- Proposals can be approved or rejected but not edited first: the review action refuses edited operations and the Edit button is hidden, so visitors cannot put their own wording on the public demo. The owner changes their own projects from a local copy of the app pointed at the production database (see `docs/DEPLOY.md`).
+- Only projects with `is_demo` accept changes. For any other project the import, review, plan and connect server actions refuse with "view-only", and the pages hide their forms.
+- Proposals can be approved or rejected but not edited first: the review action refuses edited operations and the Edit button is hidden, so visitors cannot put their own wording on the public demo. For the same reason the plan page takes reorders and new targets on the demo but no free-text reason. The owner changes their own projects from a local copy of the app pointed at the production database (see `docs/DEPLOY.md`).
 - Agents for demo projects use `getDemoLLMProvider`: a free model through OpenRouter when `OPENROUTER_API_KEY` is set, with sample results as the fallback, and sample results alone otherwise. They never use the Anthropic key, so visitors cannot spend it. Queued jobs for demo projects do the same, and skip GitHub, with or without the variable: a job a visitor queued may run on the owner's machine, and the demo's repository is made up.
 - No repository can be connected from the site.
 

@@ -8,6 +8,7 @@ import {
   type ProductStatus,
   productStatus,
 } from "@/core/rollup";
+import { formatTarget, lateRequirements } from "@/core/schedule";
 
 const STATUS_TEXT: Record<
   ProductStatus,
@@ -36,30 +37,6 @@ const STATUS_TEXT: Record<
 };
 
 /**
- * Format a target as written in the roadmap ("2026-Q4" or "2027-01-11") for reading.
- *
- * Args:
- *   target: A quarter or an ISO date; anything else is shown as it is.
- *
- * Returns:
- *   E.g. "Q4 2026" or "11 January 2027".
- */
-function formatTarget(target: string): string {
-  const quarter = /^(\d{4})-Q([1-4])$/.exec(target);
-  if (quarter) return `Q${quarter[2]} ${quarter[1]}`;
-  const date = new Date(`${target}T00:00:00Z`);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(target) && !isNaN(date.getTime())) {
-    return date.toLocaleDateString("en-GB", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-      timeZone: "UTC",
-    });
-  }
-  return target;
-}
-
-/**
  * A card for one outcome in the product view.
  *
  * Args:
@@ -79,6 +56,7 @@ export function OutcomeCard({
   const status = STATUS_TEXT[productStatus(outcome.requirements)];
   const percent = Math.round(outcomeProgress(outcome.requirements) * 100);
   const available = availableToday(outcome.requirements);
+  const late = lateRequirements(outcome.target, outcome.requirements);
   const titleId = `outcome-${outcome.id}`;
 
   return (
@@ -140,6 +118,16 @@ export function OutcomeCard({
           ? `Target: ${formatTarget(outcome.target)}`
           : "No target date yet"}
       </p>
+      {late.length > 0 && (
+        <p className="text-sm text-amber-900">
+          Some of the remaining work is planned after this date, so it may move.
+          {showDetail && (
+            <span className="ml-2 font-mono text-muted-foreground">
+              {late.map((r) => r.key).join(", ")}
+            </span>
+          )}
+        </p>
+      )}
     </article>
   );
 }

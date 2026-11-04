@@ -8,8 +8,9 @@ import type { SourceAdapter } from "@/adapters/source";
 import { DEMO_LLM_FIXTURES } from "@/agents/fixtures";
 import { runLinkSuggest } from "@/agents/link-suggest";
 import { runReconcile } from "@/agents/reconcile";
+import { runSlipCheck } from "@/agents/slip";
 import { getDb } from "@/db/client";
-import { projects, workItems } from "@/db/schema";
+import { outcomes, projects, workItems } from "@/db/schema";
 
 import { runBackfill } from "./backfill";
 import { runJobs } from "./queue";
@@ -56,6 +57,19 @@ export async function runQueuedJobs(): Promise<{
     link_suggest: async (payload) => {
       const agents = await agentsFor(payload.workItemId);
       await runLinkSuggest(db, agents.llm, agents.source, payload);
+    },
+    slip_check: async ({ outcomeId }) => {
+      const [row] = await db
+        .select({ isDemo: projects.isDemo })
+        .from(outcomes)
+        .innerJoin(projects, eq(outcomes.projectId, projects.id))
+        .where(eq(outcomes.id, outcomeId));
+      await runSlipCheck(
+        db,
+        row?.isDemo ? getDemoLLMProvider(DEMO_LLM_FIXTURES) : llm,
+        outcomeId,
+        new Date().toISOString().slice(0, 10),
+      );
     },
   });
 }

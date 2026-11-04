@@ -373,6 +373,65 @@ describe("applyProposal with edits", () => {
   });
 });
 
+describe("targets", () => {
+  it("sets requirement targets and records an outcome move with its note", async () => {
+    await approve([
+      {
+        type: "create_outcome",
+        key: "OUT-1",
+        title: "Export",
+        target: "2027-Q1",
+      },
+      {
+        type: "create_requirement",
+        key: "TL-1",
+        outcome_key: "OUT-1",
+        title: "Async export service",
+        target: "2027-02-15",
+      },
+    ]);
+    await approve([
+      {
+        type: "update_requirement",
+        requirement_key: "TL-1",
+        target: "2027-Q2",
+      },
+      {
+        type: "update_outcome",
+        outcome_key: "OUT-1",
+        target: "2027-Q2",
+        product_note: "Moved from Q1 2027 to Q2 2027.",
+      },
+    ]);
+
+    expect(await requirementByKey("TL-1")).toMatchObject({
+      target: "2027-Q2",
+      productNote: null,
+    });
+    const [outcome] = await db.select().from(outcomes);
+    expect(outcome.target).toBe("2027-Q2");
+    const [moved] = await db
+      .select()
+      .from(events)
+      .where(eq(events.type, "update_outcome"));
+    expect(moved).toMatchObject({
+      entityId: outcome.id,
+      productNote: "Moved from Q1 2027 to Q2 2027.",
+    });
+  });
+
+  it("refuses a target that is not a quarter or a date", async () => {
+    await approve(exportOutcome);
+    const proposalId = await propose([
+      { type: "update_outcome", outcome_key: "OUT-1", target: "next spring" },
+    ]);
+
+    await expect(applyProposal(db, proposalId, "pm")).rejects.toThrow(
+      "Use a quarter like 2027-Q1",
+    );
+  });
+});
+
 describe("rejectProposal", () => {
   it("marks the proposal rejected and changes nothing else", async () => {
     await approve(exportOutcome);

@@ -4,6 +4,7 @@ import type { ReactElement } from "react";
 import { Badge, type BadgeTone } from "@/components/badge";
 import type { LinkedWorkItem, RequirementTree } from "@/core/roadmap";
 import { requirementProgress } from "@/core/rollup";
+import { formatTarget } from "@/core/schedule";
 
 const LEAF_STATUS: Record<
   NonNullable<RequirementTree["status"]>,
@@ -33,20 +34,23 @@ export const SUMMARY_CLASS =
  *
  * Args:
  *   requirements: Requirements at one level of the tree.
+ *   lateKeys: Keys of unfinished requirements due after their outcome's target.
  *
  * Returns:
  *   The nested list.
  */
 export function RequirementList({
   requirements,
+  lateKeys,
 }: {
   requirements: RequirementTree[];
+  lateKeys: Set<string>;
 }): ReactElement {
   return (
     <ul className="flex flex-col gap-1 border-l border-border pl-4">
       {requirements.map((requirement) => (
         <li key={requirement.id}>
-          <RequirementItem requirement={requirement} />
+          <RequirementItem requirement={requirement} lateKeys={lateKeys} />
         </li>
       ))}
     </ul>
@@ -55,8 +59,10 @@ export function RequirementList({
 
 function RequirementItem({
   requirement,
+  lateKeys,
 }: {
   requirement: RequirementTree;
+  lateKeys: Set<string>;
 }): ReactElement {
   const isParent = requirement.children.length > 0;
   const status = requirement.status ? LEAF_STATUS[requirement.status] : null;
@@ -79,6 +85,14 @@ function RequirementItem({
         {requirement.userVisible && (
           <span className="text-xs text-muted-foreground">Customer-facing</span>
         )}
+        {requirement.target && (
+          <span className="text-xs text-muted-foreground">
+            Due {formatTarget(requirement.target)}
+          </span>
+        )}
+        {lateKeys.has(requirement.key) && (
+          <Badge tone="amber">After the outcome&rsquo;s target</Badge>
+        )}
       </summary>
       <div className="flex flex-col gap-2 pb-2 pl-4">
         {requirement.description && (
@@ -93,7 +107,10 @@ function RequirementItem({
           </p>
         )}
         {isParent ? (
-          <RequirementList requirements={requirement.children} />
+          <RequirementList
+            requirements={requirement.children}
+            lateKeys={lateKeys}
+          />
         ) : requirement.workItems.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No issues or pull requests linked yet.

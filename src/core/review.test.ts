@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   jobs,
   links,
+  outcomes,
   projects,
   proposals,
   requirements,
@@ -126,5 +127,53 @@ describe("approveProposal", () => {
       .from(proposals)
       .where(eq(proposals.id, again));
     expect(proposal.status).toBe("pending");
+  });
+
+  it("checks the outcome's target again after a split reconciliation", async () => {
+    // Reconcile proposals record the requirement they are about; a split keeps it as the parent.
+    const reconcile = async (operations: GraphOperationInput[]) => {
+      const [tl1] = await db.select().from(requirements);
+      const [proposal] = await db
+        .insert(proposals)
+        .values({
+          projectId,
+          source: "reconcile",
+          summary: "Test",
+          operations,
+          requirementId: tl1.id,
+        })
+        .returning();
+      return approveProposal(db, proposal.id, "pm");
+    };
+
+    expect(
+      await reconcile([
+        {
+          type: "split_requirement",
+          requirement_key: "TL-1",
+          split_reason: "Two parts",
+          product_note: "Two parts",
+          children: [
+            { key: "TL-2", title: "A", status: "done" },
+            { key: "TL-3", title: "B" },
+          ],
+        },
+      ]),
+    ).toBe(1);
+    // A check already waiting for the outcome covers the next change too.
+    expect(
+      await reconcile([
+        {
+          type: "update_requirement",
+          requirement_key: "TL-1",
+          title: "CSV export",
+        },
+      ]),
+    ).toBe(0);
+
+    const [outcome] = await db.select().from(outcomes);
+    expect(await db.select().from(jobs)).toMatchObject([
+      { type: "slip_check", payload: { outcomeId: outcome.id } },
+    ]);
   });
 });

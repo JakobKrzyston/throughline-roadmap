@@ -46,6 +46,10 @@ export const proposalSource = pgEnum("proposal_source", [
   "explicit_link",
   // An open PR references a planned requirement, so work on it has started. Also automatic.
   "work_started",
+  // A person's own edit on the plan page, approved by that person as it is made.
+  "manual",
+  // The slip check proposes a new outcome target when open work makes the current one unlikely.
+  "reschedule",
 ]);
 export const proposalStatus = pgEnum("proposal_status", [
   "pending",
@@ -134,6 +138,8 @@ export const requirements = pgTable(
     userVisible: boolean("user_visible").notNull().default(false),
     productNote: text("product_note"),
     splitReason: text("split_reason"),
+    // Optional quarter or date, compared with the outcome's target to show work due after it.
+    target: text("target"),
     ...timestamps,
   },
   (t) => [

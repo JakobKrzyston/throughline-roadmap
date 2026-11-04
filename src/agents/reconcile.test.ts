@@ -356,6 +356,7 @@ describe("superseding", () => {
       "import",
       "link_suggest",
       "reconcile",
+      "reschedule",
     ]);
   });
 

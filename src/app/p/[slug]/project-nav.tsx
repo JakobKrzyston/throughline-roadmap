@@ -5,6 +5,7 @@ import type { ReactElement } from "react";
 const VIEWS = [
   { path: "", label: "Product view" },
   { path: "/tech", label: "Technical view" },
+  { path: "/plan", label: "Plan" },
   { path: "/review", label: "Review queue" },
   { path: "/import", label: "Import" },
   { path: "/settings", label: "Settings" },

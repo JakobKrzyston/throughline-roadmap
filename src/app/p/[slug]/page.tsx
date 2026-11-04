@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { type ReactElement, Suspense } from "react";
 
+import { Badge } from "@/components/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { loadRecentChanges, loadRoadmap } from "@/core/roadmap";
 import { getDb } from "@/db/client";
@@ -124,7 +125,14 @@ async function ProductView({
           <ol className="flex flex-col gap-4">
             {changes.map((change) => (
               <li key={change.id} className="flex flex-col gap-1">
-                <p>{change.note}</p>
+                <p>
+                  {change.moved && (
+                    <span className="mr-2">
+                      <Badge tone="amber">Plan change</Badge>
+                    </span>
+                  )}
+                  {change.note}
+                </p>
                 <p className="text-sm text-muted-foreground">
                   <time dateTime={change.at.toISOString()}>
                     {change.at.toLocaleDateString("en-GB", {

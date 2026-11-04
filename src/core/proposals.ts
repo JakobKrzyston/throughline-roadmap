@@ -167,7 +167,7 @@ async function applyOperation(
           priority: op.priority,
         })
         .where(eq(outcomes.id, outcome.id));
-      return event(op, "outcome", outcome.id, null);
+      return event(op, "outcome", outcome.id, op.product_note);
     }
 
     case "create_requirement": {
@@ -183,6 +183,7 @@ async function applyOperation(
           status: "planned",
           userVisible: op.user_visible,
           productNote: op.product_note,
+          target: op.target,
         })
         .onConflictDoNothing()
         .returning();
@@ -239,6 +240,7 @@ async function applyOperation(
           description: op.description,
           userVisible: op.user_visible,
           productNote: op.product_note,
+          target: op.target,
         })
         .where(eq(requirements.id, requirement.id));
       return event(op, "requirement", requirement.id, op.product_note);

@@ -7,6 +7,7 @@ import type { SourceChangedFile } from "@/adapters/source";
 import { IMPORT_TASK, type importOutputSchema } from "./import";
 import { LINK_SUGGEST_TASK } from "./link-suggest";
 import { RECONCILE_TASK, type reconcileOutputSchema } from "./reconcile";
+import { SLIP_TASK } from "./slip";
 
 /** A short roadmap of the kind a PM might paste. */
 export const SAMPLE_ROADMAP = `# Acme Analytics – H1 2027
@@ -210,6 +211,16 @@ export const DEMO_LLM_FIXTURES: FakeFixtures = {
       requirement_key: null,
       relation: "implements",
       rationale: "Demo mode: no AI key is set up, so no link is suggested.",
+    },
+  ],
+  // A sample date could fall before the outcome's own target, so demo mode keeps the target.
+  [SLIP_TASK]: [
+    {
+      new_target: null,
+      summary: "Keep the target",
+      rationale:
+        "Demo mode: no AI key is set up, so the target is not judged and stays as it is.",
+      reason: "The plan is unchanged.",
     },
   ],
 };

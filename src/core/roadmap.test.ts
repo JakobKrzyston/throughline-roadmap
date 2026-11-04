@@ -119,6 +119,50 @@ describe("roadmap loaders", () => {
     ).toEqual([]);
   });
 
+  it("marks changes that moved an outcome's target or priority", async () => {
+    await approve([
+      {
+        type: "update_outcome",
+        outcome_key: "OUT-4",
+        target: "2027-Q2",
+        product_note: "Moved from Q1 2027 to Q2 2027.",
+      },
+      {
+        type: "update_outcome",
+        outcome_key: "OUT-4",
+        description: "Large accounts see their dashboards without waiting.",
+        product_note: "Reworded.",
+      },
+    ]);
+
+    const roadmap = await loadRoadmap(db, projectId);
+    const [reworded, moved] = await loadRecentChanges(db, projectId, roadmap);
+    expect(moved).toMatchObject({
+      note: "Moved from Q1 2027 to Q2 2027.",
+      entityKey: "OUT-4",
+      outcomeTitle: "Dashboards load in under two seconds",
+      moved: true,
+    });
+    expect(reworded).toMatchObject({ note: "Reworded.", moved: false });
+  });
+
+  it("carries requirement targets into the tree", async () => {
+    await approve([
+      {
+        type: "update_requirement",
+        requirement_key: "TL-20",
+        target: "2027-Q3",
+      },
+    ]);
+
+    const roadmap = await loadRoadmap(db, projectId);
+    const dashboards = roadmap.find((o) => o.key === "OUT-4")!;
+    expect(dashboards.requirements.map((r) => [r.key, r.target])).toEqual([
+      ["TL-15", null],
+      ["TL-20", "2027-Q3"],
+    ]);
+  });
+
   it("lists every split with its reason and children", async () => {
     const splits = await loadSplitHistory(
       db,

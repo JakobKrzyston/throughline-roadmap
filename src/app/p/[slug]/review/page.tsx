@@ -29,6 +29,8 @@ const SOURCE_LABELS: Record<typeof proposals.$inferSelect.source, string> = {
   link_suggest: "Suggested link",
   explicit_link: "Linked by reference",
   work_started: "Work started",
+  manual: "Planning change",
+  reschedule: "Target at risk",
 };
 
 /**

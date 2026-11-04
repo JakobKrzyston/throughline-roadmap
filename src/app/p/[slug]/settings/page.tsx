@@ -1,17 +1,20 @@
-/** /p/[slug]/settings: connect GitHub repositories to the project. */
-import { asc, eq } from "drizzle-orm";
+/** /p/[slug]/settings: connect GitHub repositories to the project and set up the weekly digest. */
+import { asc, eq, sql } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { type ReactElement, Suspense } from "react";
 
 import { githubInstallUrl, missingGitHubSettings } from "@/adapters/github";
+import { loadDigest } from "@/core/digest";
 import { getDb } from "@/db/client";
 import { projects, repositories } from "@/db/schema";
 import { type BackfillStatus, backfillStatuses } from "@/jobs/backfill";
 import { isPublicDeployment } from "@/lib/public-deployment";
+import { appOrigin } from "@/lib/app-origin";
 
 import { ProjectNav } from "../project-nav";
 import { ConnectForm } from "./connect-form";
+import { DigestForm } from "./digest-form";
 
 // The connect action imports the repository's history after responding; allow it time to finish.
 export const maxDuration = 300;
@@ -55,7 +58,14 @@ async function ProjectSettings({
   await connection();
   const db = getDb();
   const [project] = await db
-    .select({ id: projects.id, name: projects.name })
+    .select({
+      id: projects.id,
+      name: projects.name,
+      slug: projects.slug,
+      // Only whether a webhook is saved: the URL itself lets anyone post to the channel.
+      digestActive: sql<boolean>`${projects.digestSlackWebhookUrl} is not null`,
+      digestSentAt: projects.digestSentAt,
+    })
     .from(projects)
     .where(eq(projects.slug, slug));
   if (!project) notFound();
@@ -72,6 +82,7 @@ async function ProjectSettings({
   const missing = missingGitHubSettings();
   const configured = missing.length === 0;
   const installUrl = githubInstallUrl();
+  const digest = await loadDigest(db, project, await appOrigin());
 
   return (
     <>
@@ -128,6 +139,46 @@ async function ProjectSettings({
         {!isPublicDeployment() && (
           <ConnectForm slug={slug} disabled={!configured} />
         )}
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-xl font-semibold">Weekly digest</h2>
+        <p className="text-sm text-muted-foreground">
+          Every Monday morning, Throughline can post a plain-language summary to
+          a Slack channel for people who do not follow the roadmap day to day:
+          what changed in the past week and where each outcome stands. It is
+          written from the roadmap itself, so it says nothing the product view
+          does not.
+        </p>
+        {project.digestActive ? (
+          <p className="text-sm">
+            Posting to Slack every Monday.
+            {project.digestSentAt &&
+              ` Last sent ${project.digestSentAt.toLocaleDateString("en-GB", {
+                weekday: "long",
+                day: "numeric",
+                month: "long",
+                timeZone: "UTC",
+              })}.`}
+          </p>
+        ) : isPublicDeployment() ? (
+          <p className="rounded-md border border-border bg-muted p-3 text-sm">
+            On the public site, digests are set up by the site owner.
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            In Slack, add an incoming webhook for the channel and paste its URL
+            below. Throughline sends this week&rsquo;s digest straight away, so
+            you can check it arrives.
+          </p>
+        )}
+        {!isPublicDeployment() && (
+          <DigestForm slug={slug} active={project.digestActive} />
+        )}
+        <h3 className="text-sm font-medium">The next digest so far</h3>
+        <pre className="rounded-md border border-border bg-muted p-4 font-sans text-sm whitespace-pre-wrap">
+          {digest}
+        </pre>
       </section>
     </>
   );

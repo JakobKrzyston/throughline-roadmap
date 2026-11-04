@@ -89,3 +89,20 @@ test("every project page links to the others", async ({ page }) => {
     );
   }
 });
+
+test("settings previews the weekly digest in plain language", async ({
+  page,
+}) => {
+  await page.goto("/p/acme-analytics/settings");
+
+  await expect(
+    page.getByRole("heading", { name: "Weekly digest" }),
+  ).toBeVisible();
+  const preview = page.locator("pre");
+  await expect(preview).toContainText("Acme Analytics: roadmap update,");
+  await expect(preview).toContainText(
+    "Customers can export reports to Excel and CSV: Partially available",
+  );
+  await expect(preview).not.toContainText(TICKET_NUMBER);
+  await expect(page.getByLabel("Slack incoming webhook URL")).toBeVisible();
+});

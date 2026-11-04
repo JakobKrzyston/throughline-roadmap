@@ -1,4 +1,4 @@
-/** Zod schemas for the typed graph operations a proposal carries. Exports graphOperationSchema, operationListSchema and their types. */
+/** Zod schemas for the typed graph operations a proposal carries. Exports graphOperationSchema, operationListSchema, leafStatusSchema, workTypeSchema and their types. */
 import { z } from "zod";
 
 import { targetSchema } from "./schedule";
@@ -14,6 +14,17 @@ export const leafStatusSchema = z.enum([
   "done",
   "dropped",
 ]);
+
+export const workTypeSchema = z.enum([
+  "feature",
+  "infrastructure",
+  "security",
+  "tech_debt",
+  "research",
+]);
+
+// Free text, so each project names its own teams. Null clears it, so the requirement inherits.
+const team = z.string().trim().min(1).max(60);
 
 const createOutcome = z.object({
   type: z.literal("create_outcome"),
@@ -55,14 +66,18 @@ const createRequirement = z.object({
   user_visible: z.boolean().default(false),
   product_note: z.string().nullish(),
   target: targetSchema.nullish(),
+  work_type: workTypeSchema.nullish(),
+  team: team.nullish(),
 });
 
+// Children get no team of their own, so they inherit the parent's.
 const splitChild = z.object({
   key,
   title: text,
   description: z.string().default(""),
   user_visible: z.boolean().default(false),
   status: leafStatusSchema.default("planned"),
+  work_type: workTypeSchema.nullish(),
 });
 
 const splitRequirement = z.object({
@@ -82,6 +97,8 @@ const updateRequirement = z
     user_visible: z.boolean().optional(),
     product_note: z.string().nullish(),
     target: targetSchema.nullish(),
+    work_type: workTypeSchema.nullish(),
+    team: team.nullish(),
   })
   .refine(
     (op) =>
@@ -91,6 +108,8 @@ const updateRequirement = z
         op.user_visible,
         op.product_note,
         op.target,
+        op.work_type,
+        op.team,
       ].some((value) => value !== undefined),
     nothingToChange,
   );
@@ -138,3 +157,5 @@ export type GraphOperation = z.output<typeof graphOperationSchema>;
 export type GraphOperationInput = z.input<typeof graphOperationSchema>;
 
 export type LeafStatus = z.infer<typeof leafStatusSchema>;
+
+export type WorkType = z.infer<typeof workTypeSchema>;

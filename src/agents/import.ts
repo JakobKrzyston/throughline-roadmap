@@ -7,6 +7,7 @@ import { targetSchema } from "@/core/schedule";
 import type { Database } from "@/db/client";
 import { proposals } from "@/db/schema";
 
+import { workTypeOutput } from "./context";
 import { lastKeyNumbers } from "./keys";
 
 export const IMPORT_TASK = "roadmap_import";
@@ -57,6 +58,7 @@ export const importOutputSchema = z.object({
               .describe(
                 "True if finishing this alone lets customers see or use something new, even when the work is back-end. False for work customers would not notice by itself.",
               ),
+            work_type: workTypeOutput,
             product_note: z
               .string()
               .nullable()
@@ -186,6 +188,7 @@ function toOperations(
         description: requirement.description,
         user_visible: requirement.user_visible,
         product_note: requirement.product_note,
+        work_type: requirement.work_type,
       })),
     ];
   });

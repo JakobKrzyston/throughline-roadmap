@@ -1,4 +1,4 @@
-/** /p/[slug]/plan: reorder outcomes by priority and change targets, with warnings when work is due too late. */
+/** /p/[slug]/plan: reorder outcomes by priority, change targets and set who owns each requirement, with warnings when work is due too late. */
 import { eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -49,8 +49,9 @@ export default function PlanPage({
         <h1 className="text-3xl font-semibold tracking-tight">Plan</h1>
         <p className="text-muted-foreground">
           Drag outcomes, or use Up and Down, to set their priority, and change
-          when each one should land. Every change is recorded and moves to a
-          target appear in the product view&rsquo;s change feed.
+          when each one should land. Open an outcome&rsquo;s requirements to set
+          their targets, kinds of work and teams. Every change is recorded and
+          moves to a target appear in the product view&rsquo;s change feed.
         </p>
       </div>
       {/* The roadmap is read per request; the heading above is the static shell. */}
@@ -101,7 +102,7 @@ async function PlanView({
           outcomes={roadmap.map((outcome) => toPlanOutcome(outcome, today))}
           editable={!viewOnly}
           // Visitors' wording would show on the public demo until the nightly reset.
-          allowReason={!isPublicDeployment()}
+          allowFreeText={!isPublicDeployment()}
         />
       )}
     </>
@@ -131,6 +132,9 @@ function toPlanOutcome(outcome: OutcomeTree, today: string): PlanOutcome {
         key: node.key,
         title: node.title,
         target: node.target,
+        workType: node.workType,
+        team: node.teamInherited ? null : node.team,
+        inheritedTeam: node.teamInherited ? node.team : null,
         depth,
         status: node.status
           ? STATUS_LABELS[node.status]

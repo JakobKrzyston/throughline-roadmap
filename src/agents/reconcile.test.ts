@@ -158,6 +158,7 @@ describe("runReconcile", () => {
     expect(user).toContain("Split from TL-1 Async export service");
     expect(user).toContain("Requirement TL-4: Excel export");
     expect(user).toContain("Status: in_progress");
+    expect(user).toContain("Kind of work: feature.");
     expect(user).toContain("- TL-3 CSV export (done)");
     expect(user).toContain(
       'Pull request "Excel export with xlsx writer" (open)',
@@ -217,8 +218,16 @@ describe("classifications", () => {
         product_note:
           "Customers can download reports as Excel files today. Formatted spreadsheets with proper number and date styles are planned next.",
         children: [
-          expect.objectContaining({ key: "TL-25", status: "done" }),
-          expect.objectContaining({ key: "TL-26", status: "planned" }),
+          expect.objectContaining({
+            key: "TL-25",
+            status: "done",
+            work_type: "feature",
+          }),
+          expect.objectContaining({
+            key: "TL-26",
+            status: "planned",
+            work_type: "feature",
+          }),
         ],
       },
     ]);

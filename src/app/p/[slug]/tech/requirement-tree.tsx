@@ -1,7 +1,8 @@
-/** The technical view's expandable requirement tree, with linked issues and pull requests. Exports RequirementList. */
+/** The technical view's expandable requirement tree, with linked issues and pull requests and who is working on them. Exports RequirementList, SUMMARY_CLASS. */
 import type { ReactElement } from "react";
 
 import { Badge, type BadgeTone } from "@/components/badge";
+import { WORK_TYPE_LABELS } from "@/core/proposal-diff";
 import type { LinkedWorkItem, RequirementTree } from "@/core/roadmap";
 import { requirementProgress } from "@/core/rollup";
 import { formatTarget } from "@/core/product-text";
@@ -35,6 +36,7 @@ export const SUMMARY_CLASS =
  * Args:
  *   requirements: Requirements at one level of the tree.
  *   lateKeys: Keys of unfinished requirements due after their outcome's target.
+ *   shown: Keys of the requirements a filter leaves in, or null to show every one.
  *
  * Returns:
  *   The nested list.
@@ -42,17 +44,25 @@ export const SUMMARY_CLASS =
 export function RequirementList({
   requirements,
   lateKeys,
+  shown,
 }: {
   requirements: RequirementTree[];
   lateKeys: Set<string>;
+  shown: Set<string> | null;
 }): ReactElement {
   return (
     <ul className="flex flex-col gap-1 border-l border-border pl-4">
-      {requirements.map((requirement) => (
-        <li key={requirement.id}>
-          <RequirementItem requirement={requirement} lateKeys={lateKeys} />
-        </li>
-      ))}
+      {requirements
+        .filter((requirement) => !shown || shown.has(requirement.key))
+        .map((requirement) => (
+          <li key={requirement.id}>
+            <RequirementItem
+              requirement={requirement}
+              lateKeys={lateKeys}
+              shown={shown}
+            />
+          </li>
+        ))}
     </ul>
   );
 }
@@ -60,9 +70,11 @@ export function RequirementList({
 function RequirementItem({
   requirement,
   lateKeys,
+  shown,
 }: {
   requirement: RequirementTree;
   lateKeys: Set<string>;
+  shown: Set<string> | null;
 }): ReactElement {
   const isParent = requirement.children.length > 0;
   const status = requirement.status ? LEAF_STATUS[requirement.status] : null;
@@ -81,6 +93,17 @@ function RequirementItem({
           <Badge tone="blue">
             {Math.round(requirementProgress(requirement) * 100)}% done
           </Badge>
+        )}
+        {requirement.workType && (
+          <span className="text-xs text-muted-foreground">
+            {WORK_TYPE_LABELS[requirement.workType]}
+          </span>
+        )}
+        {/* An inherited team is the parent's, which is shown on the parent's row. */}
+        {requirement.team && !requirement.teamInherited && (
+          <span className="text-xs text-muted-foreground">
+            Team {requirement.team}
+          </span>
         )}
         {requirement.userVisible && (
           <span className="text-xs text-muted-foreground">Customer-facing</span>
@@ -106,10 +129,17 @@ function RequirementItem({
             {requirement.splitReason}
           </p>
         )}
+        {requirement.people.length > 0 && (
+          <p className="text-sm">
+            <span className="font-medium">Working on it: </span>
+            {requirement.people.join(", ")}
+          </p>
+        )}
         {isParent ? (
           <RequirementList
             requirements={requirement.children}
             lateKeys={lateKeys}
+            shown={shown}
           />
         ) : requirement.workItems.length === 0 ? (
           <p className="text-sm text-muted-foreground">

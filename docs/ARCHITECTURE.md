@@ -97,35 +97,42 @@ Product-facing goals.
 
 Technical work, arranged as a tree under each outcome.
 
-| Field                  | Notes                                                                             |
-| ---------------------- | --------------------------------------------------------------------------------- |
-| `id`                   |                                                                                   |
-| `project_id`           |                                                                                   |
-| `key`                  | e.g. `TL-12`. This is what PRs reference.                                         |
-| `outcome_id`           | Set on root requirements only                                                     |
-| `parent_id`            | Set on child requirements only. Exactly one of `outcome_id` / `parent_id` is set. |
-| `title`, `description` | Technical language is fine here                                                   |
-| `status`               | Leaf only: `planned`, `in_progress`, `done`, `dropped`. Null on parents.          |
-| `user_visible`         | True if finishing this gives customers something they can see or use              |
-| `product_note`         | Plain-language explanation shown in the product view                              |
-| `split_reason`         | Why this requirement was split, if it was                                         |
-| `target`               | Optional quarter or date, compared with the outcome's target (see "Schedule")     |
+| Field                  | Notes                                                                                   |
+| ---------------------- | --------------------------------------------------------------------------------------- |
+| `id`                   |                                                                                         |
+| `project_id`           |                                                                                         |
+| `key`                  | e.g. `TL-12`. This is what PRs reference.                                               |
+| `outcome_id`           | Set on root requirements only                                                           |
+| `parent_id`            | Set on child requirements only. Exactly one of `outcome_id` / `parent_id` is set.       |
+| `title`, `description` | Technical language is fine here                                                         |
+| `status`               | Leaf only: `planned`, `in_progress`, `done`, `dropped`. Null on parents.                |
+| `user_visible`         | True if finishing this gives customers something they can see or use                    |
+| `product_note`         | Plain-language explanation shown in the product view                                    |
+| `split_reason`         | Why this requirement was split, if it was                                               |
+| `target`               | Optional quarter or date, compared with the outcome's target (see "Schedule")           |
+| `work_type`            | Optional kind of work: `feature`, `infrastructure`, `security`, `tech_debt`, `research` |
+| `team`                 | Optional free-text owning team, e.g. `Platform`. Null inherits the parent's team        |
+
+A requirement's effective team is its own, else the nearest ancestor's. Like status rollups, the inherited team is worked out on read (`loadRoadmap`), never copied onto children, so changing a parent's team moves every piece that has none of its own.
 
 ### `work_items`
 
 Mirrors of GitHub issues and pull requests.
 
-| Field                    | Notes                                                                                                            |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `id`                     |                                                                                                                  |
-| `project_id`             |                                                                                                                  |
-| `source`                 | `github` (later `linear`, `jira`)                                                                                |
-| `external_id`            | e.g. `1043219876#41`: repository id, then number                                                                 |
-| `kind`                   | `issue` or `pull_request`                                                                                        |
-| `title`, `url`, `state`  | `state`: `open`, `closed`, `merged`, `not_planned` (an issue closed as not planned or duplicate)                 |
-| `body_excerpt`           | First part of the description, for agent context                                                                 |
-| `merged_at`, `closed_at` |                                                                                                                  |
-| `source_updated_at`      | When GitHub last changed the item. A delivery older than this is ignored, since webhooks can arrive out of order |
+| Field                    | Notes                                                                                                             |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `id`                     |                                                                                                                   |
+| `project_id`             |                                                                                                                   |
+| `source`                 | `github` (later `linear`, `jira`)                                                                                 |
+| `external_id`            | e.g. `1043219876#41`: repository id, then number                                                                  |
+| `kind`                   | `issue` or `pull_request`                                                                                         |
+| `title`, `url`, `state`  | `state`: `open`, `closed`, `merged`, `not_planned` (an issue closed as not planned or duplicate)                  |
+| `body_excerpt`           | First part of the description, for agent context                                                                  |
+| `merged_at`, `closed_at` |                                                                                                                   |
+| `source_updated_at`      | When GitHub last changed the item. A delivery older than this is ignored, since webhooks can arrive out of order  |
+| `people`                 | Logins of the people working on it: a PR's author and the item's assignees, bots left out. Refreshed on each sync |
+
+People come from the source, never from Throughline: a requirement's people are everyone on the work items linked to it, and Throughline never assigns work. An issue's author only reported it, so only its assignees count.
 
 ### `links`
 
@@ -166,16 +173,16 @@ Job types are `backfill` (`{ repositoryId, mergedSince?, cursor? }`), `reconcile
 
 Proposals carry a list of typed operations. Applying a proposal runs them in one transaction and writes one event per operation. Operations are validated with Zod before they reach the database.
 
-| Operation            | Effect                                                                                   |
-| -------------------- | ---------------------------------------------------------------------------------------- |
-| `create_outcome`     | Add a product outcome                                                                    |
-| `update_outcome`     | Change title, description, target or priority; see below for its event's note            |
-| `create_requirement` | Add a root requirement under an outcome, optionally with a target                        |
-| `split_requirement`  | Turn a leaf into a parent with N new children; records `split_reason` and a product note |
-| `update_requirement` | Change title, description, `user_visible`, product note or target                        |
-| `set_status`         | Set a leaf's status                                                                      |
-| `link_work_item`     | Link a work item to a requirement                                                        |
-| `unlink_work_item`   | Remove a link                                                                            |
+| Operation            | Effect                                                                                                                        |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `create_outcome`     | Add a product outcome                                                                                                         |
+| `update_outcome`     | Change title, description, target or priority; see below for its event's note                                                 |
+| `create_requirement` | Add a root requirement under an outcome, optionally with a target, kind of work and team                                      |
+| `split_requirement`  | Turn a leaf into a parent with N new children (each with an optional kind of work); records `split_reason` and a product note |
+| `update_requirement` | Change title, description, `user_visible`, product note, target, kind of work or team (null clears it)                        |
+| `set_status`         | Set a leaf's status                                                                                                           |
+| `link_work_item`     | Link a work item to a requirement                                                                                             |
+| `unlink_work_item`   | Remove a link                                                                                                                 |
 
 Operations name outcomes and requirements by `key` (`OUT-3`, `TL-12`), not by id, so one proposal can create an outcome and then add requirements under it. Work items are referenced by id because proposals never create them. Only leaves can be split or given a status. Each operation's optional `product_note` becomes the event's product note (and, for requirement create/update, the requirement's own note). Outcomes have no note of their own. When an `update_outcome` changes the target, `applyProposal` writes the move ("Moved from Q1 2027 to Q2 2027.", from `describeTargetMove`) from the target the outcome has at that moment, followed by the operation's note as the reason. A proposal made against an older plan, or edited by a reviewer, therefore cannot put a move that did not happen in the change feed.
 
@@ -196,6 +203,7 @@ Computed on read by pure functions in `src/core/rollup.ts`.
   - `partially_available`: at least one `user_visible` leaf is done, but not all leaves
   - `delivered`: every non-dropped leaf is done
 - `partially_available` matters most for sales. It is the honest answer to "can customers use any of this yet?"
+- **Progress by team** (`teamProgress`) counts each team's non-dropped leaves under an outcome and how many are done ("Platform: 3 of 8 done"), using each leaf's effective team. Work no team owns is counted last as "No team". It is shown in the technical view only.
 
 ## Linking PRs to requirements
 
@@ -215,7 +223,7 @@ All agents call `LLMProvider.generateStructured(schema, prompt)` (`src/adapters/
 
 ### Roadmap import agent
 
-Input: pasted text or Markdown (a roadmap, meeting notes, a product brief) from `/p/[slug]/import`. Output: one pending proposal with `create_outcome` and `create_requirement` operations. The prompt asks for customer-facing outcome titles and engineering-facing requirement titles, and marks which requirements are user-visible. Each outcome is one result customers would recognise and could be told about on its own: work that delivers the same result is grouped, separate capabilities stay apart even when they share a phase or theme, and the roadmap's layout does not decide the grouping. Internal engineering work (security, refactoring, tooling) goes under the outcome it supports rather than becoming an outcome. Targets must be a quarter (`2027-Q1`) or a date (`2027-01-11`); any other format counts as invalid output.
+Input: pasted text or Markdown (a roadmap, meeting notes, a product brief) from `/p/[slug]/import`. Output: one pending proposal with `create_outcome` and `create_requirement` operations. The prompt asks for customer-facing outcome titles and engineering-facing requirement titles, and marks which requirements are user-visible. It also proposes each requirement's kind of work (`work_type`); a reviewer can change it before approving, and anyone can change it later on the plan page. Each outcome is one result customers would recognise and could be told about on its own: work that delivers the same result is grouped, separate capabilities stay apart even when they share a phase or theme, and the roadmap's layout does not decide the grouping. Internal engineering work (security, refactoring, tooling) goes under the outcome it supports rather than becoming an outcome. Targets must be a quarter (`2027-Q1`) or a date (`2027-01-11`); any other format counts as invalid output.
 
 The model does not choose keys. `src/agents/import.ts` numbers new outcomes and requirements after the highest `OUT-n` and `TL-n` already in the project or claimed by a pending proposal, so an import cannot clash with existing work.
 
@@ -237,7 +245,7 @@ Repository text goes inside tags the prompt tells the model to treat as data. Th
 - `done_differently`: propose `update_requirement` describing what was actually built, then `set_status(done)`
 - `scope_grew`: propose a split into the newly discovered pieces (`planned`), plus the part that shipped (`done`) if any
 
-Zod checks that the answer is consistent (a split for the two split classifications, at least one piece still to do, and so on), so an inconsistent answer gets the usual single retry. As with the import, the agent numbers new pieces itself after the highest `TL-n` in use.
+New pieces of a split get a proposed kind of work, and inherit the requirement's team. The prompt includes the requirement's own kind of work to guide that choice. Zod checks that the answer is consistent (a split for the two split classifications, at least one piece still to do, and so on), so an inconsistent answer gets the usual single retry. As with the import, the agent numbers new pieces itself after the highest `TL-n` in use.
 
 Every proposal it makes includes a product note in plain language, for example: "Export took longer because it needed new background-job infrastructure, which also unblocks scheduled reports."
 
@@ -288,6 +296,7 @@ For the PM, to reschedule and reprioritise in place.
 
 - Outcomes in priority order. Drag one onto another, or use its Up and Down buttons, which also work from the keyboard and on touch screens. The page sends the outcome it was dropped on, not a position, so a page that is out of date because someone else reordered still puts it where the person meant. Only the header row drags, so text in the target boxes can still be selected and dropped. A move renumbers priorities 1, 2, 3… in the new order, and only the moved outcome gets a product note ("Now comes before “Customers can export reports”."), so a move is one entry in the change feed (`moveOperations` in `src/core/planning.ts`).
 - Each outcome's target can be changed in place, with an optional reason for the change feed. The feed shows what moved ("Moved from Q1 2027 to Q2 2027.") followed by the reason. Requirement targets are edited the same way, without a note: they are technical detail.
+- Each requirement's kind of work and team can be set in place. Only the fields that changed go into the `update_requirement` operation, and there is no product note, so these changes stay out of the product view's feed. An empty team box clears the requirement's own team, and its placeholder shows the team it then inherits. On a public deployment team names are free text from visitors, so, like the reason for a move, they cannot be changed there; the kind of work, a fixed list, still can.
 - Warnings for late requirements and for a target that has passed with work still open.
 - Every edit goes through `savePlanningChange`: it saves a `manual` proposal and approves it at once with `applyProposal`, in one transaction, so a person's edits take the same path as the agents' and each has an event. v1 has no sign-in, so the actor is `planner`. A change to an outcome's target, or to the target of any requirement under it, supersedes that outcome's pending `reschedule` proposals and queues a `slip_check`, which runs after the response is sent: the old proposal was judged against dates that have changed, and the check proposes again if the new plan still looks late.
 
@@ -300,7 +309,12 @@ Out of scope: sprints, story points, estimates and task-level scheduling. Those 
 For engineering.
 
 - An expandable tree (native `<details>`, so it works with the keyboard and without JavaScript): outcome → requirements → children → linked PRs and issues with state badges. Parents start open; leaves open to show their work items.
+- Each requirement shows its kind of work and its own team (an inherited team is on the parent's row), and an open row lists the people on its linked work items.
+- Under each outcome, progress by team, once any requirement under it has a team.
+- Filters for kind of work, team and person, as a plain `GET` form (`?type=…&team=…&person=…`). A requirement shows when it matches every filter that is set, or when something under it does, so a match always appears under the requirements it was split from; outcomes with no match are hidden (`visibleKeys` in `src/core/breakdown.ts`). Progress badges still count the whole tree. Unknown filter values are ignored.
 - Split history: which requirements were split, when and why, from `split_requirement` events.
+
+Teams and people are never shown in the product view: they help engineering find who to ask, and the product view is about what customers get. Workload balancing and per-person reports are out of scope.
 
 Both views read the graph through `loadRoadmap`, `loadRecentChanges` and `loadSplitHistory` in `src/core/roadmap.ts`; progress and status come from the rollups. A missing project shows a plain "could not find that project" page and a failed load a "try again" page (`not-found.tsx` and `error.tsx` under `/p/[slug]`). Dates are shown in UTC so they do not depend on the server's time zone. The project lookup runs inside the page's `<Suspense>` boundary, after the shell has streamed, so a missing project is served with status 200 and a `noindex` tag rather than a 404. A real 404 would need a Proxy lookup, and Proxy must not share the app's PGlite client.
 

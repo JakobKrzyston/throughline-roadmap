@@ -31,6 +31,7 @@ const issue: SourceWorkItem = {
   body: "",
   url: "https://github.com/acme/analytics/issues/7",
   state: "open",
+  people: [],
   mergedAt: null,
   closedAt: null,
   updatedAt: new Date("2026-11-01"),

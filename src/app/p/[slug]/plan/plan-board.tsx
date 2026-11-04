@@ -1,5 +1,5 @@
 "use client";
-/** The plan page's outcome list: drag or use the buttons to reorder, and edit targets in place. Exports PlanBoard, PlanOutcome. */
+/** The plan page's outcome list: drag or use the buttons to reorder, and edit targets, kinds of work and teams in place. Exports PlanBoard, PlanOutcome. */
 import { GripVertical } from "lucide-react";
 import {
   type ReactElement,
@@ -10,9 +10,16 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/button";
+import type { WorkType } from "@/core/operations";
 import { formatTarget } from "@/core/product-text";
+import { WORK_TYPE_LABELS } from "@/core/proposal-diff";
 
-import { moveOutcome, type PlanState, saveTarget } from "./actions";
+import {
+  moveOutcome,
+  type PlanState,
+  saveOwnership,
+  saveTarget,
+} from "./actions";
 
 /** One outcome as the page passes it, highest priority first. */
 export type PlanOutcome = {
@@ -25,6 +32,11 @@ export type PlanOutcome = {
     key: string;
     title: string;
     target: string | null;
+    workType: WorkType | null;
+    /** The requirement's own team; null when it has none. */
+    team: string | null;
+    /** The team it gets from an ancestor when it has none of its own. */
+    inheritedTeam: string | null;
     /** How deep in the split tree, 0 for a root requirement. */
     depth: number;
     status: string;
@@ -41,18 +53,19 @@ const INPUT_CLASS =
  *   slug: The project's slug.
  *   outcomes: Live outcomes, highest priority first.
  *   editable: False on a view-only project: the plan is shown without controls.
- *   allowReason: False to leave out the free-text reason (on a public deployment).
+ *   allowFreeText: False to leave out free-text fields, the reason for a move and team names (on a
+ *     public deployment).
  */
 export function PlanBoard({
   slug,
   outcomes,
   editable,
-  allowReason,
+  allowFreeText,
 }: {
   slug: string;
   outcomes: PlanOutcome[];
   editable: boolean;
-  allowReason: boolean;
+  allowFreeText: boolean;
 }): ReactElement {
   const [dragging, setDragging] = useState<string | null>(null);
   const [state, setState] = useState<PlanState>({ status: "idle" });
@@ -142,7 +155,7 @@ export function PlanBoard({
                 itemTitle={outcome.title}
                 target={outcome.target}
                 editable={editable}
-                allowReason={allowReason}
+                allowReason={allowFreeText}
               />
               {outcome.warnings.length > 0 && (
                 <ul className="flex flex-col gap-1 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
@@ -155,7 +168,7 @@ export function PlanBoard({
               {outcome.requirements.length > 0 && (
                 <details>
                   <summary className="cursor-pointer text-sm font-medium">
-                    Requirement targets ({outcome.requirements.length})
+                    Requirements ({outcome.requirements.length})
                   </summary>
                   <ul className="flex flex-col gap-2 pt-2">
                     {outcome.requirements.map((requirement) => (
@@ -182,6 +195,14 @@ export function PlanBoard({
                           target={requirement.target}
                           editable={editable}
                           allowReason={false}
+                        />
+                        <OwnershipForm
+                          // Remount when the saved values change, so the boxes show them.
+                          key={`${requirement.workType}:${requirement.team}`}
+                          slug={slug}
+                          requirement={requirement}
+                          editable={editable}
+                          allowTeam={allowFreeText}
                         />
                       </li>
                     ))}
@@ -270,6 +291,109 @@ function TargetForm({
           variant="outline"
           disabled={pending || value.trim() === (target ?? "")}
           aria-label={`Save target for ${itemTitle}`}
+        >
+          {pending ? "Saving…" : "Save"}
+        </Button>
+      </div>
+      <div aria-live="polite">
+        {state.status === "error" && (
+          <p className="text-sm text-destructive">{state.message}</p>
+        )}
+      </div>
+    </form>
+  );
+}
+
+function OwnershipForm({
+  slug,
+  requirement,
+  editable,
+  allowTeam,
+}: {
+  slug: string;
+  requirement: PlanOutcome["requirements"][number];
+  editable: boolean;
+  allowTeam: boolean;
+}): ReactElement {
+  const [state, formAction, pending] = useActionState<PlanState, FormData>(
+    saveOwnership.bind(null, slug),
+    { status: "idle" },
+  );
+  const [workType, setWorkType] = useState(requirement.workType ?? "");
+  const [team, setTeam] = useState(requirement.team ?? "");
+  const id = useId();
+  const name = `${requirement.key} ${requirement.title}`;
+
+  if (!editable) {
+    const shownTeam = requirement.team ?? requirement.inheritedTeam;
+    return (
+      <p className="text-sm text-muted-foreground">
+        Kind of work:{" "}
+        {requirement.workType
+          ? WORK_TYPE_LABELS[requirement.workType]
+          : "not set"}
+        . Team: {shownTeam ?? "none yet"}
+      </p>
+    );
+  }
+  const unchanged =
+    workType === (requirement.workType ?? "") &&
+    team.trim() === (requirement.team ?? "");
+  return (
+    <form action={formAction} className="flex flex-col gap-2">
+      <input type="hidden" name="key" value={requirement.key} />
+      <div className="flex flex-wrap items-end gap-2">
+        <label htmlFor={`${id}-type`} className="flex flex-col gap-1 text-sm">
+          <span className="text-muted-foreground">Kind of work</span>
+          <select
+            id={`${id}-type`}
+            name="work_type"
+            value={workType}
+            onChange={(event) => setWorkType(event.target.value)}
+            aria-label={`Kind of work for ${name}`}
+            className={`${INPUT_CLASS} w-44`}
+          >
+            <option value="">Not set</option>
+            {Object.entries(WORK_TYPE_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {allowTeam ? (
+          <label htmlFor={`${id}-team`} className="flex flex-col gap-1 text-sm">
+            <span className="text-muted-foreground">Team</span>
+            <input
+              id={`${id}-team`}
+              name="team"
+              value={team}
+              onChange={(event) => setTeam(event.target.value)}
+              // An empty box keeps the inherited team, so show which one that is.
+              placeholder={
+                requirement.inheritedTeam
+                  ? `${requirement.inheritedTeam} (from parent)`
+                  : "None"
+              }
+              aria-label={`Team for ${name}`}
+              className={`${INPUT_CLASS} w-44`}
+            />
+          </label>
+        ) : (
+          <>
+            {/* Visitors' team names would show to everyone until the nightly reset. */}
+            <input type="hidden" name="team" value={team} />
+            <p className="py-1 text-sm text-muted-foreground">
+              Team: {requirement.team ?? requirement.inheritedTeam ?? "none"}
+            </p>
+          </>
+        )}
+        <Button
+          type="submit"
+          size="sm"
+          variant="outline"
+          disabled={pending || unchanged}
+          aria-label={`Save kind of work and team for ${name}`}
         >
           {pending ? "Saving…" : "Save"}
         </Button>

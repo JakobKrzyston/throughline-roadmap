@@ -4,10 +4,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { type ReactElement, Suspense } from "react";
+import { z } from "zod";
 
 import { Badge } from "@/components/badge";
+import {
+  type BreakdownFilter,
+  filterOptions,
+  visibleKeys,
+} from "@/core/breakdown";
+import { workTypeSchema } from "@/core/operations";
+import { WORK_TYPE_LABELS } from "@/core/proposal-diff";
 import { loadRoadmap, loadSplitHistory } from "@/core/roadmap";
-import { outcomeProgress } from "@/core/rollup";
+import { outcomeProgress, teamProgress } from "@/core/rollup";
 import { formatTarget } from "@/core/product-text";
 import { lateRequirements } from "@/core/schedule";
 import { getDb } from "@/db/client";
@@ -16,17 +24,29 @@ import { projects } from "@/db/schema";
 import { ProjectNav } from "../project-nav";
 import { RequirementList, SUMMARY_CLASS } from "./requirement-tree";
 
+// Anything else in the address, such as a repeated or unknown value, is ignored rather than refused.
+const filterSchema = z.object({
+  type: workTypeSchema.optional().catch(undefined),
+  team: z.string().min(1).optional().catch(undefined),
+  person: z.string().min(1).optional().catch(undefined),
+});
+
+const SELECT_CLASS =
+  "rounded-md border border-input bg-transparent px-2 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+
 /**
  * Technical view: a static heading plus the project's requirement tree and split history.
  *
  * Args:
  *   params: Route params holding the project slug.
+ *   searchParams: `type`, `team` and `person` filter the tree.
  *
  * Returns:
  *   The page.
  */
 export default function TechPage({
   params,
+  searchParams,
 }: PageProps<"/p/[slug]/tech">): ReactElement {
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-12">
@@ -43,7 +63,7 @@ export default function TechPage({
       <Suspense
         fallback={<p className="text-muted-foreground">Loading the roadmap…</p>}
       >
-        <TechView params={params} />
+        <TechView params={params} searchParams={searchParams} />
       </Suspense>
     </main>
   );
@@ -51,8 +71,19 @@ export default function TechPage({
 
 async function TechView({
   params,
-}: Pick<PageProps<"/p/[slug]/tech">, "params">): Promise<ReactElement> {
+  searchParams,
+}: Pick<
+  PageProps<"/p/[slug]/tech">,
+  "params" | "searchParams"
+>): Promise<ReactElement> {
   const { slug } = await params;
+  const query = filterSchema.parse(await searchParams);
+  const filter: BreakdownFilter = {
+    workType: query.type,
+    team: query.team,
+    person: query.person,
+  };
+  const filtering = Object.values(filter).some((value) => value !== undefined);
   // The database read is uncached, so render this part per request rather than prerendering it.
   await connection();
   const db = getDb();
@@ -64,6 +95,11 @@ async function TechView({
 
   const roadmap = await loadRoadmap(db, project.id);
   const splits = await loadSplitHistory(db, project.id, roadmap);
+  const options = filterOptions(roadmap);
+  const shown = roadmap.flatMap((outcome) => {
+    const keys = filtering ? visibleKeys(outcome.requirements, filter) : null;
+    return keys?.size === 0 ? [] : [{ outcome, keys }];
+  });
 
   return (
     <>
@@ -73,6 +109,46 @@ async function TechView({
         <h2 id="tree" className="text-xl font-semibold">
           Outcomes and requirements
         </h2>
+        {roadmap.length > 0 && (
+          <form
+            method="get"
+            aria-label="Filter requirements"
+            className="flex flex-wrap items-end gap-3"
+          >
+            <FilterSelect
+              name="type"
+              label="Kind of work"
+              value={filter.workType}
+              options={Object.entries(WORK_TYPE_LABELS)}
+            />
+            <FilterSelect
+              name="team"
+              label="Team"
+              value={filter.team}
+              options={options.teams.map((team) => [team, team])}
+            />
+            <FilterSelect
+              name="person"
+              label="Person"
+              value={filter.person}
+              options={options.people.map((person) => [person, person])}
+            />
+            <button
+              type="submit"
+              className="rounded-md border border-border px-3 py-1 text-sm font-medium hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            >
+              Filter
+            </button>
+            {filtering && (
+              <Link
+                href={`/p/${slug}/tech`}
+                className="text-sm underline underline-offset-4"
+              >
+                Show everything
+              </Link>
+            )}
+          </form>
+        )}
         {roadmap.length === 0 ? (
           <p className="rounded-md border border-border p-6 text-center text-muted-foreground">
             No outcomes yet.{" "}
@@ -84,9 +160,13 @@ async function TechView({
             </Link>{" "}
             to create outcomes and requirements.
           </p>
+        ) : shown.length === 0 ? (
+          <p className="rounded-md border border-border p-6 text-center text-muted-foreground">
+            No requirements match these filters.
+          </p>
         ) : (
           <ul className="flex flex-col gap-3">
-            {roadmap.map((outcome) => (
+            {shown.map(({ outcome, keys }) => (
               <li
                 key={outcome.id}
                 className="rounded-lg border border-border p-4"
@@ -107,6 +187,7 @@ async function TechView({
                       </span>
                     )}
                   </summary>
+                  <TeamRollup requirements={outcome.requirements} />
                   <div className="pt-2">
                     {outcome.requirements.length === 0 ? (
                       <p className="text-sm text-muted-foreground">
@@ -115,6 +196,7 @@ async function TechView({
                     ) : (
                       <RequirementList
                         requirements={outcome.requirements}
+                        shown={keys}
                         lateKeys={
                           new Set(
                             lateRequirements(
@@ -173,5 +255,51 @@ async function TechView({
         )}
       </section>
     </>
+  );
+}
+
+function FilterSelect({
+  name,
+  label,
+  value,
+  options,
+}: {
+  name: string;
+  label: string;
+  value: string | undefined;
+  options: [string, string][];
+}): ReactElement {
+  return (
+    <label className="flex flex-col gap-1 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <select name={name} defaultValue={value ?? ""} className={SELECT_CLASS}>
+        <option value="">Any</option>
+        {options.map(([option, optionLabel]) => (
+          <option key={option} value={option}>
+            {optionLabel}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** "Platform: 3 of 8 done" for each team with work under an outcome, once any team is set. */
+function TeamRollup({
+  requirements,
+}: {
+  requirements: Parameters<typeof teamProgress>[0];
+}): ReactElement | null {
+  const teams = teamProgress(requirements);
+  if (teams.every((entry) => entry.team === null)) return null;
+  return (
+    <p className="pt-1 text-sm text-muted-foreground">
+      {teams
+        .map(
+          (entry) =>
+            `${entry.team ?? "No team"}: ${entry.done} of ${entry.total} done`,
+        )
+        .join(" · ")}
+    </p>
   );
 }

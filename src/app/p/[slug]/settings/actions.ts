@@ -1,5 +1,5 @@
 "use server";
-/** Server action behind the settings page. Exports connectRepository and its state type. */
+/** Server actions behind the settings page. Exports connectRepository, saveDigest, stopDigest and their state types. */
 import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { after } from "next/server";
@@ -10,11 +10,19 @@ import {
   isGitHubConfigured,
   isOwnerAllowed,
 } from "@/adapters/github";
+import { postToSlack, slackWebhookUrlSchema } from "@/adapters/slack";
+import { loadDigest } from "@/core/digest";
 import { getDb } from "@/db/client";
 import { projects, repositories } from "@/db/schema";
 import { runQueuedJobs } from "@/jobs";
 import { enqueue } from "@/jobs/queue";
 import { isPublicDeployment } from "@/lib/public-deployment";
+import { requestOrigin } from "@/lib/request-origin";
+
+export type DigestState =
+  | { status: "idle" }
+  | { status: "error"; message: string; webhookUrl: string }
+  | { status: "success"; message: string };
 
 export type ConnectState =
   | { status: "idle" }
@@ -121,4 +129,81 @@ export async function connectRepository(
     status: "success",
     message: `Connected ${repository.fullName}. Importing its open issues and recently merged pull requests now.`,
   };
+}
+
+/**
+ * Start the weekly digest: send this week's digest to a Slack webhook now, and save the webhook if
+ * Slack accepts it, so a mistyped URL is caught here rather than on Monday.
+ *
+ * Args:
+ *   slug: The project's slug, bound by the page.
+ *   _previous: The form's previous state (unused; required by useActionState).
+ *   formData: Form fields; `webhookUrl` holds the Slack incoming webhook URL.
+ *
+ * Returns:
+ *   A success message, or an error message to show.
+ */
+export async function saveDigest(
+  slug: string,
+  _previous: DigestState,
+  formData: FormData,
+): Promise<DigestState> {
+  const raw = formData.get("webhookUrl");
+  const fail = (message: string): DigestState => ({
+    status: "error",
+    message,
+    webhookUrl: typeof raw === "string" ? raw : "",
+  });
+
+  // A visitor's webhook would receive posts from this server until someone removed it.
+  if (isPublicDeployment()) {
+    return fail("Digests are set up by the site owner on this server.");
+  }
+  const webhookUrl = slackWebhookUrlSchema.safeParse(raw);
+  if (!webhookUrl.success) return fail(webhookUrl.error.issues[0].message);
+
+  const db = getDb();
+  const [project] = await db
+    .select({ id: projects.id, name: projects.name, slug: projects.slug })
+    .from(projects)
+    .where(eq(projects.slug, slug));
+  if (!project) return fail("Project not found.");
+
+  const now = new Date();
+  try {
+    const text = await loadDigest(db, project, await requestOrigin(), now);
+    await postToSlack(webhookUrl.data, text);
+  } catch (error) {
+    console.error("Digest test send failed:", error);
+    return fail(
+      "Slack did not accept the digest. Check the webhook URL and try again.",
+    );
+  }
+  // This week's digest has just gone out, so the weekly send skips it.
+  await db
+    .update(projects)
+    .set({ digestSlackWebhookUrl: webhookUrl.data, digestSentAt: now })
+    .where(eq(projects.id, project.id));
+
+  refresh();
+  return {
+    status: "success",
+    message:
+      "Sent this week's digest to Slack. From now on it goes out every Monday morning.",
+  };
+}
+
+/**
+ * Stop the weekly digest and forget the Slack webhook.
+ *
+ * Args:
+ *   slug: The project's slug, bound by the page.
+ */
+export async function stopDigest(slug: string): Promise<void> {
+  if (isPublicDeployment()) return;
+  await getDb()
+    .update(projects)
+    .set({ digestSlackWebhookUrl: null, digestSentAt: null })
+    .where(eq(projects.slug, slug));
+  refresh();
 }

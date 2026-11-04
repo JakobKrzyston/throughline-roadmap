@@ -66,9 +66,10 @@ Until both are set, the workflow fails on every pull request, so set them before
 | `OPENROUTER_MODEL`   | Optional. OpenRouter model ids, comma-separated in fallback order. Defaults to free models with tool calling.      |
 | `GITHUB_*`           | Optional. The GitHub App settings from [`GITHUB_APP.md`](GITHUB_APP.md), to follow a real repository.              |
 
-3. Deploy. Vercel registers the two cron jobs in `vercel.json`:
+3. Deploy. Vercel registers the three cron jobs in `vercel.json`:
    - `/api/demo/reset` at 05:00 UTC rebuilds the Acme Analytics demo, undoing whatever visitors approved or rejected. It runs in one transaction, so visitors never see a half-built demo.
    - `/api/jobs/run` at 06:00 UTC runs any queued agent jobs that no webhook picked up.
+   - `/api/digests/send` at 08:00 UTC on Mondays posts the weekly digest to Slack for each project that has one set up. Set it up from a local copy of the app pointed at this database, on the project's settings page; the public site does not offer it.
 
    Once a day is the most often the Hobby plan runs a cron.
 

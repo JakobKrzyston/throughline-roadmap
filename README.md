@@ -34,6 +34,7 @@ The **review queue** is where a person approves, edits or rejects what the agent
 3. **Reconcile when work ships.** When linked work merges, the reconciliation agent reads the pull request and the plan and proposes what changed: done, partly done, split into new pieces, or scope added. A merged pull request with no reference gets a suggested link instead.
 4. **Approve.** Every proposal waits in the review queue. Approving it changes the graph and writes an event with a plain-language note, which feeds the product view's "what changed this week".
 5. **Read the roadmaps.** Status rolls up from finished work to requirements to outcomes, so both views always agree.
+6. **Send a weekly digest.** Every Monday a plain-language summary of what changed and where each outcome stands can go to a Slack channel, for people who never open Throughline. Set it up on a project's settings page.
 
 The full design, data model and trade-offs are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -116,7 +117,6 @@ Designed for but not built in v1; each has an issue:
 - [Research agent](../../issues/9): check planned approaches against current libraries and the market.
 - [More sources](../../issues/10): Linear and Jira alongside GitHub.
 - [Teams and permissions](../../issues/11): organisations, roles and SSO, replacing the public site's view-only rule.
-- [Digests](../../issues/12): a weekly plain-language summary by Slack or email.
 - [Work breakdown](../../issues/23): group technical work by type, team and person.
 
 ## Learn more

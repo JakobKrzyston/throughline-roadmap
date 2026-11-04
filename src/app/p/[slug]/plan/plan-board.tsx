@@ -10,7 +10,7 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/button";
-import { formatTarget } from "@/core/schedule";
+import { formatTarget } from "@/core/product-text";
 
 import { moveOutcome, type PlanState, saveTarget } from "./actions";
 

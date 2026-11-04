@@ -1,6 +1,7 @@
-/** Roadmap targets, written as a quarter ("2027-Q1") or a date ("2027-01-11"): validation, display, comparison and late work. Exports targetSchema, formatTarget, describeTargetMove, targetEnd, isLater, hasOpenWork, lateRequirements, scheduleWarnings, ScheduledRequirement. */
+/** Roadmap targets, written as a quarter ("2027-Q1") or a date ("2027-01-11"): validation, display, comparison and late work. Exports targetSchema, describeTargetMove, targetEnd, isLater, hasOpenWork, lateRequirements, scheduleWarnings, ScheduledRequirement. */
 import { z } from "zod";
 
+import { formatTarget } from "./product-text";
 import type { RequirementNode } from "./rollup";
 
 const QUARTER = /^(\d{4})-Q([1-4])$/;
@@ -16,27 +17,6 @@ export interface ScheduledRequirement extends RequirementNode {
   title: string;
   target: string | null;
   children: ScheduledRequirement[];
-}
-
-/**
- * Format a target for reading.
- *
- * Args:
- *   target: A quarter or an ISO date; anything else is shown as it is.
- *
- * Returns:
- *   E.g. "Q4 2026" or "11 January 2027".
- */
-export function formatTarget(target: string): string {
-  const quarter = QUARTER.exec(target);
-  if (quarter) return `Q${quarter[2]} ${quarter[1]}`;
-  if (!z.iso.date().safeParse(target).success) return target;
-  return new Date(`${target}T00:00:00Z`).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
 }
 
 /**

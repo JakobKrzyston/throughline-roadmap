@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import type { LeafStatus } from "./operations";
 import {
   describeTargetMove,
-  formatTarget,
   hasOpenWork,
   isLater,
   lateRequirements,
@@ -54,17 +53,6 @@ describe("targetSchema", () => {
       expect(targetSchema.safeParse(target).success).toBe(false);
     },
   );
-});
-
-describe("formatTarget", () => {
-  it("writes quarters and dates for reading", () => {
-    expect(formatTarget("2026-Q4")).toBe("Q4 2026");
-    expect(formatTarget("2027-01-11")).toBe("11 January 2027");
-  });
-
-  it("shows anything else as it is", () => {
-    expect(formatTarget("next spring")).toBe("next spring");
-  });
 });
 
 describe("targetEnd and isLater", () => {

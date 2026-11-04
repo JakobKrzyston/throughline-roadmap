@@ -8,7 +8,8 @@ import { type ReactElement, Suspense } from "react";
 import { Badge } from "@/components/badge";
 import { loadRoadmap, loadSplitHistory } from "@/core/roadmap";
 import { outcomeProgress } from "@/core/rollup";
-import { formatTarget, lateRequirements } from "@/core/schedule";
+import { formatTarget } from "@/core/product-text";
+import { lateRequirements } from "@/core/schedule";
 import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
 

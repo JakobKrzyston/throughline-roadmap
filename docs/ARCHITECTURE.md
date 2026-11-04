@@ -72,7 +72,7 @@ All IDs are UUIDs except where noted. Timestamps are omitted for brevity; every 
 
 ### `projects`
 
-One roadmap workspace. Fields: `id`, `name`, `slug`, `is_demo`.
+One roadmap workspace. Fields: `id`, `name`, `slug`, `is_demo`, `digest_slack_webhook_url` (where the weekly digest goes; null sends none) and `digest_sent_at` (when it last went out).
 
 ### `repositories`
 
@@ -304,6 +304,15 @@ For engineering.
 
 Both views read the graph through `loadRoadmap`, `loadRecentChanges` and `loadSplitHistory` in `src/core/roadmap.ts`; progress and status come from the rollups. A missing project shows a plain "could not find that project" page and a failed load a "try again" page (`not-found.tsx` and `error.tsx` under `/p/[slug]`). Dates are shown in UTC so they do not depend on the server's time zone. The project lookup runs inside the page's `<Suspense>` boundary, after the shell has streamed, so a missing project is served with status 200 and a `noindex` tag rather than a 404. A real 404 would need a Proxy lookup, and Proxy must not share the app's PGlite client.
 
+### Weekly digest
+
+For people who do not open Throughline: every Monday a plain-language summary goes to a Slack channel. It has two parts, built by `buildDigest` in `src/core/digest.ts`: the changes since the last digest went out (the past week before the first one, so a failed or skipped week is never lost), oldest first and each labelled with its outcome, then one line per outcome with its product status, progress and target. It lists at most 30 changes, the newest, and says when there were earlier ones. The link at the end goes to the product view, on the production domain when `VERCEL_PROJECT_PRODUCTION_URL` is set (`appOrigin` in `src/lib/app-origin.ts`), so a digest sent from a preview deploy still links to the real site. Like the product view, it has no ticket numbers.
+
+- **No model writes it.** The product notes on events are already plain language and were approved by a person, so the digest is a template over them. A model-written summary would put unreviewed text in front of leadership, which design rule 1 is there to prevent.
+- **Setup** is on `/p/[slug]/settings`: paste a Slack incoming webhook URL, and Throughline sends the digest so far at once and saves the URL only if Slack accepts it. That send does not count as the week's digest, so the next Monday's still goes out. Only `https://hooks.slack.com/services/` URLs are accepted, so the server posts nowhere else. The page shows whether a digest is set up and when it last went out, never the URL, since anyone holding it can post to the channel. "Stop sending" forgets the URL.
+- **Sending** is `GET /api/digests/send`, which a Vercel cron calls at 08:00 UTC on Mondays. Like `/api/demo/reset`, it requires `CRON_SECRET` and refuses every request when it is unset. `sendDueDigests` sends to each project with a webhook and no digest in the last six days (six, not seven, so a cron that fires early still sends). It claims each project by setting `digest_sent_at` before posting, so a cron that fires twice sends once; a failed post puts the old value back, logs the error and moves on to the next project.
+- Slack sits behind `src/adapters/slack.ts` (`postToSlack`, plain `fetch`). It escapes `&`, `<` and `>`, so a note cannot ping the channel or add a link. Email would be a second function of the same shape, `DigestPoster` in `src/core/digest.ts`.
+
 ### Review queue (`/p/[slug]/review`)
 
 For the PM.
@@ -326,7 +335,7 @@ v1 has no sign-in, so a public site sets `PUBLIC_DEPLOYMENT=true` (`src/lib/publ
 - Only projects with `is_demo` accept changes. For any other project the import, review, plan and connect server actions refuse with "view-only", and the pages hide their forms.
 - Proposals can be approved or rejected but not edited first: the review action refuses edited operations and the Edit button is hidden, so visitors cannot put their own wording on the public demo. For the same reason the plan page takes reorders and new targets on the demo but no free-text reason. The owner changes their own projects from a local copy of the app pointed at the production database (see `docs/DEPLOY.md`).
 - Agents for demo projects use `getDemoLLMProvider`: a free model through OpenRouter when `OPENROUTER_API_KEY` is set, with sample results as the fallback, and sample results alone otherwise. They never use the Anthropic key, so visitors cannot spend it. Queued jobs for demo projects do the same, and skip GitHub, with or without the variable: a job a visitor queued may run on the owner's machine, and the demo's repository is made up.
-- No repository can be connected from the site.
+- No repository can be connected and no digest set up from the site. The owner does both from a local copy; a digest saved that way links to the local copy in its first message only, since the weekly cron links to the domain it called.
 
 Without the variable, as when running locally, every project accepts changes and imports use the owner's provider whenever a key is set.
 

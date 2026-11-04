@@ -1,5 +1,5 @@
 {
-  "id": "6755b6d9-ba22-452f-b996-2976424b7eda",
+  "id": "cfebbd69-804e-4526-8902-88cfa61ea4d1",
   "prevId": "d7c5d341-e654-41c8-a9c5-3d1e84b29769",
   "version": "7",
   "dialect": "postgresql",
@@ -424,6 +424,18 @@
           "notNull": true,
           "default": false
         },
+        "digest_slack_webhook_url": {
+          "name": "digest_slack_webhook_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "digest_sent_at": {
+          "name": "digest_sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -750,12 +762,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "target": {
-          "name": "target",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -997,9 +1003,7 @@
         "reconcile",
         "link_suggest",
         "explicit_link",
-        "work_started",
-        "manual",
-        "reschedule"
+        "work_started"
       ]
     },
     "public.proposal_status": {

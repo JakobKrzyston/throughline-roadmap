@@ -263,15 +263,17 @@ export function availableToday(
  *   projectId: The project.
  *   roadmap: The project's live roadmap from loadRoadmap. Changes to archived outcomes are left out.
  *   since: Only changes at or after this time. Defaults to a week ago.
+ *   limit: Most changes to return. Defaults to 20, what the product view shows.
  *
  * Returns:
- *   Up to 20 changes with a product note, newest first.
+ *   Changes with a product note, newest first.
  */
 export async function loadRecentChanges(
   db: Database,
   projectId: string,
   roadmap: OutcomeTree[],
   since: Date = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+  limit = 20,
 ): Promise<RecentChange[]> {
   // Label every live outcome and requirement with its key and the outcome it belongs to.
   const labels = new Map<string, { key: string; outcomeTitle: string }>();
@@ -298,7 +300,7 @@ export async function loadRecentChanges(
       ),
     )
     .orderBy(desc(events.seq))
-    .limit(20);
+    .limit(limit);
 
   return eventRows.map((event) => {
     const label = labels.get(event.entityId)!;

@@ -5,8 +5,8 @@ import { z } from "zod";
 import type { LLMProvider, StructuredPrompt } from "@/adapters/llm/provider";
 import { outcomeTargetOperations, supersedeReschedules } from "@/core/planning";
 import { loadRoadmap, type RequirementTree } from "@/core/roadmap";
+import { formatTarget } from "@/core/product-text";
 import {
-  formatTarget,
   isLater,
   scheduleWarnings,
   targetEnd,

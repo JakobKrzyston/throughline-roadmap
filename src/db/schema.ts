@@ -79,6 +79,10 @@ export const projects = pgTable("projects", {
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
   isDemo: boolean("is_demo").notNull().default(false),
+  // Slack incoming webhook the weekly digest goes to; null sends none. Never shown in full, since
+  // anyone holding it can post to the channel.
+  digestSlackWebhookUrl: text("digest_slack_webhook_url"),
+  digestSentAt: timestamp("digest_sent_at", { withTimezone: true }),
   ...timestamps,
 });
 

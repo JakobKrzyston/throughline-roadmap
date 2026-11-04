@@ -4,7 +4,7 @@ import type { ReactElement } from "react";
 import { Badge, type BadgeTone } from "@/components/badge";
 import type { LinkedWorkItem, RequirementTree } from "@/core/roadmap";
 import { requirementProgress } from "@/core/rollup";
-import { formatTarget } from "@/core/schedule";
+import { formatTarget } from "@/core/product-text";
 
 const LEAF_STATUS: Record<
   NonNullable<RequirementTree["status"]>,

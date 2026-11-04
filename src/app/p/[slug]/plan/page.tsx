@@ -11,7 +11,8 @@ import {
   type RequirementTree,
 } from "@/core/roadmap";
 import { requirementProgress } from "@/core/rollup";
-import { formatTarget, scheduleWarnings } from "@/core/schedule";
+import { formatTarget } from "@/core/product-text";
+import { scheduleWarnings } from "@/core/schedule";
 import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
 import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";

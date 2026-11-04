@@ -13,7 +13,8 @@ import {
 } from "@/core/planning";
 import { ProposalError } from "@/core/proposals";
 import { loadOutcomes } from "@/core/roadmap";
-import { formatTarget, targetSchema } from "@/core/schedule";
+import { formatTarget } from "@/core/product-text";
+import { targetSchema } from "@/core/schedule";
 import { getDb } from "@/db/client";
 import { projects, requirements } from "@/db/schema";
 import { runQueuedJobs } from "@/jobs";

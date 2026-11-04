@@ -39,7 +39,7 @@ let projectId: string;
 const source = {
   source: "github",
   findRepository: async () => null,
-  listBackfill: async () => [],
+  listBackfillPage: async () => ({ items: [], nextCursor: null }),
   listChangedFiles: async () => SAMPLE_PULL_FILES,
 } satisfies SourceAdapter;
 

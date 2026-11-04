@@ -17,6 +17,9 @@ import {
   pullToWorkItem,
 } from "./work-items";
 
+// GitHub's largest page size.
+const PAGE_SIZE = 100;
+
 /** The parts of an Octokit `App` the adapter uses. */
 export type GitHubApp = Pick<App, "octokit" | "getInstallationOctokit">;
 
@@ -52,54 +55,68 @@ export class GitHubAdapter implements SourceAdapter {
   }
 
   /**
-   * List open issues plus pull requests merged on or after mergedSince.
+   * List one page of open issues, then pull requests merged on or after mergedSince.
+   *
+   * The cursor is `issues:<page>` or `pulls:<page>`, GitHub's page numbers for each listing.
    *
    * Args:
    *   repository: The repository to read.
    *   mergedSince: Oldest merge date to include.
+   *   cursor: The previous page's nextCursor, or null to start with the first page of issues.
    *
    * Returns:
-   *   The work items.
+   *   The page's work items and the next cursor, or null after the last page.
    */
-  async listBackfill(
+  async listBackfillPage(
     repository: SourceRepository,
     mergedSince: Date,
-  ): Promise<SourceWorkItem[]> {
+    cursor: string | null,
+  ): Promise<{ items: SourceWorkItem[]; nextCursor: string | null }> {
     const [owner, repo] = repository.fullName.split("/");
     const octokit = await this.installationOctokit(owner, repo);
+    const [listing, pageText] = (cursor ?? "issues:1").split(":");
+    const page = Number(pageText);
 
-    const openIssues = await octokit.paginate(octokit.rest.issues.listForRepo, {
-      owner,
-      repo,
-      state: "open",
-      per_page: 100,
-    });
-    const items = openIssues
-      .map((issue) => githubIssueSchema.parse(issue))
-      .filter((issue) => !issue.pull_request)
-      .map((issue) => issueToWorkItem(repository.externalId, issue));
+    if (listing === "issues") {
+      const { data } = await octokit.rest.issues.listForRepo({
+        owner,
+        repo,
+        state: "open",
+        per_page: PAGE_SIZE,
+        page,
+      });
+      const items = data
+        .map((issue) => githubIssueSchema.parse(issue))
+        .filter((issue) => !issue.pull_request)
+        .map((issue) => issueToWorkItem(repository.externalId, issue));
+      const nextCursor =
+        data.length === PAGE_SIZE ? `issues:${page + 1}` : "pulls:1";
+      return { items, nextCursor };
+    }
 
     // Most recently updated first. A PR merged after mergedSince was also updated after it,
     // so paging can stop at the first page that reaches older updates.
-    const pages = octokit.paginate.iterator(octokit.rest.pulls.list, {
+    const { data } = await octokit.rest.pulls.list({
       owner,
       repo,
       state: "closed",
       sort: "updated",
       direction: "desc",
-      per_page: 100,
+      per_page: PAGE_SIZE,
+      page,
     });
-    for await (const { data } of pages) {
-      for (const raw of data) {
-        const pull = githubPullSchema.parse(raw);
-        if (pull.merged_at && new Date(pull.merged_at) >= mergedSince) {
-          items.push(pullToWorkItem(repository.externalId, pull));
-        }
-      }
-      const last = data.at(-1);
-      if (!last || new Date(last.updated_at) < mergedSince) break;
-    }
-    return items;
+    const items = data
+      .map((raw) => githubPullSchema.parse(raw))
+      .filter(
+        (pull) => pull.merged_at && new Date(pull.merged_at) >= mergedSince,
+      )
+      .map((pull) => pullToWorkItem(repository.externalId, pull));
+    const last = data.at(-1);
+    const more =
+      data.length === PAGE_SIZE &&
+      last !== undefined &&
+      new Date(last.updated_at) >= mergedSince;
+    return { items, nextCursor: more ? `pulls:${page + 1}` : null };
   }
 
   /**

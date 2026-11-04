@@ -292,7 +292,8 @@ A seeded project called "Acme Analytics" lets anyone explore Throughline without
 
 v1 has no sign-in, so a public site sets `PUBLIC_DEPLOYMENT=true` (`src/lib/public-deployment.ts`). Then:
 
-- Only projects with `is_demo` accept changes. For any other project the import, review and connect server actions refuse with "view-only", and the pages hide their forms. The owner changes their own projects from a local copy of the app pointed at the production database (see `docs/DEPLOY.md`).
+- Only projects with `is_demo` accept changes. For any other project the import, review and connect server actions refuse with "view-only", and the pages hide their forms.
+- Proposals can be approved or rejected but not edited first: the review action refuses edited operations and the Edit button is hidden, so visitors cannot put their own wording on the public demo. The owner changes their own projects from a local copy of the app pointed at the production database (see `docs/DEPLOY.md`).
 - Imports into demo projects use `FakeLLMProvider`, so visitors cannot spend the Anthropic key. Queued agent jobs for demo projects always do, and skip GitHub, with or without the variable: a job a visitor queued may run on the owner's machine, and the demo's repository is made up.
 - No repository can be connected from the site.
 

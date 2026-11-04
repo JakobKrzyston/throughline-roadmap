@@ -76,7 +76,7 @@ pnpm test:e2e                           # builds the app and loads the demo
 - **Every change is an event**, with who made it and a plain-language note. The "what changed" feed is just this log.
 - **Integrations sit behind adapters.** GitHub is one `SourceAdapter` and Claude is one `LLMProvider`, so Linear, Jira or another model can be added without touching the core.
 - **Everything works without secrets.** With no API key or GitHub App, the app uses a fake model and demo data. Tests never call real services.
-- **A public site without sign-in stays safe.** With `PUBLIC_DEPLOYMENT=true`, visitors can change only the demo, which runs on sample results and resets nightly; every other project is view-only.
+- **A public site without sign-in stays safe.** With `PUBLIC_DEPLOYMENT=true`, visitors can change only the demo: imports there return sample results, proposals can be approved or rejected but not edited, and it resets nightly. Every other project is view-only.
 
 ## Throughline on Throughline
 

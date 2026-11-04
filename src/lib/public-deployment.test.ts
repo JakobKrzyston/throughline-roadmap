@@ -130,6 +130,32 @@ describe("on a public deployment", () => {
     expect(row.status).toBe("rejected");
   });
 
+  it("refuses edited approvals, even on the demo project", async () => {
+    const id = await pendingProposal(DEMO_SLUG);
+    const [proposal] = await db
+      .select()
+      .from(proposals)
+      .where(eq(proposals.id, id));
+
+    const result = await decideProposal(
+      DEMO_SLUG,
+      { status: "idle" },
+      form({
+        proposalId: id,
+        decision: "approve",
+        operations: JSON.stringify(proposal.operations),
+      }),
+    );
+
+    expect(result).toEqual({
+      status: "error",
+      message:
+        "Editing is turned off on this server. Approve or reject instead.",
+    });
+    const [row] = await db.select().from(proposals).where(eq(proposals.id, id));
+    expect(row.status).toBe("pending");
+  });
+
   it("refuses imports into a project that is not a demo", async () => {
     const result = await generateImportProposal(
       REAL_SLUG,

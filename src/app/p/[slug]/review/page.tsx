@@ -14,7 +14,7 @@ import {
   requirements,
   workItems,
 } from "@/db/schema";
-import { isViewOnly } from "@/lib/public-deployment";
+import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
 
 import { ViewOnlyNotice } from "../view-only-notice";
 import { type ProposalView, ProposalCard } from "./proposal-card";
@@ -47,8 +47,7 @@ export default function ReviewPage({
         <h1 className="text-3xl font-semibold tracking-tight">Review queue</h1>
         <p className="text-muted-foreground">
           Throughline&rsquo;s agents suggest changes to the roadmap here.
-          Nothing changes until you approve a proposal, and you can edit its
-          wording first.
+          Nothing changes until you approve a proposal.
         </p>
       </div>
       {/* The proposals are read per request; the heading above is the static shell. */}
@@ -130,7 +129,13 @@ async function PendingProposals({
         <ol className="flex flex-col gap-6">
           {views.map((view) => (
             <li key={view.id}>
-              <ProposalCard slug={slug} proposal={view} viewOnly={viewOnly} />
+              <ProposalCard
+                slug={slug}
+                proposal={view}
+                viewOnly={viewOnly}
+                // Visitors' edits would show on the public demo until the nightly reset.
+                canEdit={!isPublicDeployment()}
+              />
             </li>
           ))}
         </ol>

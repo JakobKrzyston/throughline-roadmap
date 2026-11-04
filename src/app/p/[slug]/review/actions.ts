@@ -10,7 +10,7 @@ import { approveProposal } from "@/core/review";
 import { getDb } from "@/db/client";
 import { projects, proposals } from "@/db/schema";
 import { runQueuedJobs } from "@/jobs";
-import { isViewOnly } from "@/lib/public-deployment";
+import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
 
 /** Recorded as the decider until there is sign-in (see the "Teams and permissions" issue). */
 const REVIEWER = "reviewer";
@@ -47,6 +47,12 @@ export async function decideProposal(
   if (!input.success) return fail("That request was not understood.");
   const { proposalId, decision, operations } = input.data;
 
+  // Visitors' wording would show on the public demo until the nightly reset.
+  if (operations !== undefined && isPublicDeployment()) {
+    return fail(
+      "Editing is turned off on this server. Approve or reject instead.",
+    );
+  }
   let edited: unknown;
   if (operations !== undefined) {
     try {

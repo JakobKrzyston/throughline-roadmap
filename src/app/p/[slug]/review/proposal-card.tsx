@@ -71,15 +71,18 @@ const NULLABLE = new Set(["target", "product_note"]);
  *   slug: The project's slug.
  *   proposal: The proposal to show.
  *   viewOnly: True to show the proposal without the decision buttons.
+ *   canEdit: False to offer approve and reject only.
  */
 export function ProposalCard({
   slug,
   proposal,
   viewOnly,
+  canEdit,
 }: {
   slug: string;
   proposal: ProposalView;
   viewOnly: boolean;
+  canEdit: boolean;
 }): ReactElement {
   const [state, formAction, pending] = useActionState<DecideState, FormData>(
     decideProposal.bind(null, slug),
@@ -166,6 +169,7 @@ export function ProposalCard({
             </Button>
           )}
           {proposal.operations !== null &&
+            canEdit &&
             (editing ? (
               <Button
                 type="button"

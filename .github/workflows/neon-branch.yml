@@ -1,0 +1,61 @@
+# A Neon database branch per pull request: created from production when the PR opens, migrated
+# with the PR's migrations, and deleted when the PR closes. Needs the NEON_PROJECT_ID repository
+# variable and the NEON_API_KEY repository secret (see docs/DEPLOY.md).
+name: Neon branch per pull request
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  create:
+    name: Create and migrate
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set the branch expiry to two weeks from now
+        run: echo "EXPIRES_AT=$(date -u --date '+14 days' +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
+      - name: Create Neon branch
+        id: create
+        uses: neondatabase/create-branch-action@v6
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch_name: preview/pr-${{ github.event.number }}-${{ github.head_ref }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+          expires_at: ${{ env.EXPIRES_AT }}
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run the pull request's migrations on the branch
+        run: pnpm db:migrate
+        env:
+          # The URL holds a password, so it is never printed.
+          DATABASE_URL: ${{ steps.create.outputs.db_url_with_pooler }}
+      - name: Comment the schema diff on the pull request
+        uses: neondatabase/schema-diff-action@v1
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          compare_branch: preview/pr-${{ github.event.number }}-${{ github.head_ref }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+
+  delete:
+    name: Delete
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch: preview/pr-${{ github.event.number }}-${{ github.head_ref }}
+          api_key: ${{ secrets.NEON_API_KEY }}

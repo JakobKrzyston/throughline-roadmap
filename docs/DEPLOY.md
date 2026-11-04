@@ -30,6 +30,22 @@ unset DATABASE_URL
 
 Run `pnpm db:migrate` the same way before deploying any change that adds a migration under `src/db/migrations`. Deploys do not migrate on their own, so a preview deployment can never change the production schema.
 
+### A database branch per pull request
+
+`.github/workflows/neon-branch.yml` gives every pull request its own Neon branch, a copy of production at the moment the PR opens. The workflow runs the PR's migrations on that branch and posts the schema diff as a PR comment, then deletes the branch when the PR closes. It needs two repository settings in GitHub under **Settings → Secrets and variables → Actions**:
+
+- the variable `NEON_PROJECT_ID`, from the Neon project's **Settings** page
+- the secret `NEON_API_KEY`, from **Account settings → API keys** in Neon
+
+Or from the command line:
+
+```bash
+gh variable set NEON_PROJECT_ID --body '<project id>'
+gh secret set NEON_API_KEY
+```
+
+Until both are set, the workflow fails on every pull request, so set them before merging it.
+
 ## 3. Create the Vercel project
 
 1. In Vercel, choose **Add New → Project** and import the GitHub repository. Vercel detects Next.js and pnpm; keep the default build settings.

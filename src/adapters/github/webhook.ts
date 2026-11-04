@@ -127,7 +127,8 @@ export function parseWebhookEvent(
  *   payload: The parsed JSON body.
  *
  * Returns:
- *   The release, or null for other events, other release actions, drafts and pre-releases.
+ *   The release, or null for other events, other actions (including "published", which
+ *   "released" follows for full releases), drafts and pre-releases.
  *
  * Raises:
  *   ZodError: A release payload is missing fields Throughline needs.
@@ -138,7 +139,9 @@ export function parseReleaseEvent(
 ): ReleaseEvent | null {
   if (eventName !== "release") return null;
   const { action, release, repository } = releaseEvent.parse(payload);
-  if (action !== "published" || release.draft || release.prerelease) {
+  // GitHub sends "released" both when a release is published and when a pre-release is
+  // promoted to one, unlike "published", which also fires for pre-releases.
+  if (action !== "released" || release.draft || release.prerelease) {
     return null;
   }
   if (!release.published_at) return null;

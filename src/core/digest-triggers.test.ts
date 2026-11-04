@@ -123,6 +123,32 @@ describe("milestones", () => {
     expect(await digestJobs()).toEqual([]);
   });
 
+  it("does not announce an outcome that went back", async () => {
+    await approveProposal(
+      db,
+      await propose([...finish("TL-1"), ...finish("TL-2")]),
+      "pm",
+      { baseUrl: BASE },
+    );
+    expect(await digestJobs()).toMatchObject([{ status: "delivered" }]);
+
+    // More work planned: delivered becomes partially available, which is not news to announce.
+    await approveProposal(
+      db,
+      await propose([
+        {
+          type: "create_requirement",
+          key: "TL-3",
+          outcome_key: "OUT-1",
+          title: "PDF download",
+        },
+      ]),
+      "pm",
+      { baseUrl: BASE },
+    );
+    expect(await digestJobs()).toHaveLength(1);
+  });
+
   it("posts what customers can now use", async () => {
     await approveProposal(
       db,
@@ -264,7 +290,7 @@ describe("sendDigestNow", () => {
     );
     expect(post).toHaveBeenCalledWith(
       WEBHOOK,
-      expect.stringContaining("Acme: roadmap update for the week to"),
+      expect.stringContaining("Acme: roadmap update,"),
     );
     const [project] = await db.select().from(projects);
     expect(project.digestSentAt).toBeNull();

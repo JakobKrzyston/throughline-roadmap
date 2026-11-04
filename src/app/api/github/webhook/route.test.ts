@@ -163,7 +163,7 @@ describe("POST /api/github/webhook", () => {
       digestSlackWebhookUrl: "https://hooks.slack.com/services/T/B/x",
     });
     const published = {
-      action: "published",
+      action: "released",
       release: {
         name: "Version 2.1",
         tag_name: "v2.1.0",

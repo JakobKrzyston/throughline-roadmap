@@ -6,7 +6,12 @@ import type { Database } from "@/db/client";
 import { projects, proposals, repositories } from "@/db/schema";
 import { enqueue, type JobPayloads } from "@/jobs/queue";
 
-import { buildDigest, type DigestPoster, loadDigest } from "./digest";
+import {
+  buildDigest,
+  DIGEST_CHANGE_LIMIT,
+  type DigestPoster,
+  loadDigest,
+} from "./digest";
 import { PRODUCT_STATUS_TEXT } from "./product-text";
 import {
   availableToday,
@@ -21,6 +26,13 @@ type MilestoneStatus = Extract<
   "partially_available" | "delivered"
 >;
 
+// Product statuses in the order an outcome moves through them. Only a step forward is news.
+const STATUS_ORDER: ProductStatus[] = [
+  "not_started",
+  "in_progress",
+  "partially_available",
+  "delivered",
+];
 const MILESTONE_STATUSES: ProductStatus[] = [
   "partially_available",
   "delivered",
@@ -143,8 +155,10 @@ export async function queueMilestones(
   for (const outcome of after) {
     const status = productStatus(outcome.requirements);
     const was = before.get(outcome.id);
-    // A new outcome is news in the weekly digest, not a milestone.
-    if (was === undefined || was === status) continue;
+    // A new outcome is news in the weekly digest, not a milestone; so is one that went back,
+    // e.g. delivered to partially available because more work was planned.
+    if (was === undefined) continue;
+    if (STATUS_ORDER.indexOf(status) <= STATUS_ORDER.indexOf(was)) continue;
     if (!MILESTONE_STATUSES.includes(status)) continue;
     await enqueue(tx, "digest", {
       kind: "milestone",
@@ -268,16 +282,20 @@ export async function runDigestJob(
       roadmapUrl,
     });
   } else {
+    // One more than is shown, to tell whether there were more.
+    const changes = await loadRecentChanges(
+      db,
+      project.id,
+      roadmap,
+      new Date(payload.since),
+      DIGEST_CHANGE_LIMIT + 1,
+    );
     text = buildDigest({
       title: `${project.name}: ${payload.releaseName} is out`,
       changesHeading: "What changed since the last release",
       roadmap,
-      changes: await loadRecentChanges(
-        db,
-        project.id,
-        roadmap,
-        new Date(payload.since),
-      ),
+      changes: changes.slice(0, DIGEST_CHANGE_LIMIT),
+      moreChanges: changes.length > DIGEST_CHANGE_LIMIT,
       roadmapUrl,
     });
   }

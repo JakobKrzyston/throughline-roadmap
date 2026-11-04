@@ -134,7 +134,7 @@ describe("parseWebhookEvent", () => {
 describe("parseReleaseEvent", () => {
   const payload = (
     release: Record<string, unknown> = {},
-    action = "published",
+    action = "released",
   ): unknown => ({
     action,
     release: {
@@ -162,6 +162,8 @@ describe("parseReleaseEvent", () => {
   it("ignores other events and actions, drafts and pre-releases", () => {
     expect(parseReleaseEvent("pull_request", payload())).toBeNull();
     expect(parseReleaseEvent("release", payload({}, "edited"))).toBeNull();
+    // "published" also fires for pre-releases; "released" follows it for full ones.
+    expect(parseReleaseEvent("release", payload({}, "published"))).toBeNull();
     expect(parseReleaseEvent("release", payload({ draft: true }))).toBeNull();
     expect(
       parseReleaseEvent("release", payload({ prerelease: true })),

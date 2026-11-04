@@ -217,7 +217,7 @@ export async function sendDigest(slug: string): Promise<SendState> {
   }
   try {
     const result = await sendDigestNow(getDb(), slug, {
-      baseUrl: await requestOrigin(),
+      baseUrl: await appOrigin(),
       post: postToSlack,
     });
     if (result !== "sent") return fail("This project has no digest set up.");

@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { jobs } from "@/db/schema";
 import { createTestDb } from "@/db/test-db";
 
-import { enqueue, MAX_ATTEMPTS, runJobs } from "./queue";
+import { enqueue, enqueueReconcile, MAX_ATTEMPTS, runJobs } from "./queue";
 
 type TestDb = Awaited<ReturnType<typeof createTestDb>>;
 
@@ -124,5 +124,41 @@ describe("runJobs", () => {
       done: 2,
       failed: 0,
     });
+  });
+});
+
+describe("enqueueReconcile", () => {
+  it("folds a second reconciliation for the same requirement into the waiting job", async () => {
+    expect(
+      await enqueueReconcile(db, { workItemId: "w1", requirementId: "r1" }),
+    ).toBe(true);
+    expect(
+      await enqueueReconcile(db, { workItemId: "w2", requirementId: "r1" }),
+    ).toBe(false);
+
+    const rows = await db.select().from(jobs);
+    expect(rows).toHaveLength(1);
+    // The newest work item is the trigger; the agent sees the earlier one as linked work.
+    expect(rows[0]).toMatchObject({
+      type: "reconcile",
+      status: "queued",
+      payload: { workItemId: "w2", requirementId: "r1" },
+    });
+  });
+
+  it("queues separate jobs for different requirements", async () => {
+    await enqueueReconcile(db, { workItemId: "w1", requirementId: "r1" });
+    await enqueueReconcile(db, { workItemId: "w1", requirementId: "r2" });
+    expect(await db.select().from(jobs)).toHaveLength(2);
+  });
+
+  it("leaves a running job alone and queues a new one", async () => {
+    await enqueueReconcile(db, { workItemId: "w1", requirementId: "r1" });
+    await db.update(jobs).set({ status: "running", attempts: 1 });
+
+    expect(
+      await enqueueReconcile(db, { workItemId: "w2", requirementId: "r1" }),
+    ).toBe(true);
+    expect(await db.select().from(jobs)).toHaveLength(2);
   });
 });

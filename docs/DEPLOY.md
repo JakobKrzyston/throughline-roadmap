@@ -1,12 +1,12 @@
 # Deploying Throughline
 
-This guide puts Throughline on Vercel with a Neon Postgres database, as a public site anyone can open without signing in. It takes about 20 minutes. You need accounts on [Vercel](https://vercel.com), [Neon](https://neon.tech) and GitHub, and a local clone that runs (see the README).
+This guide puts Throughline on Vercel with a Neon Postgres database, as a public site anyone can open without signing in. It takes about 20 minutes. You need accounts on [Vercel](https://vercel.com), [Neon](https://neon.tech) and GitHub, and a local clone that runs (see the README). Everything in it fits the free tiers; see [Running it for free](#running-it-for-free).
 
 ## What the public site allows
 
 Throughline v1 has no sign-in, so a public deployment sets `PUBLIC_DEPLOYMENT=true`. Then:
 
-- Visitors can import, approve and reject only in **demo projects** (Acme Analytics). They cannot edit a proposal before approving it, so nobody can put their own wording on the public demo. The demo's agents return sample results, so visitors never spend your Anthropic key. The demo resets every night.
+- Visitors can import, approve and reject only in **demo projects** (Acme Analytics). They cannot edit a proposal before approving it, so nobody can put their own wording on the public demo. The demo's agents run on a free model through OpenRouter when `OPENROUTER_API_KEY` is set, and on sample results otherwise or whenever that model fails. They never use your Anthropic key. The demo resets every night.
 - **Every other project is view-only.** Its product view, technical view and review queue are public, but the forms are hidden and the server actions refuse changes.
 - Repositories cannot be connected from the site.
 
@@ -35,13 +35,15 @@ Run `pnpm db:migrate` the same way before deploying any change that adds a migra
 1. In Vercel, choose **Add New → Project** and import the GitHub repository. Vercel detects Next.js and pnpm; keep the default build settings.
 2. Before deploying, add these environment variables for **Production**:
 
-| Variable            | Value                                                                                                              |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `DATABASE_URL`      | The Neon connection string                                                                                         |
-| `PUBLIC_DEPLOYMENT` | `true`                                                                                                             |
-| `CRON_SECRET`       | A random string, e.g. from `openssl rand -hex 32`. Vercel cron sends it; other callers of the cron routes get 401. |
-| `ANTHROPIC_API_KEY` | Optional. Used by the agents for your own projects. Without it they return sample results.                         |
-| `GITHUB_*`          | Optional. The GitHub App settings from [`GITHUB_APP.md`](GITHUB_APP.md), to follow a real repository.              |
+| Variable             | Value                                                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `DATABASE_URL`       | The Neon connection string                                                                                         |
+| `PUBLIC_DEPLOYMENT`  | `true`                                                                                                             |
+| `CRON_SECRET`        | A random string, e.g. from `openssl rand -hex 32`. Vercel cron sends it; other callers of the cron routes get 401. |
+| `ANTHROPIC_API_KEY`  | Optional. Used by the agents for your own projects, never for the demo.                                            |
+| `OPENROUTER_API_KEY` | Optional. Lets the demo's agents answer with a real model. Point it at a free one (see below).                     |
+| `OPENROUTER_MODEL`   | Optional. An OpenRouter model id. Defaults to a free model with tool calling.                                      |
+| `GITHUB_*`           | Optional. The GitHub App settings from [`GITHUB_APP.md`](GITHUB_APP.md), to follow a real repository.              |
 
 3. Deploy. Vercel registers the two cron jobs in `vercel.json`:
    - `/api/demo/reset` at 05:00 UTC rebuilds the Acme Analytics demo, undoing whatever visitors approved or rejected. It runs in one transaction, so visitors never see a half-built demo.
@@ -64,12 +66,32 @@ Run `pnpm db:migrate` the same way before deploying any change that adds a migra
 
 If you set up the GitHub App, set its webhook URL to `https://<your-host>/api/github/webhook`.
 
+## Running it for free
+
+The whole public site can run at no cost:
+
+- **Vercel Hobby** hosts the app, with one cron run a day. It is for non-commercial use.
+- **Neon Free** holds the database. It pauses after a few minutes without traffic and wakes on the next request, so the first page load after a quiet spell takes a few seconds.
+- **OpenRouter free models** power the demo's agents. OpenRouter lists models with a `:free` suffix that cost nothing per token. At the time of writing, the free tier allows about 20 requests a minute and 50 a day, or 1,000 a day once the account has ever bought $10 of credit. Check [OpenRouter's limits page](https://openrouter.ai/docs/api-reference/limits) for the current numbers. When the limit is hit, the demo falls back to sample results, so visitors see a proposal either way.
+
+To pick a free model, list the ones that support tool calling:
+
+```bash
+curl -s https://openrouter.ai/api/v1/models | jq -r '
+  .data[] | select(.id | endswith(":free"))
+  | select(.supported_parameters | index("tools")) | .id'
+```
+
+Set `OPENROUTER_MODEL` to one of them, or leave it unset for the default in `src/adapters/llm/openrouter.ts`. Free models come and go; if the default disappears, imports on the demo fall back to sample results and the server log shows the OpenRouter error. Larger models give better reconciliation results; a small one may fail validation more often, which also falls back to a sample result.
+
+Your own projects use `ANTHROPIC_API_KEY` when it is set, and otherwise the same OpenRouter model. A free model is fine for trying the tool on a real repository; for a roadmap you rely on, use Claude.
+
 ## Working on your own projects
 
 On the public site your projects are view-only, so you change them from your machine against the production database:
 
 1. Copy the production settings into `.env.local`, for example with the Vercel CLI: `vercel env pull .env.local --environment=production`.
-2. Delete the `PUBLIC_DEPLOYMENT` line from `.env.local`. Keep the Anthropic and GitHub settings: approving a proposal can start agent jobs, and they run on your machine with these settings.
+2. Delete the `PUBLIC_DEPLOYMENT` line from `.env.local`. Keep the Anthropic, OpenRouter and GitHub settings: approving a proposal can start agent jobs, and they run on your machine with these settings.
 3. Run `pnpm dev`. Everything you do at http://localhost:3000 now changes production data, so take care.
 
 To create a project, run this in Neon's **SQL Editor** (there is no create-project page in v1):

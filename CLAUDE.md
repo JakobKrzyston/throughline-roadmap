@@ -19,7 +19,7 @@ This is a public portfolio project. Code quality, tests and docs matter as much 
 4. **Every graph change writes an event** with an actor and, where relevant, a plain-language `product_note`.
 5. **Plain language in the product view.** No ticket numbers, branch names or jargon unless the reader asks for technical detail.
 6. **Integrations go through adapters.** GitHub via `SourceAdapter`, LLMs via `LLMProvider`. Core code must not import Octokit or the Anthropic SDK directly.
-7. **Everything works without secrets.** With no `ANTHROPIC_API_KEY` or GitHub App credentials, the app falls back to `FakeLLMProvider` and demo data. Tests never call real APIs.
+7. **Everything works without secrets.** With no model key (`ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY`) or GitHub App credentials, the app falls back to `FakeLLMProvider` and demo data. Demo projects never use the Anthropic key. Tests never call real APIs.
 
 ## Stack
 

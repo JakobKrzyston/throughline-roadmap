@@ -3,7 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import type { Database } from "@/db/client";
 import { proposals, requirements, workItems } from "@/db/schema";
-import { enqueue } from "@/jobs/queue";
+import { enqueueReconcile } from "@/jobs/queue";
 
 import { operationListSchema } from "./operations";
 import { applyProposal } from "./proposals";
@@ -23,7 +23,7 @@ import { isFinished } from "./work-items";
  *   editedOperations: The reviewer's edited operations, if they changed any (see applyProposal).
  *
  * Returns:
- *   How many reconciliation jobs were queued.
+ *   How many requirements were queued for reconciliation.
  *
  * Raises:
  *   ProposalError, ZodError: As applyProposal; nothing is applied or queued.
@@ -68,7 +68,7 @@ export async function approveProposal(
             eq(requirements.key, op.requirement_key),
           ),
         );
-      await enqueue(tx, "reconcile", {
+      await enqueueReconcile(tx, {
         workItemId: item.id,
         requirementId: requirement.id,
       });

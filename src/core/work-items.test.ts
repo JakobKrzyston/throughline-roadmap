@@ -256,9 +256,25 @@ describe("syncWorkItem", () => {
     });
     await syncWorkItem(db, projectId, { ...issue, state: "closed" });
     await syncWorkItem(db, projectId, { ...issue, state: "closed" });
+    // Once the first reconciliation has run, closing it again queues another.
+    await db.update(jobs).set({ status: "done" });
     await syncWorkItem(db, projectId, { ...issue, state: "open" });
     await syncWorkItem(db, projectId, { ...issue, state: "closed" });
     expect(await reconcileJobs()).toHaveLength(2);
+  });
+
+  it("folds reconciliations that arrive before the first one runs into one job", async () => {
+    await syncWorkItem(db, projectId, merged());
+    const second = await syncWorkItem(
+      db,
+      projectId,
+      merged({ externalId: "4242#42", title: "CSV export follow-up" }),
+    );
+
+    expect(second.reconcileJobs).toBe(1);
+    const queued = await reconcileJobs();
+    expect(queued).toHaveLength(1);
+    expect(queued[0].payload).toMatchObject({ workItemId: second.workItemId });
   });
 
   it("does not reconcile an issue closed as not planned", async () => {
@@ -288,6 +304,7 @@ describe("syncWorkItem", () => {
     expect(late).toEqual({
       workItemId: closed.workItemId,
       linked: [],
+      started: [],
       reconcileJobs: 0,
       linkSuggestJob: false,
     });
@@ -303,6 +320,88 @@ describe("syncWorkItem", () => {
     });
     expect(result).toMatchObject({ linked: ["TL-1"], reconcileJobs: 0 });
     expect(await reconcileJobs()).toEqual([]);
+  });
+});
+
+describe("syncWorkItem work started", () => {
+  async function status(key: string): Promise<string | null> {
+    const [row] = await db
+      .select({ status: requirements.status })
+      .from(requirements)
+      .where(eq(requirements.key, key));
+    return row.status;
+  }
+
+  it("moves a planned requirement to in progress when an open PR references it", async () => {
+    const result = await syncWorkItem(db, projectId, pr());
+
+    expect(result).toMatchObject({ linked: ["TL-1"], started: ["TL-1"] });
+    expect(await status("TL-1")).toBe("in_progress");
+    expect(await status("TL-2")).toBe("planned");
+
+    const [proposal] = await db
+      .select()
+      .from(proposals)
+      .where(eq(proposals.source, "work_started"));
+    expect(proposal).toMatchObject({
+      status: "approved",
+      decidedBy: SYNC_ACTOR,
+      triggerWorkItemId: result.workItemId,
+      summary: 'Work started on TL-1: "Add CSV export"',
+    });
+    const [event] = await db
+      .select()
+      .from(events)
+      .where(eq(events.type, "set_status"));
+    expect(event).toMatchObject({
+      actor: SYNC_ACTOR,
+      payload: { requirement_key: "TL-1", status: "in_progress" },
+    });
+  });
+
+  it("starts nothing twice, and nothing that is not planned", async () => {
+    await syncWorkItem(db, projectId, pr());
+    const replay = await syncWorkItem(db, projectId, pr());
+    expect(replay.started).toEqual([]);
+
+    // A second PR against work already started changes nothing.
+    const another = await syncWorkItem(
+      db,
+      projectId,
+      pr({ externalId: "4242#43", title: "CSV export: headers" }),
+    );
+    expect(another).toMatchObject({ linked: ["TL-1"], started: [] });
+    expect(
+      await db.$count(proposals, eq(proposals.source, "work_started")),
+    ).toBe(1);
+  });
+
+  it("starts a requirement when a reference is added to an open PR later", async () => {
+    await syncWorkItem(db, projectId, pr({ body: "No reference yet" }));
+    const edited = await syncWorkItem(
+      db,
+      projectId,
+      pr({
+        body: "Implements TL-2",
+        updatedAt: new Date("2026-11-01T10:00:00Z"),
+      }),
+    );
+    expect(edited).toMatchObject({ linked: ["TL-2"], started: ["TL-2"] });
+  });
+
+  it("does not start work for an issue, or for a PR first seen merged", async () => {
+    const issue = await syncWorkItem(
+      db,
+      projectId,
+      pr({ kind: "issue", externalId: "4242#7", body: "Part of TL-2" }),
+    );
+    expect(issue.started).toEqual([]);
+    expect(await status("TL-2")).toBe("planned");
+
+    // Merged work goes to reconciliation instead; the agent decides whether it is done.
+    const done = await syncWorkItem(db, projectId, merged());
+    expect(done).toMatchObject({ started: [], reconcileJobs: 1 });
+    expect(await status("TL-1")).toBe("planned");
   });
 });
 

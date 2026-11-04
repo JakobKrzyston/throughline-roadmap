@@ -10,13 +10,13 @@ import {
   requirements,
   workItems,
 } from "@/db/schema";
-import { enqueue } from "@/jobs/queue";
+import { enqueue, enqueueReconcile } from "@/jobs/queue";
 
 import type { GraphOperationInput } from "./operations";
 import { applyProposal } from "./proposals";
 import { parseReferences } from "./references";
 
-/** The actor recorded on events for links created from explicit PR references. */
+/** The actor recorded on events for links and status changes made from explicit PR references. */
 export const SYNC_ACTOR = "github-sync";
 
 /** How much of a description is stored as agent context. */
@@ -26,7 +26,9 @@ type SyncResult = {
   workItemId: string;
   /** Requirement keys newly linked from explicit references. */
   linked: string[];
-  /** Reconciliation jobs queued. */
+  /** Planned requirements moved to in progress because an open pull request references them. */
+  started: string[];
+  /** Requirements queued for reconciliation. */
   reconcileJobs: number;
   /** Whether a link suggestion was queued, for a merged pull request that references nothing. */
   linkSuggestJob: boolean;
@@ -37,8 +39,9 @@ type SyncResult = {
  * reconciliation when it has finished.
  *
  * Safe to repeat: replaying the same item creates no duplicate work items, links or jobs. An
- * item older than the stored copy (a delivery that arrived out of order) changes nothing. A
- * reconciliation job is queued for each linked requirement when the item first becomes merged
+ * item older than the stored copy (a delivery that arrived out of order) changes nothing. An
+ * open pull request moves the planned requirements it is linked to into progress. A
+ * reconciliation is queued for each linked requirement when the item first becomes merged
  * (or, for an issue, closed as done), and for each new link added to an item that has already
  * finished. A pull request that merges with no links at all gets a link suggestion job instead,
  * and an explicit link added later supersedes a pending suggestion.
@@ -51,8 +54,8 @@ type SyncResult = {
  *     suggestions, for importing work that finished before the repository was connected.
  *
  * Returns:
- *   The work item's id, the requirement keys newly linked, how many reconciliation jobs were
- *   queued, and whether a link suggestion was.
+ *   The work item's id, the requirement keys newly linked and newly started, how many
+ *   requirements were queued for reconciliation, and whether a link suggestion was.
  */
 export async function syncWorkItem(
   db: Database,
@@ -77,6 +80,7 @@ export async function syncWorkItem(
       return {
         workItemId,
         linked: [],
+        started: [],
         reconcileJobs: 0,
         linkSuggestJob: false,
       };
@@ -152,16 +156,25 @@ export async function syncWorkItem(
         );
     }
 
+    const allLinked = [
+      ...linkedIds,
+      ...newLinks.map((link) => link.requirementId),
+    ];
+    const started =
+      item.kind === "pull_request" && item.state === "open"
+        ? await startWork(tx, projectId, workItemId, item.title, allLinked)
+        : [];
+
     const finished = isFinished(item);
     const justFinished = finished && previousState !== item.state;
     const toReconcile =
       !finished || !reconcile
         ? []
         : justFinished
-          ? [...linkedIds, ...newLinks.map((link) => link.requirementId)]
+          ? allLinked
           : newLinks.map((link) => link.requirementId);
     for (const requirementId of toReconcile) {
-      await enqueue(tx, "reconcile", { workItemId, requirementId });
+      await enqueueReconcile(tx, { workItemId, requirementId });
     }
     const suggestLink =
       justFinished &&
@@ -174,10 +187,61 @@ export async function syncWorkItem(
     return {
       workItemId,
       linked: newLinks.map((link) => link.key),
+      started,
       reconcileJobs: toReconcile.length,
       linkSuggestJob: suggestLink,
     };
   });
+}
+
+/**
+ * Move the planned requirements among `requirementIds` to in progress, because an open pull
+ * request references them. Requirements already started, finished, dropped or split are left alone.
+ *
+ * Like explicit links, this is deterministic, so the proposal is approved at once by the sync.
+ *
+ * Returns:
+ *   The keys of the requirements that were started.
+ */
+async function startWork(
+  tx: Transaction,
+  projectId: string,
+  workItemId: string,
+  title: string,
+  requirementIds: string[],
+): Promise<string[]> {
+  if (requirementIds.length === 0) return [];
+  const planned = await tx
+    .select({ key: requirements.key })
+    .from(requirements)
+    .where(
+      and(
+        inArray(requirements.id, requirementIds),
+        eq(requirements.status, "planned"),
+      ),
+    )
+    .orderBy(requirements.key);
+  if (planned.length === 0) return [];
+
+  const keys = planned.map((row) => row.key);
+  const [proposal] = await tx
+    .insert(proposals)
+    .values({
+      projectId,
+      source: "work_started",
+      summary: `Work started on ${keys.join(", ")}: "${title}"`,
+      rationale:
+        "An open pull request references these requirements, so work on them has started.",
+      operations: keys.map((key) => ({
+        type: "set_status",
+        requirement_key: key,
+        status: "in_progress",
+      })),
+      triggerWorkItemId: workItemId,
+    })
+    .returning({ id: proposals.id });
+  await applyProposal(tx, proposal.id, SYNC_ACTOR);
+  return keys;
 }
 
 /**

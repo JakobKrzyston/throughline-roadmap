@@ -3,8 +3,7 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { getLLMProvider } from "@/adapters/llm";
-import { FakeLLMProvider } from "@/adapters/llm/fake";
+import { getDemoLLMProvider, getLLMProvider } from "@/adapters/llm";
 import { LLMOutputError } from "@/adapters/llm/provider";
 import { DEMO_LLM_FIXTURES } from "@/agents/fixtures";
 import { runImport } from "@/agents/import";
@@ -66,9 +65,9 @@ export async function generateImportProposal(
   try {
     const { proposalId, summary } = await runImport(
       db,
-      // Visitors to a public server only reach demo projects here, and must not spend the AI key.
+      // Visitors to a public server only reach demo projects here, and must not spend the Anthropic key.
       isPublicDeployment()
-        ? new FakeLLMProvider(DEMO_LLM_FIXTURES)
+        ? getDemoLLMProvider(DEMO_LLM_FIXTURES)
         : getLLMProvider(DEMO_LLM_FIXTURES),
       project.id,
       roadmap.data,

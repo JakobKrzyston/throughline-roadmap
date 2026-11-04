@@ -9,7 +9,14 @@ import { proposals, workItems } from "@/db/schema";
 import { seedDemoProject } from "@/db/seed";
 import { createTestDb } from "@/db/test-db";
 
-import { LINK_SUGGEST_TASK, runLinkSuggest } from "./link-suggest";
+import {
+  buildLinkSuggestPrompt,
+  LINK_SUGGEST_TASK,
+  type LinkCandidate,
+  MAX_CANDIDATES,
+  rankCandidates,
+  runLinkSuggest,
+} from "./link-suggest";
 
 type TestDb = Awaited<ReturnType<typeof createTestDb>>;
 
@@ -127,5 +134,69 @@ describe("runLinkSuggest", () => {
       }),
     ).toBeNull();
     expect(llm.prompts).toEqual([]);
+  });
+});
+
+describe("rankCandidates", () => {
+  const pull = {
+    title: "Add Excel export with multiple sheets",
+    body: "",
+    changes: "- added src/export/excel.ts (+120 −0)",
+  };
+  const candidate = (
+    n: number,
+    overrides: Partial<LinkCandidate> = {},
+  ): LinkCandidate => ({
+    key: `TL-${n}`,
+    title: `Requirement ${n}`,
+    description: "",
+    status: "planned",
+    outcomeTitle: "Something else",
+    ...overrides,
+  });
+
+  it("returns a list that already fits unchanged", () => {
+    const candidates = [candidate(1), candidate(2)];
+    expect(rankCandidates(pull, candidates)).toBe(candidates);
+  });
+
+  it("keeps the requirements that share words with the pull request", () => {
+    const many = Array.from({ length: MAX_CANDIDATES + 10 }, (_, i) =>
+      candidate(i + 1),
+    );
+    many[MAX_CANDIDATES + 5] = candidate(MAX_CANDIDATES + 6, {
+      title: "Excel export",
+      status: "done",
+    });
+    many[MAX_CANDIDATES + 8] = candidate(MAX_CANDIDATES + 9, {
+      title: "Export sheets",
+      outcomeTitle: "Customers can export reports to Excel",
+    });
+
+    const ranked = rankCandidates(pull, many);
+
+    expect(ranked).toHaveLength(MAX_CANDIDATES);
+    const keys = ranked.map((c) => c.key);
+    expect(keys).toContain(`TL-${MAX_CANDIDATES + 6}`);
+    expect(keys).toContain(`TL-${MAX_CANDIDATES + 9}`);
+    // Key order is kept so the prompt reads like the roadmap.
+    expect(keys.indexOf("TL-1")).toBeLessThan(keys.indexOf("TL-2"));
+  });
+
+  it("breaks ties in favour of unfinished requirements", () => {
+    const many = Array.from({ length: MAX_CANDIDATES + 1 }, (_, i) =>
+      candidate(i + 1, { status: i === 0 ? "done" : "planned" }),
+    );
+    expect(rankCandidates(pull, many).map((c) => c.key)).not.toContain("TL-1");
+  });
+
+  it("tells the model when the list was cut", () => {
+    const candidates = [candidate(1)];
+    expect(buildLinkSuggestPrompt(pull, candidates, 50).user).toContain(
+      "Requirements (the 1 of 50 that look most relevant; return null if the right one is not here):",
+    );
+    expect(buildLinkSuggestPrompt(pull, candidates).user).toContain(
+      "Requirements:\n- TL-1",
+    );
   });
 });

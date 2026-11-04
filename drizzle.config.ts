@@ -4,7 +4,9 @@ import { defineConfig } from "drizzle-kit";
 // Read .env files the same way Next.js does, so DATABASE_URL means the same thing here as in the app.
 loadEnvConfig(process.cwd());
 
-const databaseUrl = process.env.DATABASE_URL;
+// Migrations need a direct connection: Neon's pooler runs in transaction mode, which breaks session state.
+const databaseUrl =
+  process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
 // Same directory as localDataDir() in src/db/client.ts.
 const localDataDir = process.env.PGLITE_DATA_DIR || ".pglite";
 

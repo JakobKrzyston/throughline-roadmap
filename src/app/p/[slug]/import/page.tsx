@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { type ReactElement, Suspense } from "react";
 
-import { isDemoLLM } from "@/adapters/llm";
+import { demoModels, isDemoLLM } from "@/adapters/llm";
 import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
 import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
@@ -67,10 +67,18 @@ async function ProjectImport({
         <ViewOnlyNotice />
       ) : (
         <>
-          {(isDemoLLM() || isPublicDeployment()) && (
+          {isPublicDeployment() && demoModels() ? (
             <p className="rounded-md border border-border bg-muted p-3 text-sm">
-              Demo mode: you will get a sample proposal whatever you paste.
+              This demo uses free models through OpenRouter (
+              {demoModels()!.join(", then ")}). When they are busy or answer
+              badly, you get a sample proposal instead.
             </p>
+          ) : (
+            (isDemoLLM() || isPublicDeployment()) && (
+              <p className="rounded-md border border-border bg-muted p-3 text-sm">
+                Demo mode: you will get a sample proposal whatever you paste.
+              </p>
+            )
           )}
           <ImportForm slug={slug} />
         </>

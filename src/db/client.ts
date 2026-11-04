@@ -1,16 +1,17 @@
 /** Database clients: Postgres when DATABASE_URL is set, embedded PGlite otherwise. Exports getDb, createPgliteDb, createPostgresDb. */
 import { PGlite } from "@electric-sql/pglite";
+import { attachDatabasePool } from "@vercel/functions";
+import { drizzle as drizzleNodePg } from "drizzle-orm/node-postgres";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
-import { drizzle as drizzlePostgres } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { Pool } from "pg";
 
 import * as schema from "./schema";
 
 /**
  * The query interface shared by the PGlite and Postgres clients.
  *
- * Prefer the query builder: raw `execute()` results differ by driver (PGlite returns `{ rows }`, postgres-js an array).
+ * Prefer the query builder: raw `execute()` results can differ in shape between PGlite and node-postgres.
  */
 export type Database = PgDatabase<PgQueryResultHKT, typeof schema>;
 
@@ -43,13 +44,16 @@ export function createPgliteDb(dataDir?: string) {
  * Create a Drizzle client for a Postgres server such as Neon.
  *
  * Args:
- *   url: Postgres connection string.
+ *   url: Postgres connection string. Use Neon's pooled (-pooler) string for app traffic.
  *
  * Returns:
- *   A Drizzle client for the Postgres database.
+ *   A Drizzle client backed by a node-postgres pool.
  */
 export function createPostgresDb(url: string) {
-  return drizzlePostgres(postgres(url), { schema });
+  const pool = new Pool({ connectionString: url });
+  // On Vercel Fluid compute, closes idle connections before an instance suspends so they don't leak. A no-op elsewhere.
+  attachDatabasePool(pool);
+  return drizzleNodePg(pool, { schema });
 }
 
 const globalForDb = globalThis as { db?: Database };

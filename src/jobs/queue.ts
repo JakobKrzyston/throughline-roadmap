@@ -1,5 +1,5 @@
-/** A minimal Postgres-backed job queue. Exports enqueue, runJobs, JobPayloads, JobHandlers, MAX_ATTEMPTS. */
-import { and, asc, eq, inArray, lt, lte, or } from "drizzle-orm";
+/** A minimal Postgres-backed job queue. Exports enqueue, enqueueReconcile, runJobs, JobPayloads, JobHandlers, MAX_ATTEMPTS. */
+import { and, asc, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
 
 import type { Database } from "@/db/client";
 import { jobs } from "@/db/schema";
@@ -58,6 +58,43 @@ export async function enqueue<T extends JobType>(
     .values({ type, payload })
     .returning({ id: jobs.id });
   return job.id;
+}
+
+/**
+ * Queue a reconciliation, or fold it into one already waiting for the same requirement.
+ *
+ * The agent judges the requirement as a whole and sees every work item linked to it, so when
+ * several pull requests finish before the first job runs, one run with the newest trigger covers
+ * them all. A job that is already running is left alone; the new one supersedes its proposal.
+ *
+ * Args:
+ *   db: Database or transaction to write to.
+ *   payload: The work item and requirement to compare.
+ *
+ * Returns:
+ *   True when a new job was queued, false when a waiting job was pointed at this work item instead.
+ */
+export async function enqueueReconcile(
+  db: Pick<Database, "insert" | "select" | "update">,
+  payload: JobPayloads["reconcile"],
+): Promise<boolean> {
+  const [waiting] = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.type, "reconcile"),
+        eq(jobs.status, "queued"),
+        sql`${jobs.payload}->>'requirementId' = ${payload.requirementId}`,
+      ),
+    )
+    .for("update");
+  if (!waiting) {
+    await enqueue(db, "reconcile", payload);
+    return true;
+  }
+  await db.update(jobs).set({ payload }).where(eq(jobs.id, waiting.id));
+  return false;
 }
 
 /**

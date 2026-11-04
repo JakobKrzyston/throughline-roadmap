@@ -14,6 +14,7 @@ import { getDb } from "@/db/client";
 import { projects, repositories } from "@/db/schema";
 import { runQueuedJobs } from "@/jobs";
 import { enqueue } from "@/jobs/queue";
+import { isPublicDeployment } from "@/lib/public-deployment";
 
 export type ConnectState =
   | { status: "idle" }
@@ -63,6 +64,9 @@ export async function connectRepository(
       `This server only connects repositories from approved accounts, and ${name.split("/")[0]} is not one of them.`,
     );
 
+  if (isPublicDeployment()) {
+    return fail("Repositories are connected by the site owner on this server.");
+  }
   if (!isGitHubConfigured()) {
     return fail("GitHub is not set up on this server yet.");
   }

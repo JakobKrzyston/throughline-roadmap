@@ -7,7 +7,9 @@ import { type ReactElement, Suspense } from "react";
 import { isDemoLLM } from "@/adapters/llm";
 import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
+import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
 
+import { ViewOnlyNotice } from "../view-only-notice";
 import { ImportForm } from "./import-form";
 
 // Up to two model calls run in this page's server action; allow them more than the platform default.
@@ -52,7 +54,7 @@ async function ProjectImport({
   // The database read is uncached, so render this part per request rather than prerendering it.
   await connection();
   const [project] = await getDb()
-    .select({ name: projects.name })
+    .select({ name: projects.name, isDemo: projects.isDemo })
     .from(projects)
     .where(eq(projects.slug, slug));
   if (!project) notFound();
@@ -62,13 +64,18 @@ async function ProjectImport({
       <p className="text-sm text-muted-foreground">
         Project: <span className="font-medium">{project.name}</span>
       </p>
-      {isDemoLLM() && (
-        <p className="rounded-md border border-border bg-muted p-3 text-sm">
-          Demo mode: no AI key is set up, so you will get a sample proposal
-          whatever you paste.
-        </p>
+      {isViewOnly(project) ? (
+        <ViewOnlyNotice />
+      ) : (
+        <>
+          {(isDemoLLM() || isPublicDeployment()) && (
+            <p className="rounded-md border border-border bg-muted p-3 text-sm">
+              Demo mode: you will get a sample proposal whatever you paste.
+            </p>
+          )}
+          <ImportForm slug={slug} />
+        </>
       )}
-      <ImportForm slug={slug} />
     </>
   );
 }

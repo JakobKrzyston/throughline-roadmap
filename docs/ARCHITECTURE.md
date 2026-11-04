@@ -284,9 +284,19 @@ For the PM.
 
 ## Demo mode
 
-A seeded project called "Acme Analytics" lets anyone explore Throughline without signing in or providing an API key. Demo proposals are pre-generated fixtures. The demo resets on a schedule.
+A seeded project called "Acme Analytics" lets anyone explore Throughline without signing in or providing an API key. Demo proposals are pre-generated fixtures. "Open demo" on the home page goes straight to it.
 
-`pnpm db:seed` (`src/db/seed.ts`) builds the demo graph by approving proposals, so it has the same event history a real project would, then leaves three proposals pending for the review queue. Running it again replaces the demo project.
+`pnpm db:seed` (`src/db/seed.ts`) builds the demo graph by approving proposals, so it has the same event history a real project would, then leaves three proposals pending for the review queue. Running it again replaces the demo project. `/api/demo/reset` does the same inside one transaction, so visitors see the old demo until the new one is complete; a Vercel cron calls it nightly, guarded by `CRON_SECRET` like `/api/jobs/run`.
+
+### Public deployment
+
+v1 has no sign-in, so a public site sets `PUBLIC_DEPLOYMENT=true` (`src/lib/public-deployment.ts`). Then:
+
+- Only projects with `is_demo` accept changes. For any other project the import, review and connect server actions refuse with "view-only", and the pages hide their forms. The owner changes their own projects from a local copy of the app pointed at the production database (see `docs/DEPLOY.md`).
+- Agents for demo projects use `FakeLLMProvider` and no `SourceAdapter`, whether they run from the import form or from a queued job, so visitors cannot spend the Anthropic key and the demo's made-up repository is never looked up on GitHub.
+- No repository can be connected from the site.
+
+Without the variable, as when running locally, every project accepts changes and the AI key is used whenever it is set.
 
 ## Moving to production
 

@@ -4,11 +4,13 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { getLLMProvider } from "@/adapters/llm";
+import { FakeLLMProvider } from "@/adapters/llm/fake";
 import { LLMOutputError } from "@/adapters/llm/provider";
 import { DEMO_LLM_FIXTURES } from "@/agents/fixtures";
 import { runImport } from "@/agents/import";
 import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
+import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
 
 export type ImportState =
   | { status: "idle" }
@@ -53,15 +55,21 @@ export async function generateImportProposal(
 
   const db = getDb();
   const [project] = await db
-    .select({ id: projects.id })
+    .select({ id: projects.id, isDemo: projects.isDemo })
     .from(projects)
     .where(eq(projects.slug, slug));
   if (!project) return fail("Project not found.");
+  if (isViewOnly(project)) {
+    return fail("This project is view-only on this server.");
+  }
 
   try {
     const { proposalId, summary } = await runImport(
       db,
-      getLLMProvider(DEMO_LLM_FIXTURES),
+      // Visitors to a public server only reach demo projects here, and must not spend the AI key.
+      isPublicDeployment()
+        ? new FakeLLMProvider(DEMO_LLM_FIXTURES)
+        : getLLMProvider(DEMO_LLM_FIXTURES),
       project.id,
       roadmap.data,
     );

@@ -1,4 +1,7 @@
-import { Button } from "@/components/ui/button";
+import Link from "next/link";
+
+import { buttonVariants } from "@/components/ui/button";
+import { DEMO_SLUG } from "@/db/seed";
 
 export default function Home() {
   return (
@@ -10,10 +13,13 @@ export default function Home() {
         Keeps your product roadmap and technical roadmap in sync with what
         engineering ships.
       </p>
-      {/* Stage 7 points this at the Acme Analytics demo project. */}
-      <Button size="lg" disabled>
+      <Link href={`/p/${DEMO_SLUG}`} className={buttonVariants({ size: "lg" })}>
         Open demo
-      </Button>
+      </Link>
+      <p className="max-w-md text-sm text-muted-foreground">
+        A sample company&rsquo;s roadmap. No sign-in needed; try approving a
+        proposal. It resets every night.
+      </p>
     </main>
   );
 }

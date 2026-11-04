@@ -8,6 +8,7 @@ import { githubInstallUrl, missingGitHubSettings } from "@/adapters/github";
 import { getDb } from "@/db/client";
 import { projects, repositories } from "@/db/schema";
 import { type BackfillStatus, backfillStatuses } from "@/jobs/backfill";
+import { isPublicDeployment } from "@/lib/public-deployment";
 
 import { ConnectForm } from "./connect-form";
 
@@ -97,7 +98,11 @@ async function ProjectSettings({
 
       <section className="flex flex-col gap-3">
         <h2 className="text-xl font-semibold">Connect a repository</h2>
-        {configured ? (
+        {isPublicDeployment() ? (
+          <p className="rounded-md border border-border bg-muted p-3 text-sm">
+            On the public site, repositories are connected by the site owner.
+          </p>
+        ) : configured ? (
           <ol className="list-decimal pl-5 text-sm text-muted-foreground">
             <li>
               {installUrl ? (
@@ -121,7 +126,9 @@ async function ProjectSettings({
             docs/GITHUB_APP.md.
           </p>
         )}
-        <ConnectForm slug={slug} disabled={!configured} />
+        {!isPublicDeployment() && (
+          <ConnectForm slug={slug} disabled={!configured} />
+        )}
       </section>
     </>
   );

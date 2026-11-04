@@ -54,7 +54,7 @@ GITHUB_WEBHOOK_SECRET=<the webhook secret from step 1>
 GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----\n"
 ```
 
-Throughline has no sign-in yet, so anyone who can open a project's settings page can connect a repository. `GITHUB_ALLOWED_OWNERS` limits that to repositories owned by the accounts you list, and repositories cannot be connected until it is set.
+Throughline has no sign-in yet, so anyone who can open a project's settings page can connect a repository. `GITHUB_ALLOWED_OWNERS` limits that to repositories owned by the accounts you list, and repositories cannot be connected until it is set. On a public site, set `PUBLIC_DEPLOYMENT=true` as well, and nobody can connect repositories from the site at all (see [`DEPLOY.md`](DEPLOY.md)).
 
 On Vercel, also set `CRON_SECRET` to a random string. Vercel's cron then sends it to `/api/jobs/run`, and other callers are refused.
 

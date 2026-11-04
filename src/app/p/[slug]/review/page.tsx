@@ -14,7 +14,9 @@ import {
   requirements,
   workItems,
 } from "@/db/schema";
+import { isViewOnly } from "@/lib/public-deployment";
 
+import { ViewOnlyNotice } from "../view-only-notice";
 import { type ProposalView, ProposalCard } from "./proposal-card";
 
 // Approving a link can start a reconciliation after the response; allow it time to finish.
@@ -65,7 +67,7 @@ async function PendingProposals({
   await connection();
   const db = getDb();
   const [project] = await db
-    .select({ id: projects.id, name: projects.name })
+    .select({ id: projects.id, name: projects.name, isDemo: projects.isDemo })
     .from(projects)
     .where(eq(projects.slug, slug));
   if (!project) notFound();
@@ -95,6 +97,7 @@ async function PendingProposals({
   });
   const graph = await loadSnapshot(project.id, workItemIds);
 
+  const viewOnly = isViewOnly(project);
   const views = pending.map((proposal, i): ProposalView => {
     const parsed = parsedOperations[i];
     const trigger = proposal.triggerWorkItemId
@@ -117,6 +120,7 @@ async function PendingProposals({
       <p className="text-sm text-muted-foreground">
         Project: <span className="font-medium">{project.name}</span>
       </p>
+      {viewOnly && <ViewOnlyNotice />}
       {views.length === 0 ? (
         <p className="rounded-md border border-border p-6 text-center text-muted-foreground">
           Nothing to review. Proposals appear here when you import a roadmap or
@@ -126,7 +130,7 @@ async function PendingProposals({
         <ol className="flex flex-col gap-6">
           {views.map((view) => (
             <li key={view.id}>
-              <ProposalCard slug={slug} proposal={view} />
+              <ProposalCard slug={slug} proposal={view} viewOnly={viewOnly} />
             </li>
           ))}
         </ol>

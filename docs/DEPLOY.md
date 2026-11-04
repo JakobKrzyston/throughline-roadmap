@@ -15,17 +15,20 @@ You make changes to your own projects from a local copy of the app pointed at th
 ## 1. Create the database
 
 1. In Neon, create a project. Any region close to your Vercel region works.
-2. On the project dashboard, open **Connect**, turn on **Connection pooling**, and copy the connection string. It looks like `postgresql://user:password@ep-...-pooler.region.aws.neon.tech/neondb?sslmode=require`. The pooled string matters on Vercel, where every function instance opens its own connections.
+2. On the project dashboard, open **Connect**, turn on **Connection pooling**, and copy the connection string. It looks like `postgresql://user:password@ep-...-pooler.region.aws.neon.tech/neondb?sslmode=require`. The pooled string matters on Vercel, where every function instance opens its own connections. Turn pooling off and copy the direct string too; migrations need it.
+
+With the [Neon CLI](https://neon.com/docs/cli/install) you can skip the copying: `neon link --project-id <id> --branch production` followed by `neon deploy` writes both strings to `.env.local` as `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (direct), and `neon.ts` declares the project's Neon services. The app then talks to Neon locally too, so the commands below need no `export`.
 
 ## 2. Create the tables and the demo
 
-From your clone, run the migrations and the seed against Neon:
+From your clone, run the migrations and the seed against Neon. `pnpm db:migrate` uses `DATABASE_URL_UNPOOLED` when it is set, because Neon's pooler runs in transaction mode and breaks the session state migrations rely on:
 
 ```bash
-export DATABASE_URL='<the connection string>'
+export DATABASE_URL='<the pooled connection string>'
+export DATABASE_URL_UNPOOLED='<the direct connection string>'
 pnpm db:migrate
 pnpm db:seed
-unset DATABASE_URL
+unset DATABASE_URL DATABASE_URL_UNPOOLED
 ```
 
 Run `pnpm db:migrate` the same way before deploying any change that adds a migration under `src/db/migrations`. Deploys do not migrate on their own, so a preview deployment can never change the production schema.
@@ -37,7 +40,7 @@ Run `pnpm db:migrate` the same way before deploying any change that adds a migra
 
 | Variable             | Value                                                                                                              |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `DATABASE_URL`       | The Neon connection string                                                                                         |
+| `DATABASE_URL`       | The pooled Neon connection string                                                                                  |
 | `PUBLIC_DEPLOYMENT`  | `true`                                                                                                             |
 | `CRON_SECRET`        | A random string, e.g. from `openssl rand -hex 32`. Vercel cron sends it; other callers of the cron routes get 401. |
 | `ANTHROPIC_API_KEY`  | Optional. Used by the agents for your own projects, never for the demo.                                            |

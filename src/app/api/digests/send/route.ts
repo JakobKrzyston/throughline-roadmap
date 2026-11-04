@@ -3,6 +3,9 @@ import { postToSlack } from "@/adapters/slack";
 import { sendDueDigests } from "@/core/digest";
 import { getDb } from "@/db/client";
 
+// Digests are sent one project at a time, each with a 10-second Slack timeout.
+export const maxDuration = 300;
+
 /**
  * Send the digests that are due if the caller is allowed to.
  *

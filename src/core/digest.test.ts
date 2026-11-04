@@ -52,7 +52,8 @@ function outcome(
 describe("buildDigest", () => {
   it("lists the week's changes oldest first, then where each outcome stands", () => {
     const text = buildDigest({
-      projectName: "Acme Analytics",
+      title: "Acme Analytics: roadmap update, 9 November 2026",
+      changesHeading: "What changed since 2 November",
       roadmap: [
         outcome("Excel export", "2026-Q4", [
           leaf("TL-1", "done", true),
@@ -76,15 +77,15 @@ describe("buildDigest", () => {
           entityKey: "OUT-1",
         },
       ],
+      moreChanges: false,
       roadmapUrl: "https://throughline.example/p/acme",
-      now: NOW,
     });
 
     expect(text).toBe(
       [
-        "Acme Analytics: roadmap update for the week to 9 November 2026",
+        "Acme Analytics: roadmap update, 9 November 2026",
         "",
-        "What changed this week",
+        "What changed since 2 November",
         "• Export now has a plan. (Excel export)",
         "• CSV download is live. (Excel export)",
         "",
@@ -99,17 +100,39 @@ describe("buildDigest", () => {
 
   it("says so when nothing changed and the roadmap is empty", () => {
     const text = buildDigest({
-      projectName: "Empty",
+      title: "Empty: roadmap update",
+      changesHeading: "What changed since 2 November",
       roadmap: [],
       changes: [],
+      moreChanges: false,
       roadmapUrl: "https://throughline.example/p/empty",
-      now: NOW,
+    });
+
+    expect(text).toContain("What changed since 2 November\nNothing changed.");
+    expect(text).toContain("Where things stand\nThe roadmap is empty.");
+  });
+
+  it("says when there were more changes than it lists", () => {
+    const text = buildDigest({
+      title: "Busy: roadmap update",
+      changesHeading: "What changed since 2 November",
+      roadmap: [],
+      changes: [
+        {
+          id: "1",
+          note: "CSV download is live.",
+          at: NOW,
+          outcomeTitle: "Excel export",
+          entityKey: "TL-1",
+        },
+      ],
+      moreChanges: true,
+      roadmapUrl: "https://throughline.example/p/busy",
     });
 
     expect(text).toContain(
-      "What changed this week\nNothing changed this week.",
+      "What changed since 2 November\n• Earlier changes are on the roadmap.\n• CSV download is live.",
     );
-    expect(text).toContain("Where things stand\nThe roadmap is empty.");
   });
 });
 
@@ -139,7 +162,12 @@ describe("digests from the database", () => {
   it("writes the demo's digest in plain language, with no ticket numbers", async () => {
     const text = await loadDigest(
       db,
-      { id: projectId, name: "Acme Analytics", slug: DEMO_SLUG },
+      {
+        id: projectId,
+        name: "Acme Analytics",
+        slug: DEMO_SLUG,
+        digestSentAt: null,
+      },
       "https://throughline.example",
     );
 
@@ -151,6 +179,37 @@ describe("digests from the database", () => {
       `The full roadmap: https://throughline.example/p/${DEMO_SLUG}`,
     );
     expect(text).not.toMatch(TICKET_NUMBER);
+  });
+
+  it("covers the time since the last digest went out", async () => {
+    const project = {
+      id: projectId,
+      name: "Acme Analytics",
+      slug: DEMO_SLUG,
+    };
+    const twoWeeksAgo = new Date(Date.now() - 14 * DAY_MS);
+    const day = twoWeeksAgo.toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "long",
+      timeZone: "UTC",
+    });
+
+    // A missed week: the next digest still reports the seed's changes from this week.
+    const late = await loadDigest(
+      db,
+      { ...project, digestSentAt: twoWeeksAgo },
+      "https://t.example",
+    );
+    expect(late).toContain(`What changed since ${day}\n•`);
+    expect(late).toContain("Customers can now download any report as CSV.");
+
+    // Sent after the seed's changes: there is nothing new to report.
+    const justSent = await loadDigest(
+      db,
+      { ...project, digestSentAt: new Date() },
+      "https://t.example",
+    );
+    expect(justSent).toContain("\nNothing changed.\n");
   });
 
   it("sends once a week to projects with a webhook", async () => {

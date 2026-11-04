@@ -10,7 +10,7 @@ import { getDb } from "@/db/client";
 import { projects, repositories } from "@/db/schema";
 import { type BackfillStatus, backfillStatuses } from "@/jobs/backfill";
 import { isPublicDeployment } from "@/lib/public-deployment";
-import { requestOrigin } from "@/lib/request-origin";
+import { appOrigin } from "@/lib/app-origin";
 
 import { ProjectNav } from "../project-nav";
 import { ConnectForm } from "./connect-form";
@@ -82,7 +82,7 @@ async function ProjectSettings({
   const missing = missingGitHubSettings();
   const configured = missing.length === 0;
   const installUrl = githubInstallUrl();
-  const digest = await loadDigest(db, project, await requestOrigin());
+  const digest = await loadDigest(db, project, await appOrigin());
 
   return (
     <>
@@ -175,7 +175,7 @@ async function ProjectSettings({
         {!isPublicDeployment() && (
           <DigestForm slug={slug} active={project.digestActive} />
         )}
-        <h3 className="text-sm font-medium">This week&rsquo;s digest</h3>
+        <h3 className="text-sm font-medium">The next digest so far</h3>
         <pre className="rounded-md border border-border bg-muted p-4 font-sans text-sm whitespace-pre-wrap">
           {digest}
         </pre>

@@ -99,9 +99,7 @@ test("settings previews the weekly digest in plain language", async ({
     page.getByRole("heading", { name: "Weekly digest" }),
   ).toBeVisible();
   const preview = page.locator("pre");
-  await expect(preview).toContainText(
-    "Acme Analytics: roadmap update for the week to",
-  );
+  await expect(preview).toContainText("Acme Analytics: roadmap update,");
   await expect(preview).toContainText(
     "Customers can export reports to Excel and CSV: Partially available",
   );

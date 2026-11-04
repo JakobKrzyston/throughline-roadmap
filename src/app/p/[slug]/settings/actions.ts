@@ -17,7 +17,7 @@ import { projects, repositories } from "@/db/schema";
 import { runQueuedJobs } from "@/jobs";
 import { enqueue } from "@/jobs/queue";
 import { isPublicDeployment } from "@/lib/public-deployment";
-import { requestOrigin } from "@/lib/request-origin";
+import { appOrigin } from "@/lib/app-origin";
 
 export type DigestState =
   | { status: "idle" }
@@ -164,14 +164,18 @@ export async function saveDigest(
 
   const db = getDb();
   const [project] = await db
-    .select({ id: projects.id, name: projects.name, slug: projects.slug })
+    .select({
+      id: projects.id,
+      name: projects.name,
+      slug: projects.slug,
+      digestSentAt: projects.digestSentAt,
+    })
     .from(projects)
     .where(eq(projects.slug, slug));
   if (!project) return fail("Project not found.");
 
-  const now = new Date();
   try {
-    const text = await loadDigest(db, project, await requestOrigin(), now);
+    const text = await loadDigest(db, project, await appOrigin());
     await postToSlack(webhookUrl.data, text);
   } catch (error) {
     console.error("Digest test send failed:", error);
@@ -179,10 +183,10 @@ export async function saveDigest(
       "Slack did not accept the digest. Check the webhook URL and try again.",
     );
   }
-  // This week's digest has just gone out, so the weekly send skips it.
+  // The weekly send is left as it was: this one only shows the channel is right.
   await db
     .update(projects)
-    .set({ digestSlackWebhookUrl: webhookUrl.data, digestSentAt: now })
+    .set({ digestSlackWebhookUrl: webhookUrl.data })
     .where(eq(projects.id, project.id));
 
   refresh();

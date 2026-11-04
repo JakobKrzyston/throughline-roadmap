@@ -1,4 +1,4 @@
-/** Verifies and reads GitHub webhook deliveries. Exports verifyWebhookSignature, parseWebhookEvent, WebhookEvent. */
+/** Verifies and reads GitHub webhook deliveries. Exports verifyWebhookSignature, parseWebhookEvent, parseReleaseEvent, WebhookEvent, ReleaseEvent. */
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { z } from "zod";
@@ -19,6 +19,14 @@ export type WebhookEvent = {
   item: SourceWorkItem;
 };
 
+/** A release published in a repository. */
+export type ReleaseEvent = {
+  repository: SourceRepository;
+  /** The release's title, or its tag when it has none. */
+  name: string;
+  publishedAt: Date;
+};
+
 const repository = z.object({ id: z.number().int(), full_name: z.string() });
 
 const issuesEvent = z.object({
@@ -30,6 +38,18 @@ const issuesEvent = z.object({
 const pullRequestEvent = z.object({
   action: z.string(),
   pull_request: githubPullSchema,
+  repository,
+});
+
+const releaseEvent = z.object({
+  action: z.string(),
+  release: z.object({
+    name: z.string().nullable(),
+    tag_name: z.string(),
+    draft: z.boolean(),
+    prerelease: z.boolean(),
+    published_at: z.iso.datetime({ offset: true }).nullable(),
+  }),
   repository,
 });
 
@@ -97,6 +117,36 @@ export function parseWebhookEvent(
     };
   }
   return null;
+}
+
+/**
+ * Read a `release` delivery for a release that was just published.
+ *
+ * Args:
+ *   eventName: The `X-GitHub-Event` header.
+ *   payload: The parsed JSON body.
+ *
+ * Returns:
+ *   The release, or null for other events, other release actions, drafts and pre-releases.
+ *
+ * Raises:
+ *   ZodError: A release payload is missing fields Throughline needs.
+ */
+export function parseReleaseEvent(
+  eventName: string | null,
+  payload: unknown,
+): ReleaseEvent | null {
+  if (eventName !== "release") return null;
+  const { action, release, repository } = releaseEvent.parse(payload);
+  if (action !== "published" || release.draft || release.prerelease) {
+    return null;
+  }
+  if (!release.published_at) return null;
+  return {
+    repository: toRepository(repository),
+    name: release.name?.trim() || release.tag_name,
+    publishedAt: new Date(release.published_at),
+  };
 }
 
 function toRepository(raw: z.output<typeof repository>): SourceRepository {

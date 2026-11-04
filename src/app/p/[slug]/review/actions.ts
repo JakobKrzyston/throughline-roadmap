@@ -11,6 +11,7 @@ import { getDb } from "@/db/client";
 import { projects, proposals } from "@/db/schema";
 import { runQueuedJobs } from "@/jobs";
 import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
+import { requestOrigin } from "@/lib/request-origin";
 
 /** Recorded as the decider until there is sign-in (see the "Teams and permissions" issue). */
 const REVIEWER = "reviewer";
@@ -76,7 +77,12 @@ export async function decideProposal(
   try {
     if (decision === "reject") {
       await rejectProposal(db, proposalId, REVIEWER);
-    } else if ((await approveProposal(db, proposalId, REVIEWER, edited)) > 0) {
+    } else if (
+      (await approveProposal(db, proposalId, REVIEWER, {
+        editedOperations: edited,
+        baseUrl: await requestOrigin(),
+      })) > 0
+    ) {
       after(runQueuedJobs);
     }
   } catch (error) {

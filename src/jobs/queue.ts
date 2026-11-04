@@ -16,6 +16,26 @@ export type JobPayloads = {
   reconcile: { workItemId: string; requirementId: string };
   /** Suggest a requirement for a merged pull request that references none. */
   link_suggest: { workItemId: string };
+  /**
+   * Post a digest to a project's Slack channel: a milestone when an outcome becomes available,
+   * or the changes since the last release. `baseUrl` is the app's origin, for the roadmap link.
+   */
+  digest:
+    | {
+        kind: "milestone";
+        projectId: string;
+        outcomeId: string;
+        status: "partially_available" | "delivered";
+        baseUrl: string;
+      }
+    | {
+        kind: "release";
+        projectId: string;
+        releaseName: string;
+        /** ISO time the previous release was published, or the repository connected. */
+        since: string;
+        baseUrl: string;
+      };
 };
 
 export type JobType = keyof JobPayloads;

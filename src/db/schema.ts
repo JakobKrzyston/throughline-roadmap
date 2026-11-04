@@ -94,6 +94,8 @@ export const repositories = pgTable(
     source: workItemSource("source").notNull(),
     externalId: text("external_id").notNull(),
     fullName: text("full_name").notNull(),
+    // When the newest release seen was published. A release digest covers the changes since then.
+    lastReleaseAt: timestamp("last_release_at", { withTimezone: true }),
     ...timestamps,
   },
   (t) => [unique().on(t.projectId, t.source, t.externalId)],

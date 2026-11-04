@@ -169,4 +169,4 @@ Designed for, not built in v1. Each has a `future` issue.
 - **Research agent**: a scheduled agent that checks planned technical approaches against current libraries and best practice, and watches the product landscape. Findings appear as comments on graph nodes.
 - **More sources**: Linear and Jira `SourceAdapter` implementations.
 - **Teams and permissions**: organisations, roles (viewer, PM, admin) and SSO.
-- **Digests**: a weekly plain-language summary to Slack or email for non-technical stakeholders. Slack is built (see "Weekly digest" in `ARCHITECTURE.md`); email is still to come.
+- **Digests**: a weekly plain-language summary to Slack or email for non-technical stakeholders. Slack is built, weekly and on milestones, releases and demand (see "Digests" in `ARCHITECTURE.md`); email is still to come.

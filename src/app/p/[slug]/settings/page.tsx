@@ -152,7 +152,8 @@ async function ProjectSettings({
         </p>
         {project.digestActive ? (
           <p className="text-sm">
-            Posting to Slack every Monday.
+            Posting to Slack every Monday, when an outcome becomes available to
+            customers, and when a connected repository publishes a release.
             {project.digestSentAt &&
               ` Last sent ${project.digestSentAt.toLocaleDateString("en-GB", {
                 weekday: "long",

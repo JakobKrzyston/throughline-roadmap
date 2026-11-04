@@ -4,10 +4,16 @@ import { type ReactElement, useActionState } from "react";
 
 import { Button } from "@/components/ui/button";
 
-import { type DigestState, saveDigest, stopDigest } from "./actions";
+import {
+  type DigestState,
+  saveDigest,
+  sendDigest,
+  type SendState,
+  stopDigest,
+} from "./actions";
 
 /**
- * Form that starts the weekly Slack digest, or stops it once it is set up.
+ * Form that starts the weekly Slack digest, or once it is set up, sends it now or stops it.
  *
  * Args:
  *   slug: The project's slug.
@@ -24,14 +30,35 @@ export function DigestForm({
     saveDigest.bind(null, slug),
     { status: "idle" },
   );
+  const [sendState, sendAction, sending] = useActionState<SendState>(
+    sendDigest.bind(null, slug),
+    { status: "idle" },
+  );
 
   if (active) {
     return (
-      <form action={stopDigest.bind(null, slug)}>
-        <Button type="submit" variant="outline">
-          Stop sending
-        </Button>
-      </form>
+      <div className="flex flex-col gap-2">
+        <div className="flex gap-2">
+          <form action={sendAction}>
+            <Button type="submit" disabled={sending}>
+              {sending ? "Sending…" : "Send now"}
+            </Button>
+          </form>
+          <form action={stopDigest.bind(null, slug)}>
+            <Button type="submit" variant="outline">
+              Stop sending
+            </Button>
+          </form>
+        </div>
+        <div aria-live="polite">
+          {sendState.status === "error" && (
+            <p className="text-sm text-destructive">{sendState.message}</p>
+          )}
+          {sendState.status === "success" && (
+            <p className="text-sm">{sendState.message}</p>
+          )}
+        </div>
+      </div>
     );
   }
 

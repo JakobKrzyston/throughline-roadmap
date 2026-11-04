@@ -73,4 +73,25 @@ describe("/api/digests/send", () => {
       ),
     );
   });
+
+  it("sends one project's digest now with ?project=", async () => {
+    const now = (slug: string) =>
+      GET(
+        new Request(
+          `https://throughline.example/api/digests/send?project=${slug}`,
+          {
+            headers: { authorization: `Bearer ${SECRET}` },
+          },
+        ),
+      );
+
+    const response = await now("acme-analytics");
+    expect(await response.json()).toEqual({ sent: 1 });
+    expect(postToSlack).toHaveBeenCalledOnce();
+    expect((await now("no-such-project")).status).toBe(404);
+
+    postToSlack.mockRejectedValueOnce(new Error("Slack answered 404"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect((await now("acme-analytics")).status).toBe(502);
+  });
 });

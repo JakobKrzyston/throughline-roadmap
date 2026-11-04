@@ -4,10 +4,12 @@ import { eq } from "drizzle-orm";
 import { getGitHubAdapter, isGitHubConfigured } from "@/adapters/github";
 import { getDemoLLMProvider, getLLMProvider } from "@/adapters/llm";
 import type { LLMProvider } from "@/adapters/llm/provider";
+import { postToSlack } from "@/adapters/slack";
 import type { SourceAdapter } from "@/adapters/source";
 import { DEMO_LLM_FIXTURES } from "@/agents/fixtures";
 import { runLinkSuggest } from "@/agents/link-suggest";
 import { runReconcile } from "@/agents/reconcile";
+import { runDigestJob } from "@/core/digest-triggers";
 import { getDb } from "@/db/client";
 import { projects, workItems } from "@/db/schema";
 
@@ -57,5 +59,6 @@ export async function runQueuedJobs(): Promise<{
       const agents = await agentsFor(payload.workItemId);
       await runLinkSuggest(db, agents.llm, agents.source, payload);
     },
+    digest: (payload) => runDigestJob(db, payload, postToSlack),
   });
 }

@@ -5,7 +5,11 @@ import { describe, expect, it } from "vitest";
 import { ZodError } from "zod";
 
 import { issuePayload, pullRequestPayload } from "./fixtures";
-import { parseWebhookEvent, verifyWebhookSignature } from "./webhook";
+import {
+  parseReleaseEvent,
+  parseWebhookEvent,
+  verifyWebhookSignature,
+} from "./webhook";
 
 const SECRET = "test-secret";
 const body = Buffer.from('{"hello":"world"}');
@@ -124,5 +128,49 @@ describe("parseWebhookEvent", () => {
     expect(() =>
       parseWebhookEvent("pull_request", { action: "opened" }),
     ).toThrow(ZodError);
+  });
+});
+
+describe("parseReleaseEvent", () => {
+  const payload = (
+    release: Record<string, unknown> = {},
+    action = "published",
+  ): unknown => ({
+    action,
+    release: {
+      name: "Version 2.1",
+      tag_name: "v2.1.0",
+      draft: false,
+      prerelease: false,
+      published_at: "2026-11-08T09:00:00Z",
+      ...release,
+    },
+    repository: { id: 4242, full_name: "acme/analytics" },
+  });
+
+  it("reads a published release, falling back to its tag for a name", () => {
+    expect(parseReleaseEvent("release", payload())).toEqual({
+      repository: { externalId: "4242", fullName: "acme/analytics" },
+      name: "Version 2.1",
+      publishedAt: new Date("2026-11-08T09:00:00Z"),
+    });
+    expect(parseReleaseEvent("release", payload({ name: " " }))?.name).toBe(
+      "v2.1.0",
+    );
+  });
+
+  it("ignores other events and actions, drafts and pre-releases", () => {
+    expect(parseReleaseEvent("pull_request", payload())).toBeNull();
+    expect(parseReleaseEvent("release", payload({}, "edited"))).toBeNull();
+    expect(parseReleaseEvent("release", payload({ draft: true }))).toBeNull();
+    expect(
+      parseReleaseEvent("release", payload({ prerelease: true })),
+    ).toBeNull();
+  });
+
+  it("rejects a release payload missing fields", () => {
+    expect(() => parseReleaseEvent("release", { action: "published" })).toThrow(
+      ZodError,
+    );
   });
 });

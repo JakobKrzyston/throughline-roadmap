@@ -1,5 +1,5 @@
 "use server";
-/** Server actions behind the settings page. Exports connectRepository, saveDigest, stopDigest and their state types. */
+/** Server actions behind the settings page. Exports connectRepository, saveDigest, sendDigest, stopDigest and their state types. */
 import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { after } from "next/server";
@@ -12,6 +12,7 @@ import {
 } from "@/adapters/github";
 import { postToSlack, slackWebhookUrlSchema } from "@/adapters/slack";
 import { loadDigest } from "@/core/digest";
+import { sendDigestNow } from "@/core/digest-triggers";
 import { getDb } from "@/db/client";
 import { projects, repositories } from "@/db/schema";
 import { runQueuedJobs } from "@/jobs";
@@ -23,6 +24,9 @@ export type DigestState =
   | { status: "idle" }
   | { status: "error"; message: string; webhookUrl: string }
   | { status: "success"; message: string };
+
+export type SendState =
+  { status: "idle" } | { status: "error" | "success"; message: string };
 
 export type ConnectState =
   | { status: "idle" }
@@ -195,6 +199,33 @@ export async function saveDigest(
     message:
       "Sent this week's digest to Slack. From now on it goes out every Monday morning.",
   };
+}
+
+/**
+ * Send this week's digest to the project's Slack channel now. The Monday send is unchanged.
+ *
+ * Args:
+ *   slug: The project's slug, bound by the page.
+ *
+ * Returns:
+ *   A success message, or an error message to show.
+ */
+export async function sendDigest(slug: string): Promise<SendState> {
+  const fail = (message: string): SendState => ({ status: "error", message });
+  if (isPublicDeployment()) {
+    return fail("Digests are sent by the site owner on this server.");
+  }
+  try {
+    const result = await sendDigestNow(getDb(), slug, {
+      baseUrl: await requestOrigin(),
+      post: postToSlack,
+    });
+    if (result !== "sent") return fail("This project has no digest set up.");
+  } catch (error) {
+    console.error("Digest send failed:", error);
+    return fail("Slack did not accept the digest. Please try again.");
+  }
+  return { status: "success", message: "Sent this week's digest to Slack." };
 }
 
 /**

@@ -69,7 +69,7 @@ Until both are set, the workflow fails on every pull request, so set them before
 3. Deploy. Vercel registers the three cron jobs in `vercel.json`:
    - `/api/demo/reset` at 05:00 UTC rebuilds the Acme Analytics demo, undoing whatever visitors approved or rejected. It runs in one transaction, so visitors never see a half-built demo.
    - `/api/jobs/run` at 06:00 UTC runs any queued agent jobs that no webhook picked up.
-   - `/api/digests/send` at 08:00 UTC on Mondays posts the weekly digest to Slack for each project that has one set up. Set it up from a local copy of the app pointed at this database, on the project's settings page; the public site does not offer it.
+   - `/api/digests/send` at 08:00 UTC on Mondays posts the weekly digest to Slack for each project that has one set up. Set it up from a local copy of the app pointed at this database, on the project's settings page; the public site does not offer it. To send a digest from automation, such as a release workflow, call `curl -X POST -H "Authorization: Bearer <CRON_SECRET>" "https://<your-host>/api/digests/send?project=<slug>"`. That secret also opens the other cron routes, so keep it in the CI provider's secret store.
 
    Once a day is the most often the Hobby plan runs a cron.
 

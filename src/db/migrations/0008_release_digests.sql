@@ -1,0 +1,1 @@
+ALTER TABLE "repositories" ADD COLUMN "last_release_at" timestamp with time zone;

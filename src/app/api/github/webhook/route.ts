@@ -1,11 +1,13 @@
-/** POST /api/github/webhook: receives GitHub App deliveries, mirrors issues and PRs, and links explicit references. */
+/** POST /api/github/webhook: receives GitHub App deliveries, mirrors issues and PRs, links explicit references, and queues release digests. */
 import { after } from "next/server";
 import { ZodError } from "zod";
 
 import {
+  parseReleaseEvent,
   parseWebhookEvent,
   verifyWebhookSignature,
 } from "@/adapters/github/webhook";
+import { queueReleaseDigests } from "@/core/digest-triggers";
 import { syncRepositoryItem } from "@/core/work-items";
 import { getDb } from "@/db/client";
 import { runQueuedJobs } from "@/jobs";
@@ -43,17 +45,26 @@ export async function POST(request: Request): Promise<Response> {
   // nothing is due the run is one quick lookup.
   after(runQueuedJobs);
 
+  const eventName = request.headers.get("x-github-event");
   let event;
+  let release;
   try {
-    event = parseWebhookEvent(
-      request.headers.get("x-github-event"),
-      JSON.parse(body.toString("utf8")),
-    );
+    const payload = JSON.parse(body.toString("utf8"));
+    release = parseReleaseEvent(eventName, payload);
+    event = parseWebhookEvent(eventName, payload);
   } catch (error) {
     if (error instanceof SyntaxError || error instanceof ZodError) {
       return Response.json({ error: "Unreadable payload" }, { status: 400 });
     }
     throw error;
+  }
+  if (release) {
+    const queued = await queueReleaseDigests(
+      getDb(),
+      release,
+      new URL(request.url).origin,
+    );
+    return Response.json({ status: "release", digests: queued });
   }
   if (!event) return Response.json({ status: "ignored" });
 

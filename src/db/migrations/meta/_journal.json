@@ -57,6 +57,13 @@
       "when": 1793820170730,
       "tag": "0007_digests",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793821009467,
+      "tag": "0008_release_digests",
+      "breakpoints": true
     }
   ]
 }

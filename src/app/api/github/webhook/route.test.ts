@@ -157,4 +157,36 @@ describe("POST /api/github/webhook", () => {
     expect(await db.select().from(links)).toHaveLength(1);
     expect(await db.select().from(jobs)).toHaveLength(1);
   });
+
+  it("queues a release digest for a project with a digest, once per release", async () => {
+    await db.update(projects).set({
+      digestSlackWebhookUrl: "https://hooks.slack.com/services/T/B/x",
+    });
+    const published = {
+      action: "published",
+      release: {
+        name: "Version 2.1",
+        tag_name: "v2.1.0",
+        draft: false,
+        prerelease: false,
+        published_at: "2026-11-08T09:00:00Z",
+      },
+      repository: REPO,
+    };
+
+    const response = await POST(delivery(published, { event: "release" }));
+    await POST(delivery(published, { event: "release" }));
+
+    expect(await response.json()).toEqual({ status: "release", digests: 1 });
+    expect(await db.select().from(jobs)).toMatchObject([
+      {
+        type: "digest",
+        payload: {
+          kind: "release",
+          releaseName: "Version 2.1",
+          baseUrl: "http://localhost",
+        },
+      },
+    ]);
+  });
 });

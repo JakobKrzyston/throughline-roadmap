@@ -103,9 +103,9 @@ describe("approveProposal", () => {
   it("applies the reviewer's edits", async () => {
     const workItemId = await pullRequest("open");
     const [edited] = link(workItemId);
-    await approveProposal(db, await propose(link(workItemId)), "pm", [
-      { ...edited, relation: "part_of" },
-    ]);
+    await approveProposal(db, await propose(link(workItemId)), "pm", {
+      editedOperations: [{ ...edited, relation: "part_of" }],
+    });
     expect(await db.select().from(links)).toMatchObject([
       { relation: "part_of" },
     ]);

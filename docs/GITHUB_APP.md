@@ -31,6 +31,7 @@ All read-only. Leave every other permission at "No access".
 
 - **Issues**
 - **Pull request**
+- **Release**, for release digests (it needs the Contents permission above)
 
 Other events are acknowledged and ignored.
 

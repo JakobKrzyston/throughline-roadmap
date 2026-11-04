@@ -57,6 +57,13 @@
       "when": 1793820170730,
       "tag": "0007_digests",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793828942598,
+      "tag": "0008_planning",
+      "breakpoints": true
     }
   ]
 }

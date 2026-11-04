@@ -27,6 +27,7 @@ const graph: GraphSnapshot = {
         status: "in_progress",
         userVisible: true,
         productNote: null,
+        target: "2026-Q4",
       },
     ],
   ]),
@@ -39,6 +40,32 @@ const describe_ = (ops: unknown[]) =>
   describeOperations(operationListSchema.parse(ops), graph);
 
 describe("describeOperations", () => {
+  it("shows a move with the old target and the note for the change feed", () => {
+    expect(
+      describe_([
+        {
+          type: "update_outcome",
+          outcome_key: "OUT-1",
+          target: "2027-Q1",
+          product_note: "Exports come first.",
+        },
+        { type: "update_requirement", requirement_key: "TL-4", target: null },
+      ]),
+    ).toEqual([
+      {
+        heading: "Update outcome OUT-1: Customers can export reports",
+        changes: [
+          { field: "Target", before: "2026-Q4", after: "2027-Q1" },
+          { field: "Product note", after: "Exports come first." },
+        ],
+      },
+      {
+        heading: "Update TL-4: Excel export",
+        changes: [{ field: "Target", before: "2026-Q4", after: null }],
+      },
+    ]);
+  });
+
   it("shows a status change with the current status", () => {
     expect(
       describe_([

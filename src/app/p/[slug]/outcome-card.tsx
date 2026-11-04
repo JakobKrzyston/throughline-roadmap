@@ -9,6 +9,7 @@ import {
   type ProductStatus,
   productStatus,
 } from "@/core/rollup";
+import { lateRequirements } from "@/core/schedule";
 
 const STATUS_TONE: Record<ProductStatus, BadgeTone> = {
   not_started: "neutral",
@@ -38,6 +39,7 @@ export function OutcomeCard({
   const status = PRODUCT_STATUS_TEXT[statusKey];
   const percent = Math.round(outcomeProgress(outcome.requirements) * 100);
   const available = availableToday(outcome.requirements);
+  const late = lateRequirements(outcome.target, outcome.requirements);
   const titleId = `outcome-${outcome.id}`;
 
   return (
@@ -99,6 +101,16 @@ export function OutcomeCard({
           ? `Target: ${formatTarget(outcome.target)}`
           : "No target date yet"}
       </p>
+      {late.length > 0 && (
+        <p className="text-sm text-amber-900">
+          Some of the remaining work is planned after this date, so it may move.
+          {showDetail && (
+            <span className="ml-2 font-mono text-muted-foreground">
+              {late.map((r) => r.key).join(", ")}
+            </span>
+          )}
+        </p>
+      )}
     </article>
   );
 }

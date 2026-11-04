@@ -1,6 +1,8 @@
 /** Zod schemas for the typed graph operations a proposal carries. Exports graphOperationSchema, operationListSchema and their types. */
 import { z } from "zod";
 
+import { targetSchema } from "./schedule";
+
 // Operations refer to outcomes and requirements by key (e.g. OUT-3, TL-12), not id,
 // so one proposal can create an outcome and then add requirements under it.
 const key = z.string().trim().min(1);
@@ -18,7 +20,7 @@ const createOutcome = z.object({
   key,
   title: text,
   description: z.string().default(""),
-  target: z.string().nullish(),
+  target: targetSchema.nullish(),
   priority: z.number().int().default(0),
 });
 
@@ -31,8 +33,10 @@ const updateOutcome = z
     outcome_key: key,
     title: text.optional(),
     description: z.string().optional(),
-    target: z.string().nullish(),
+    target: targetSchema.nullish(),
     priority: z.number().int().optional(),
+    // Becomes the event's note only: outcomes have no product note of their own.
+    product_note: z.string().nullish(),
   })
   .refine(
     (op) =>
@@ -50,6 +54,7 @@ const createRequirement = z.object({
   description: z.string().default(""),
   user_visible: z.boolean().default(false),
   product_note: z.string().nullish(),
+  target: targetSchema.nullish(),
 });
 
 const splitChild = z.object({
@@ -76,12 +81,17 @@ const updateRequirement = z
     description: z.string().optional(),
     user_visible: z.boolean().optional(),
     product_note: z.string().nullish(),
+    target: targetSchema.nullish(),
   })
   .refine(
     (op) =>
-      [op.title, op.description, op.user_visible, op.product_note].some(
-        (value) => value !== undefined,
-      ),
+      [
+        op.title,
+        op.description,
+        op.user_visible,
+        op.product_note,
+        op.target,
+      ].some((value) => value !== undefined),
     nothingToChange,
   );
 

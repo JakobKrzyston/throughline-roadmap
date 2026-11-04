@@ -12,6 +12,7 @@ import {
 } from "@/db/schema";
 
 import { type GraphOperation, operationListSchema } from "./operations";
+import { describeTargetMove } from "./schedule";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Proposal = typeof proposals.$inferSelect;
@@ -167,7 +168,14 @@ async function applyOperation(
           priority: op.priority,
         })
         .where(eq(outcomes.id, outcome.id));
-      return event(op, "outcome", outcome.id, null);
+      // Written from the target the outcome had, so an edited proposal or one made against an
+      // older plan cannot put a move that did not happen in the change feed.
+      const move =
+        op.target === undefined
+          ? null
+          : describeTargetMove(outcome.target, op.target);
+      const note = [move, op.product_note].filter(Boolean).join(" ");
+      return event(op, "outcome", outcome.id, note || null);
     }
 
     case "create_requirement": {
@@ -183,6 +191,7 @@ async function applyOperation(
           status: "planned",
           userVisible: op.user_visible,
           productNote: op.product_note,
+          target: op.target,
         })
         .onConflictDoNothing()
         .returning();
@@ -239,6 +248,7 @@ async function applyOperation(
           description: op.description,
           userVisible: op.user_visible,
           productNote: op.product_note,
+          target: op.target,
         })
         .where(eq(requirements.id, requirement.id));
       return event(op, "requirement", requirement.id, op.product_note);
@@ -349,10 +359,12 @@ async function findOutcome(
   projectId: string,
   key: string,
 ): Promise<Outcome> {
+  // Row lock so the target read here is still the target when the event describes the move.
   const [outcome] = await tx
     .select()
     .from(outcomes)
-    .where(and(eq(outcomes.projectId, projectId), eq(outcomes.key, key)));
+    .where(and(eq(outcomes.projectId, projectId), eq(outcomes.key, key)))
+    .for("update");
   if (!outcome) throw new ProposalError(`Outcome ${key} not found`);
   return outcome;
 }

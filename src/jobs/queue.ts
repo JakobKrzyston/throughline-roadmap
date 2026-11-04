@@ -1,4 +1,4 @@
-/** A minimal Postgres-backed job queue. Exports enqueue, enqueueReconcile, runJobs, JobPayloads, JobHandlers, MAX_ATTEMPTS. */
+/** A minimal Postgres-backed job queue. Exports enqueue, enqueueReconcile, enqueueSlipCheck, runJobs, JobPayloads, JobHandlers, MAX_ATTEMPTS. */
 import { and, asc, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
 
 import type { Database } from "@/db/client";
@@ -16,6 +16,8 @@ export type JobPayloads = {
   reconcile: { workItemId: string; requirementId: string };
   /** Suggest a requirement for a merged pull request that references none. */
   link_suggest: { workItemId: string };
+  /** Check whether an outcome's open work makes its target unlikely. */
+  slip_check: { outcomeId: string };
 };
 
 export type JobType = keyof JobPayloads;
@@ -95,6 +97,38 @@ export async function enqueueReconcile(
   }
   await db.update(jobs).set({ payload }).where(eq(jobs.id, waiting.id));
   return false;
+}
+
+/**
+ * Queue a slip check for an outcome, unless one is already waiting for it.
+ *
+ * The check reads the outcome as it is when the job runs, so one waiting job covers any number
+ * of changes made before then.
+ *
+ * Args:
+ *   db: Database or transaction to write to.
+ *   payload: The outcome to check.
+ *
+ * Returns:
+ *   True when a new job was queued, false when one was already waiting.
+ */
+export async function enqueueSlipCheck(
+  db: Pick<Database, "insert" | "select">,
+  payload: JobPayloads["slip_check"],
+): Promise<boolean> {
+  const [waiting] = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.type, "slip_check"),
+        eq(jobs.status, "queued"),
+        sql`${jobs.payload}->>'outcomeId' = ${payload.outcomeId}`,
+      ),
+    );
+  if (waiting) return false;
+  await enqueue(db, "slip_check", payload);
+  return true;
 }
 
 /**

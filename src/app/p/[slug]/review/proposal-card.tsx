@@ -27,10 +27,28 @@ type Draft = Record<string, unknown>;
 // wording and values, not what the proposal touches.
 const EDITABLE: Record<GraphOperation["type"], string[]> = {
   create_outcome: ["title", "description", "target", "priority"],
-  update_outcome: ["title", "description", "target", "priority"],
-  create_requirement: ["title", "description", "user_visible", "product_note"],
+  update_outcome: [
+    "title",
+    "description",
+    "target",
+    "priority",
+    "product_note",
+  ],
+  create_requirement: [
+    "title",
+    "description",
+    "user_visible",
+    "product_note",
+    "target",
+  ],
   split_requirement: ["split_reason", "product_note"],
-  update_requirement: ["title", "description", "user_visible", "product_note"],
+  update_requirement: [
+    "title",
+    "description",
+    "user_visible",
+    "product_note",
+    "target",
+  ],
   set_status: ["status", "product_note"],
   link_work_item: ["relation"],
   unlink_work_item: [],

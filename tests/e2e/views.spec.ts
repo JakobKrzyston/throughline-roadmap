@@ -51,6 +51,49 @@ test("technical view shows the requirement tree and split history", async ({
   ).toBeVisible();
 });
 
+test("plan page reorders outcomes and moves targets into the change feed", async ({
+  page,
+}) => {
+  // Tall enough that the drag below needs no scrolling, which would move the drop point.
+  await page.setViewportSize({ width: 1280, height: 2400 });
+  await page.goto("/p/acme-analytics/plan");
+
+  await expect(
+    page.getByText(
+      "TL-10 Retry and bounce handling is due Q2 2027, after this outcome's target.",
+    ),
+  ).toBeVisible();
+
+  const share = "Customers can share a dashboard with a link";
+  await expect(page.getByRole("article").nth(4)).toHaveAccessibleName(share);
+  await page.getByRole("button", { name: `Move “${share}” up` }).click();
+  await expect(page.getByRole("article").nth(3)).toHaveAccessibleName(share);
+  // Dragging works as well as the buttons.
+  await page
+    .getByRole("heading", { name: share })
+    .dragTo(page.getByRole("article").first().getByRole("heading"));
+  await expect(page.getByRole("article").first()).toHaveAccessibleName(share);
+
+  const dashboards = "Dashboards load in under two seconds";
+  await page
+    .getByRole("textbox", { name: `Target for ${dashboards}` })
+    .fill("2027-Q3");
+  const save = page.getByRole("button", {
+    name: `Save target for ${dashboards}`,
+  });
+  await save.click();
+  // Disabled once the saved target matches the box again.
+  await expect(save).toHaveText("Save");
+  await expect(save).toBeDisabled();
+
+  await page.goto("/p/acme-analytics");
+  const feed = page.getByRole("region", { name: "What changed this week" });
+  await expect(feed.getByText("Moved from Q1 2027 to Q3 2027.")).toBeVisible();
+  await expect(
+    feed.getByText("Now comes before “Dashboards load in under two seconds”."),
+  ).toBeVisible();
+});
+
 test("an unknown project gets a plain-language, unindexed page", async ({
   page,
 }) => {
@@ -76,6 +119,7 @@ test("every project page links to the others", async ({ page }) => {
     ["Import", "Import a roadmap"],
     ["Settings", "Settings"],
     ["Technical view", "Technical roadmap"],
+    ["Plan", "Plan"],
     ["Review queue", "Review queue"],
     ["Product view", "Product roadmap"],
   ]) {

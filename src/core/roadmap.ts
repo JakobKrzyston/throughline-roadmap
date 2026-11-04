@@ -1,11 +1,11 @@
-/** Reads a project's graph for the product and technical views. Exports loadRoadmap, loadRecentChanges, loadSplitHistory, availableToday. */
+/** Reads a project's graph for the product and technical views. Exports loadRoadmap, loadOutcomes, outcomeIdOf, loadRecentChanges, loadSplitHistory, availableToday. */
 import { and, desc, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
 
 import type { Database } from "@/db/client";
 import { events, links, outcomes, requirements, workItems } from "@/db/schema";
 
 import type { GraphOperation } from "./operations";
-import type { RequirementNode } from "./rollup";
+import type { ScheduledRequirement } from "./schedule";
 
 type WorkItemRow = typeof workItems.$inferSelect;
 type RequirementRow = typeof requirements.$inferSelect;
@@ -22,8 +22,8 @@ export interface LinkedWorkItem {
   confidence: (typeof links.$inferSelect)["confidence"];
 }
 
-/** A requirement with its children and linked work, ready for the rollups in src/core/rollup.ts. */
-export interface RequirementTree extends RequirementNode {
+/** A requirement with its children and linked work, ready for the rollups in src/core/rollup.ts and the schedule checks in src/core/schedule.ts. */
+export interface RequirementTree extends ScheduledRequirement {
   id: string;
   key: string;
   title: string;
@@ -43,6 +43,8 @@ export interface OutcomeTree {
   title: string;
   description: string;
   target: string | null;
+  /** Lower comes first. Outcomes may share a number until someone reorders them. */
+  priority: number;
   requirements: RequirementTree[];
 }
 
@@ -55,6 +57,8 @@ export interface RecentChange {
   outcomeTitle: string;
   /** The outcome or requirement key, shown only as technical detail. */
   entityKey: string;
+  /** True when the change moved an outcome's target or priority. */
+  moved: boolean;
 }
 
 /** One requirement split, newest first in the technical view. */
@@ -70,6 +74,69 @@ export interface SplitRecord {
 // Keys like TL-2 and TL-10 sort by their number, not as text.
 const byKey = (a: { key: string }, b: { key: string }): number =>
   a.key.localeCompare(b.key, undefined, { numeric: true });
+const byPriority = (
+  a: { key: string; priority: number },
+  b: { key: string; priority: number },
+): number => a.priority - b.priority || byKey(a, b);
+
+/**
+ * Load a project's live outcomes without their requirements, for edits that need only the list.
+ *
+ * Args:
+ *   db: Database to read.
+ *   projectId: The project.
+ *
+ * Returns:
+ *   Outcomes in the same order as loadRoadmap.
+ */
+export async function loadOutcomes(
+  db: Database,
+  projectId: string,
+): Promise<
+  { key: string; title: string; target: string | null; priority: number }[]
+> {
+  const rows = await db
+    .select({
+      key: outcomes.key,
+      title: outcomes.title,
+      target: outcomes.target,
+      priority: outcomes.priority,
+    })
+    .from(outcomes)
+    .where(
+      and(eq(outcomes.projectId, projectId), eq(outcomes.archived, false)),
+    );
+  return rows.sort(byPriority);
+}
+
+/**
+ * The outcome a requirement belongs to, found by walking up its split history.
+ *
+ * Args:
+ *   db: Database or transaction to read.
+ *   requirementId: Any requirement, root or child.
+ *
+ * Returns:
+ *   The id of the outcome its root requirement is under.
+ */
+export async function outcomeIdOf(
+  db: Database,
+  requirementId: string,
+): Promise<string> {
+  let id = requirementId;
+  for (;;) {
+    const [row] = await db
+      .select({
+        outcomeId: requirements.outcomeId,
+        parentId: requirements.parentId,
+      })
+      .from(requirements)
+      .where(eq(requirements.id, id));
+    // Exactly one of the two is set, so this ends at the root.
+    if (row.outcomeId) return row.outcomeId;
+    id = row.parentId!;
+  }
+}
 
 /**
  * Load every live outcome in a project with its requirement tree and linked work items.
@@ -136,6 +203,7 @@ export async function loadRoadmap(
     userVisible: row.userVisible,
     productNote: row.productNote,
     splitReason: row.splitReason,
+    target: row.target,
     doneNote: row.status === "done" ? (doneNotes.get(row.id) ?? null) : null,
     children: (childrenOf.get(row.id) ?? []).sort(byKey).map(toTree),
     workItems: (linksOf.get(row.id) ?? [])
@@ -151,19 +219,18 @@ export async function loadRoadmap(
       .sort((a, b) => Number(a.number) - Number(b.number)),
   });
 
-  return outcomeRows
-    .sort((a, b) => a.priority - b.priority || byKey(a, b))
-    .map((outcome) => ({
-      id: outcome.id,
-      key: outcome.key,
-      title: outcome.title,
-      description: outcome.description,
-      target: outcome.target,
-      requirements: requirementRows
-        .filter((row) => row.outcomeId === outcome.id)
-        .sort(byKey)
-        .map(toTree),
-    }));
+  return outcomeRows.sort(byPriority).map((outcome) => ({
+    id: outcome.id,
+    key: outcome.key,
+    title: outcome.title,
+    description: outcome.description,
+    target: outcome.target,
+    priority: outcome.priority,
+    requirements: requirementRows
+      .filter((row) => row.outcomeId === outcome.id)
+      .sort(byKey)
+      .map(toTree),
+  }));
 }
 
 /**
@@ -237,12 +304,17 @@ export async function loadRecentChanges(
 
   return eventRows.map((event) => {
     const label = labels.get(event.entityId)!;
+    // The payload is the validated operation that applyProposal stored.
+    const op = event.payload as GraphOperation;
     return {
       id: event.id,
       note: event.productNote!,
       at: event.createdAt,
       outcomeTitle: label.outcomeTitle,
       entityKey: label.key,
+      moved:
+        op.type === "update_outcome" &&
+        (op.target !== undefined || op.priority !== undefined),
     };
   });
 }

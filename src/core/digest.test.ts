@@ -26,6 +26,7 @@ function leaf(
     description: "",
     productNote: null,
     splitReason: null,
+    target: null,
     doneNote: null,
     status,
     userVisible,
@@ -45,6 +46,7 @@ function outcome(
     title,
     description: "",
     target,
+    priority: 1,
     requirements,
   };
 }
@@ -68,6 +70,7 @@ describe("buildDigest", () => {
           at: NOW,
           outcomeTitle: "Excel export",
           entityKey: "TL-1",
+          moved: false,
         },
         {
           id: "1",
@@ -75,6 +78,7 @@ describe("buildDigest", () => {
           at: NOW,
           outcomeTitle: "Excel export",
           entityKey: "OUT-1",
+          moved: false,
         },
       ],
       moreChanges: false,
@@ -124,6 +128,7 @@ describe("buildDigest", () => {
           at: NOW,
           outcomeTitle: "Excel export",
           entityKey: "TL-1",
+          moved: false,
         },
       ],
       moreChanges: true,

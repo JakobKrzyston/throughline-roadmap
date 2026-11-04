@@ -42,6 +42,7 @@ const { generateImportProposal } =
   await import("@/app/p/[slug]/import/actions");
 const { connectRepository } = await import("@/app/p/[slug]/settings/actions");
 const { runQueuedJobs } = await import("@/jobs");
+const { isPublicDeployment } = await import("./public-deployment");
 
 const REAL_SLUG = "throughline";
 let db: TestDb;
@@ -81,6 +82,21 @@ beforeEach(async () => {
 afterEach(() => {
   vi.unstubAllEnvs();
 });
+
+async function queueDemoReconcile(): Promise<void> {
+  const [item] = await db
+    .select()
+    .from(workItems)
+    .where(eq(workItems.title, "Excel export: multiple sheets and formatting"));
+  const [requirement] = await db
+    .select()
+    .from(requirements)
+    .where(eq(requirements.key, "TL-4"));
+  await db.insert(jobs).values({
+    type: "reconcile",
+    payload: { workItemId: item.id, requirementId: requirement.id },
+  });
+}
 
 describe("on a public deployment", () => {
   it("refuses decisions on a project that is not a demo", async () => {
@@ -149,23 +165,29 @@ describe("on a public deployment", () => {
       message: "Repositories are connected by the site owner on this server.",
     });
   });
+});
 
-  it("runs demo agents on sample results without looking up GitHub", async () => {
-    const [item] = await db
-      .select()
-      .from(workItems)
-      .where(
-        eq(workItems.title, "Excel export: multiple sheets and formatting"),
-      );
-    const [requirement] = await db
-      .select()
-      .from(requirements)
-      .where(eq(requirements.key, "TL-4"));
-    await db.insert(jobs).values({
-      type: "reconcile",
-      payload: { workItemId: item.id, requirementId: requirement.id },
-    });
+describe("demo agent jobs", () => {
+  // A visitor's job can run on whichever server runs jobs next, including the owner's local app.
+  it.each(["true", ""])(
+    "use sample results and skip GitHub (PUBLIC_DEPLOYMENT=%j)",
+    async (value) => {
+      vi.stubEnv("PUBLIC_DEPLOYMENT", value);
+      await queueDemoReconcile();
 
-    expect(await runQueuedJobs()).toEqual({ done: 1, failed: 0 });
+      expect(await runQueuedJobs()).toEqual({ done: 1, failed: 0 });
+    },
+  );
+});
+
+describe("isPublicDeployment", () => {
+  it.each(["true", "TRUE", " true ", "1"])("is on for %j", (value) => {
+    vi.stubEnv("PUBLIC_DEPLOYMENT", value);
+    expect(isPublicDeployment()).toBe(true);
+  });
+
+  it.each(["", "false", "0"])("is off for %j", (value) => {
+    vi.stubEnv("PUBLIC_DEPLOYMENT", value);
+    expect(isPublicDeployment()).toBe(false);
   });
 });

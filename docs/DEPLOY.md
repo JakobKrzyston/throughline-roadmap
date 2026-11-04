@@ -6,7 +6,7 @@ This guide puts Throughline on Vercel with a Neon Postgres database, as a public
 
 Throughline v1 has no sign-in, so a public deployment sets `PUBLIC_DEPLOYMENT=true`. Then:
 
-- Visitors can import, approve and reject only in **demo projects** (Acme Analytics). Demo agents return sample results, so visitors never spend your Anthropic key. The demo resets every night.
+- Visitors can import, approve and reject only in **demo projects** (Acme Analytics). The demo's agents return sample results, so visitors never spend your Anthropic key. The demo resets every night.
 - **Every other project is view-only.** Its product view, technical view and review queue are public, but the forms are hidden and the server actions refuse changes.
 - Repositories cannot be connected from the site.
 

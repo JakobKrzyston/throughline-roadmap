@@ -3,14 +3,15 @@
 /**
  * Whether this server is open to the public with no sign-in.
  *
- * Then visitors may change only demo projects, demo agents use sample results instead of the AI
+ * Then visitors may change only demo projects, demo imports use sample results instead of the AI
  * key, and repositories are connected by the owner from a local copy of the app.
  *
  * Returns:
- *   True when PUBLIC_DEPLOYMENT is "true".
+ *   True when PUBLIC_DEPLOYMENT is "true" or "1", ignoring case and surrounding spaces.
  */
 export function isPublicDeployment(): boolean {
-  return process.env.PUBLIC_DEPLOYMENT === "true";
+  const value = process.env.PUBLIC_DEPLOYMENT?.trim().toLowerCase();
+  return value === "true" || value === "1";
 }
 
 /**

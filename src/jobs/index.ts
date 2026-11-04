@@ -4,12 +4,13 @@ import { eq } from "drizzle-orm";
 import { getGitHubAdapter, isGitHubConfigured } from "@/adapters/github";
 import { getLLMProvider } from "@/adapters/llm";
 import { FakeLLMProvider } from "@/adapters/llm/fake";
+import type { LLMProvider } from "@/adapters/llm/provider";
+import type { SourceAdapter } from "@/adapters/source";
 import { DEMO_LLM_FIXTURES } from "@/agents/fixtures";
 import { runLinkSuggest } from "@/agents/link-suggest";
 import { runReconcile } from "@/agents/reconcile";
 import { getDb } from "@/db/client";
 import { projects, workItems } from "@/db/schema";
-import { isPublicDeployment } from "@/lib/public-deployment";
 
 import { runBackfill } from "./backfill";
 import { runJobs } from "./queue";
@@ -18,8 +19,9 @@ import { runJobs } from "./queue";
  * Run due jobs against the app database.
  *
  * Without GitHub credentials the agents still run, on the work item's title and description alone.
- * On a public deployment, agents for demo projects use sample results and skip GitHub, so
- * visitors cannot spend the AI key and the demo's made-up repository is never looked up.
+ * Agents for demo projects always use sample results and skip GitHub, wherever the job runs: on a
+ * public site visitors queue these jobs and must not spend the AI key, and the demo's repository
+ * is made up.
  *
  * Returns:
  *   How many jobs finished and how many failed.
@@ -32,16 +34,16 @@ export async function runQueuedJobs(): Promise<{
   const llm = getLLMProvider(DEMO_LLM_FIXTURES);
   const source = isGitHubConfigured() ? getGitHubAdapter() : null;
 
-  async function agentsFor(workItemId: string) {
-    if (isPublicDeployment()) {
-      const [row] = await db
-        .select({ isDemo: projects.isDemo })
-        .from(workItems)
-        .innerJoin(projects, eq(workItems.projectId, projects.id))
-        .where(eq(workItems.id, workItemId));
-      if (row?.isDemo) {
-        return { llm: new FakeLLMProvider(DEMO_LLM_FIXTURES), source: null };
-      }
+  async function agentsFor(
+    workItemId: string,
+  ): Promise<{ llm: LLMProvider; source: SourceAdapter | null }> {
+    const [row] = await db
+      .select({ isDemo: projects.isDemo })
+      .from(workItems)
+      .innerJoin(projects, eq(workItems.projectId, projects.id))
+      .where(eq(workItems.id, workItemId));
+    if (row?.isDemo) {
+      return { llm: new FakeLLMProvider(DEMO_LLM_FIXTURES), source: null };
     }
     return { llm, source };
   }

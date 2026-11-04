@@ -59,6 +59,12 @@ describe("/api/demo/reset", () => {
     expect(await db.select().from(projects)).toEqual([before]);
   });
 
+  it("stays shut when no cron secret is configured", async () => {
+    vi.stubEnv("CRON_SECRET", "");
+
+    expect((await reset("Bearer ")).status).toBe(401);
+  });
+
   it("puts back the proposals a visitor decided", async () => {
     const [first] = await db
       .select()

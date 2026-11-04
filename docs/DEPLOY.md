@@ -19,6 +19,8 @@ You make changes to your own projects from a local copy of the app pointed at th
 
 With the [Neon CLI](https://neon.com/docs/cli/install) you can skip the copying: `neon link --project-id <id> --branch production` followed by `neon deploy` writes both strings to `.env.local` as `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (direct), and `neon.ts` declares the project's Neon services. The app then talks to Neon locally too, so the commands below need no `export`.
 
+**Check the hostname's shape.** Neon's newer hostnames put the cell in its own label: `ep-...bdmohu8h-pooler.c-8.us-east-2.aws.neon.tech`. If every query fails with "Hostname/IP does not match certificate's altnames", the hostname is in a different shape, such as `ep-...bdmohu8h.c-8-pooler.us-east-2.aws.neon.tech`, which Neon's certificate does not cover; the `pg` driver since 8.16 verifies the hostname against it. Use the `-pooler.c-8.` form (the cell number is yours), whose certificate matches. The older form without a cell, `ep-...bdmohu8h-pooler.us-east-2.aws.neon.tech`, does not reach a cell-based endpoint at all, and Neon reports that as a password failure. Do not work around any of this with `uselibpqcompat` or `rejectUnauthorized: false`; those turn off certificate checks.
+
 ## 2. Create the tables and the demo
 
 From your clone, run the migrations and the seed against Neon. `pnpm db:migrate` uses `DATABASE_URL_UNPOOLED` when it is set, because Neon's pooler runs in transaction mode and breaks the session state migrations rely on:
@@ -32,6 +34,22 @@ unset DATABASE_URL DATABASE_URL_UNPOOLED
 ```
 
 Run `pnpm db:migrate` the same way before deploying any change that adds a migration under `src/db/migrations`. Deploys do not migrate on their own, so a preview deployment can never change the production schema.
+
+### A database branch per pull request
+
+`.github/workflows/neon-branch.yml` gives every pull request its own Neon branch, a copy of production at the moment the PR opens. The workflow runs the PR's migrations on that branch and posts the schema diff as a PR comment, then deletes the branch when the PR closes. It needs two repository settings in GitHub under **Settings → Secrets and variables → Actions**:
+
+- the variable `NEON_PROJECT_ID`, from the Neon project's **Settings** page
+- the secret `NEON_API_KEY`, from **Account settings → API keys** in Neon
+
+Or from the command line:
+
+```bash
+gh variable set NEON_PROJECT_ID --body '<project id>'
+gh secret set NEON_API_KEY
+```
+
+Until both are set, the workflow fails on every pull request, so set them before merging it.
 
 ## 3. Create the Vercel project
 

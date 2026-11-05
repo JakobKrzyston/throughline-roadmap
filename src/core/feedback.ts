@@ -1,4 +1,4 @@
-/** Customer feedback on the roadmap: groups it by outcome and theme, and links it to outcomes by hand. Syncing it from sources is in work-items.ts. Exports groupFeedback, loadFeedbackBoard, saveFeedbackLink, FeedbackBoard, FeedbackView. */
+/** Customer feedback on the roadmap: groups it by outcome and theme, and links it to outcomes by hand. Syncing it from sources is in work-items.ts. Exports groupFeedback, loadFeedbackBoard, saveFeedbackLink, FeedbackBoard, FeedbackView, PendingMatch. */
 import { and, asc, desc, eq } from "drizzle-orm";
 
 import type { Database } from "@/db/client";
@@ -19,8 +19,8 @@ export type FeedbackView = {
 export type FeedbackBoard = {
   /** Every live outcome with the feedback linked to it, most asked-for first. */
   outcomes: { key: string; title: string; feedback: FeedbackView[] }[];
-  /** Unlinked feedback the agent has matched to an outcome, waiting in the review queue. */
-  inReview: (FeedbackView & { outcomeKey: string })[];
+  /** Unlinked feedback the agent has matched to an outcome, with the proposal waiting in the review queue. */
+  inReview: (FeedbackView & PendingMatch)[];
   /**
    * Unlinked feedback with no match waiting: what customers ask for that the roadmap does not
    * cover. Grouped by theme, largest group first; feedback not yet sorted has a null theme and
@@ -29,6 +29,9 @@ export type FeedbackBoard = {
   gaps: { theme: string | null; feedback: FeedbackView[] }[];
 };
 
+/** A pending feedback-match proposal: the outcome it suggests and the proposal to review. */
+export type PendingMatch = { outcomeKey: string; proposalId: string };
+
 /**
  * Group feedback for the feedback page. Pure, so the grouping rules are tested without a database.
  *
@@ -36,7 +39,7 @@ export type FeedbackBoard = {
  *   input.outcomes: Live outcomes in priority order.
  *   input.feedback: Feedback that is not withdrawn, newest first.
  *   input.links: Which outcome each piece of feedback is linked to, by outcome id.
- *   input.pendingMatches: The outcome key of each pending match, by feedback id.
+ *   input.pendingMatches: Each pending match's outcome key and proposal, by feedback id.
  *
  * Returns:
  *   The board. Outcomes with the same amount of feedback keep their priority order. Feedback
@@ -46,7 +49,7 @@ export function groupFeedback(input: {
   outcomes: { id: string; key: string; title: string }[];
   feedback: FeedbackView[];
   links: { feedbackId: string; outcomeId: string }[];
-  pendingMatches: Map<string, string>;
+  pendingMatches: Map<string, PendingMatch>;
 }): FeedbackBoard {
   const linked = new Set<string>();
   const byOutcome = new Map<string, FeedbackView[]>(
@@ -70,9 +73,9 @@ export function groupFeedback(input: {
   const gapsByTheme = new Map<string | null, FeedbackView[]>();
   for (const item of input.feedback) {
     if (linked.has(item.id)) continue;
-    const outcomeKey = input.pendingMatches.get(item.id);
-    if (outcomeKey) {
-      inReview.push({ ...item, outcomeKey });
+    const match = input.pendingMatches.get(item.id);
+    if (match) {
+      inReview.push({ ...item, ...match });
       continue;
     }
     const theme = item.theme?.toLowerCase() ?? null;
@@ -144,6 +147,7 @@ export async function loadFeedbackBoard(
       .where(eq(feedback.projectId, projectId)),
     db
       .select({
+        id: proposals.id,
         feedbackId: proposals.triggerFeedbackId,
         operations: proposals.operations,
       })
@@ -156,11 +160,14 @@ export async function loadFeedbackBoard(
         ),
       ),
   ]);
-  const pendingMatches = new Map<string, string>();
+  const pendingMatches = new Map<string, PendingMatch>();
   for (const row of pendingRows) {
     const [op] = row.operations;
     if (row.feedbackId && op?.type === "link_feedback") {
-      pendingMatches.set(row.feedbackId, op.outcome_key);
+      pendingMatches.set(row.feedbackId, {
+        outcomeKey: op.outcome_key,
+        proposalId: row.id,
+      });
     }
   }
   return groupFeedback({

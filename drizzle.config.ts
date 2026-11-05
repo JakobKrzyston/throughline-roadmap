@@ -5,8 +5,10 @@ import { defineConfig } from "drizzle-kit";
 loadEnvConfig(process.cwd());
 
 // Migrations need a direct connection: Neon's pooler runs in transaction mode, which breaks session state.
-const databaseUrl =
-  process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
+// An empty or unset DATABASE_URL means PGlite, as it does for the app, even if .env.local sets the unpooled URL.
+const databaseUrl = process.env.DATABASE_URL
+  ? process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL
+  : undefined;
 // Same directory as localDataDir() in src/db/client.ts.
 const localDataDir = process.env.PGLITE_DATA_DIR || ".pglite";
 

@@ -89,11 +89,13 @@ describe("groupFeedback", () => {
       outcomes: roadmap,
       feedback: [item("a", "Excel"), item("b", "Dark mode")],
       links: [],
-      pendingMatches: new Map([["a", "OUT-1"]]),
+      pendingMatches: new Map([
+        ["a", { outcomeKey: "OUT-1", proposalId: "p1" }],
+      ]),
     });
 
     expect(board.inReview).toEqual([
-      { ...item("a", "Excel"), outcomeKey: "OUT-1" },
+      { ...item("a", "Excel"), outcomeKey: "OUT-1", proposalId: "p1" },
     ]);
     expect(board.gaps.map((g) => g.theme)).toEqual(["Dark mode"]);
   });
@@ -142,6 +144,16 @@ describe("feedback against the demo seed", () => {
         outcomeKey: "OUT-5",
       },
     ]);
+    const [match] = await db
+      .select({ id: proposals.id })
+      .from(proposals)
+      .where(
+        and(
+          eq(proposals.source, "feedback_match"),
+          eq(proposals.status, "pending"),
+        ),
+      );
+    expect(board.inReview[0].proposalId).toBe(match.id);
     expect(board.gaps.map((g) => [g.theme, g.feedback.length])).toEqual([
       ["Dark mode", 2],
       ["Mobile app", 1],

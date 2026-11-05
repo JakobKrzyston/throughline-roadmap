@@ -14,6 +14,7 @@ import {
 } from "react";
 
 import { Badge, type BadgeTone } from "@/components/badge";
+import { DisclosureCaret, SUMMARY_CLASS } from "@/components/disclosure-caret";
 import { Button } from "@/components/ui/button";
 import { WORK_TYPE_LABELS, type WorkType } from "@/core/operations";
 import { formatTarget } from "@/core/product-text";
@@ -243,7 +244,11 @@ export function PlanBoard({
 
               {outcome.requirements.length > 0 && (
                 <details className="@container">
-                  <summary className="cursor-pointer text-sm font-medium">
+                  {/* text-sm/6 gives the caret the line height its offset is set for. */}
+                  <summary
+                    className={`${SUMMARY_CLASS} flex gap-2 text-sm/6 font-medium`}
+                  >
+                    <DisclosureCaret />
                     Requirements ({outcome.requirements.length})
                   </summary>
                   <div

@@ -56,10 +56,11 @@ export default function PlanPage({
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-semibold tracking-tight">Plan</h1>
         <p className="text-muted-foreground">
-          Drag outcomes, or use Up and Down, to set their priority, and change
-          when each one should land. Open an outcome&rsquo;s requirements to set
-          their targets, kinds of work and teams. Every change is recorded and
-          moves to a target appear in the product view&rsquo;s change feed.
+          Drag outcomes, or use the arrow buttons, to set their priority, and
+          change when each one should land. Open an outcome&rsquo;s requirements
+          to set their targets, kinds of work and teams. Every change is
+          recorded and moves to a target appear in the product view&rsquo;s
+          change feed.
         </p>
       </div>
       {/* The roadmap is read per request; the heading above is the static shell. */}

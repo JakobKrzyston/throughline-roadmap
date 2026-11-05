@@ -10,6 +10,11 @@ import {
 import type { ReactElement, ReactNode } from "react";
 
 import { Badge, type BadgeTone } from "@/components/badge";
+import {
+  DisclosureCaret,
+  SUMMARY_CLASS,
+  WHEN_CLOSED_CLASS,
+} from "@/components/disclosure-caret";
 import { SourceLink } from "@/components/source-link";
 import type { LeafStatus } from "@/core/operations";
 import { formatTarget } from "@/core/product-text";
@@ -20,12 +25,6 @@ import {
   rolledUpStatus,
 } from "@/core/rollup";
 import { WORK_TYPE_LABELS } from "@/core/operations";
-
-import {
-  DisclosureCaret,
-  SUMMARY_CLASS,
-  WHEN_CLOSED_CLASS,
-} from "./disclosure-caret";
 
 // Leaves and rolled-up rows share these, so "Done" and "100% done" are the same colour.
 const STATUS_TONE: Record<LeafStatus, BadgeTone> = {

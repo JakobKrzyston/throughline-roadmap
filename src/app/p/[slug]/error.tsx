@@ -27,7 +27,7 @@ export default function ProjectError({
   }, [error]);
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col items-start gap-4 px-4 py-12">
+    <main className="mx-auto flex w-full max-w-5xl flex-col items-start gap-4 px-4 py-12">
       <h1 className="text-3xl font-semibold tracking-tight">
         This page did not load
       </h1>

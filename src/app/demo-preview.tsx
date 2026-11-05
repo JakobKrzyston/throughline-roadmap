@@ -18,14 +18,9 @@ import { getDb } from "@/db/client";
 import { projects, proposals } from "@/db/schema";
 import { DEMO_SLUG } from "@/db/seed";
 
-const DEMO = `/p/${DEMO_SLUG}`;
+import { STATUS_TONE, StatusProgressBar } from "./p/[slug]/outcome-card";
 
-const PRODUCT_TONE: Record<ReturnType<typeof productStatus>, BadgeTone> = {
-  not_started: "neutral",
-  in_progress: "amber",
-  partially_available: "blue",
-  delivered: "green",
-};
+const DEMO = `/p/${DEMO_SLUG}`;
 
 const LEAF_STATUS: Record<
   NonNullable<RequirementTree["status"]>,
@@ -130,24 +125,17 @@ export async function DemoPreview(): Promise<ReactElement> {
       >
         <div className="flex flex-wrap items-start justify-between gap-2">
           <h3 className="font-semibold">{outcome.title}</h3>
-          <Badge tone={PRODUCT_TONE[statusKey]}>
+          <Badge tone={STATUS_TONE[statusKey]}>
             {PRODUCT_STATUS_TEXT[statusKey].label}
           </Badge>
         </div>
         <div className="flex items-center gap-3">
-          <div
-            role="progressbar"
-            aria-label={`Progress on ${outcome.title}`}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={percent}
-            className="h-2 flex-1 overflow-hidden rounded-full bg-muted"
-          >
-            <div
-              className="h-full bg-primary"
-              style={{ width: `${percent}%` }}
-            />
-          </div>
+          <StatusProgressBar
+            label={`Progress on ${outcome.title}`}
+            percent={percent}
+            status={statusKey}
+            className="flex-1"
+          />
           <span className="text-sm text-muted-foreground">{percent}%</span>
         </div>
         <p className="text-sm">{PRODUCT_STATUS_TEXT[statusKey].summary}</p>

@@ -71,6 +71,7 @@ Turn a pasted roadmap into a proposed graph.
 - `FakeLLMProvider` that returns fixtures, used in tests and demo mode.
 - Import agent: text or Markdown in, one proposal out containing `create_outcome` and `create_requirement` operations.
 - `/p/[slug]/import` page: paste box, "Generate proposal" button, then a link to the proposal in the review queue.
+- Later addition: upload an exported `.md`, `.txt`, `.csv` or `.html` file instead of pasting, and "Try a sample" buttons that load a realistic Jira, Productboard or Notion export. Live Jira and Linear connectors are under "More sources" in Future work.
 
 **Acceptance criteria**
 

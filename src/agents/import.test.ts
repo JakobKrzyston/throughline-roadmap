@@ -80,6 +80,20 @@ describe("runImport", () => {
     });
   });
 
+  it("names where the roadmap came from in the summary", async () => {
+    const projectId = await createProject();
+    const { summary } = await runImport(
+      db,
+      fakeLLM(SAMPLE_IMPORT_OUTPUT),
+      projectId,
+      SAMPLE_ROADMAP,
+      "roadmap.csv",
+    );
+    expect(summary).toBe(
+      "Import 2 outcomes and 5 requirements from roadmap.csv",
+    );
+  });
+
   it("produces a proposal that applies cleanly", async () => {
     const projectId = await createProject();
     const { proposalId } = await runImport(

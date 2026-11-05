@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LLMProvider } from "@/adapters/llm/provider";
 import { SAMPLE_IMPORT_OUTPUT } from "@/agents/fixtures";
+import { IMPORT_SAMPLES } from "@/agents/import-samples";
 import {
   jobs,
   outcomes,
@@ -183,6 +184,28 @@ describe("on a public deployment", () => {
     );
 
     expect(result).toMatchObject({ status: "success" });
+  });
+
+  it("gives an uploaded sample export the sample's own proposal", async () => {
+    const notion = IMPORT_SAMPLES.find((sample) => sample.id === "notion")!;
+    const data = form({ roadmap: "" });
+    data.set("file", new File([notion.content], "roadmap.md"));
+
+    const result = await generateImportProposal(
+      DEMO_SLUG,
+      { status: "idle" },
+      data,
+    );
+
+    expect(result).toMatchObject({
+      status: "success",
+      summary: "Import 3 outcomes and 7 requirements from roadmap.md",
+    });
+    const [proposal] = await db
+      .select()
+      .from(proposals)
+      .where(eq(proposals.rationale, notion.output.rationale));
+    expect(proposal).toBeDefined();
   });
 
   it("imports into the demo with the free OpenRouter model when one is set", async () => {

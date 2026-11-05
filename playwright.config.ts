@@ -9,7 +9,20 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: { baseURL: `http://localhost:${PORT}`, trace: "on-first-retry" },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+      testIgnore: "import.spec.ts",
+    },
+    // Imports add proposals, which would change the counts review.spec.ts checks, so they run after.
+    {
+      name: "import",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: "import.spec.ts",
+      dependencies: ["chromium"],
+    },
+  ],
   webServer: {
     command: `pnpm db:migrate && pnpm db:seed && pnpm build && pnpm start --port ${PORT}`,
     url: `http://localhost:${PORT}`,
@@ -20,6 +33,9 @@ export default defineConfig({
       DATABASE_URL: "",
       DATABASE_URL_UNPOOLED: "",
       PGLITE_DATA_DIR: ".pglite-e2e",
+      // Imports must use the demo fixtures, never a model key from .env.local.
+      ANTHROPIC_API_KEY: "",
+      OPENROUTER_API_KEY: "",
     },
   },
 });

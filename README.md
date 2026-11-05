@@ -37,7 +37,7 @@ The **feedback** page shows what customers ask for, and what the roadmap is miss
 
 ## How it works
 
-1. **Import a roadmap.** Paste a roadmap or planning notes. The import agent drafts product outcomes and technical requirements (`TL-1`, `TL-2`, …) as a proposal for review.
+1. **Import a roadmap.** Paste a roadmap or planning notes, or upload the CSV, Markdown or HTML file that Jira, Productboard, Aha!, Linear, Notion, Confluence or a spreadsheet exports. The import agent drafts product outcomes and technical requirements (`TL-1`, `TL-2`, …) as a proposal for review.
 2. **Connect a repository.** A GitHub App sends Throughline every issue and pull request change. A pull request that says `Implements TL-12` or `Part of TL-12` is linked to that requirement, and opening it marks the requirement in progress.
 3. **Reconcile when work ships.** When linked work merges, the reconciliation agent reads the pull request and the plan and proposes what changed: done, partly done, split into new pieces, or scope added. A merged pull request with no reference gets a suggested link instead.
 4. **Approve.** Every proposal waits in the review queue. Approving it changes the graph and writes an event with a plain-language note, which feeds the product view's "what changed this week".
@@ -91,7 +91,7 @@ What to try:
 - **Plan** (`/p/acme-analytics/plan`): drag outcomes, or use the arrow buttons, into a new priority order, change targets in place by picking a quarter or typing a date, and set each requirement's target, kind of work and team; each move shows up in the product view's change feed. Work due after its outcome's target is flagged.
 - **Feedback** (`/p/acme-analytics/feedback`): requests no outcome covers come first, grouped by theme, then how much each outcome is asked for. Link a request to an outcome yourself, or review the match an agent suggested.
 - **Review queue** (`/p/acme-analytics/review`): five pending proposals, one of each kind: an imported outcome, shipped work, a suggested link, a feedback match and a target at risk. Approve, edit or reject one; it is confirmed in place with a link to where the change shows.
-- **Import** (`/p/acme-analytics/import`): paste a roadmap. Without a model key you get a sample proposal; set `ANTHROPIC_API_KEY` in `.env.local` to use Claude, or `OPENROUTER_API_KEY` to use a free model through OpenRouter.
+- **Import** (`/p/acme-analytics/import`): paste a roadmap or upload an exported file (`.md`, `.txt`, `.csv` or `.html`, up to 50 KB), or load a sample Jira CSV, Productboard CSV or Notion Markdown export with its real-world noise. Without a model key each sample gets a proposal written for it and anything else gets one generic sample proposal; set `ANTHROPIC_API_KEY` in `.env.local` to use Claude, or `OPENROUTER_API_KEY` to use a free model through OpenRouter.
 - **Settings** (`/p/acme-analytics/settings`): read the next weekly digest as it stands, and connect a real repository once you have set up a GitHub App as described in [`docs/GITHUB_APP.md`](docs/GITHUB_APP.md).
 
 Every page works on a phone and follows your system's light or dark theme; the control in the top bar overrides it.

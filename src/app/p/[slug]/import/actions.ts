@@ -2,15 +2,15 @@
 /** Server action behind the import page. Exports generateImportProposal and its state type. */
 import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
-import { z } from "zod";
 
 import { getDemoLLMProvider, getLLMProvider } from "@/adapters/llm";
 import { LLMOutputError } from "@/adapters/llm/provider";
-import { DEMO_LLM_FIXTURES } from "@/agents/fixtures";
 import { runImport } from "@/agents/import";
+import { importFixturesFor } from "@/agents/import-samples";
 import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
 import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
+import { readRoadmapInput } from "@/lib/roadmap-input";
 
 export type ImportState =
   | { status: "idle" }
@@ -18,22 +18,13 @@ export type ImportState =
   | { status: "error"; message: string; roadmap: string }
   | { status: "success"; summary: string; reviewHref: string };
 
-const roadmapSchema = z
-  .string({ error: "Paste a roadmap first." })
-  .trim()
-  .min(1, "Paste a roadmap first.")
-  .max(
-    50_000,
-    "That is too long to import at once. Paste one section at a time.",
-  );
-
 /**
- * Run the import agent on the pasted roadmap and save the result as a pending proposal.
+ * Run the import agent on the pasted or uploaded roadmap and save the result as a pending proposal.
  *
  * Args:
  *   slug: The project's slug, bound by the page.
  *   _previous: The form's previous state (unused; required by useActionState).
- *   formData: Form fields; `roadmap` holds the pasted text.
+ *   formData: Form fields; `roadmap` holds pasted text and `file` an uploaded file.
  *
  * Returns:
  *   A success state with a link to the review queue, or an error message to show.
@@ -50,8 +41,8 @@ export async function generateImportProposal(
     roadmap: typeof raw === "string" ? raw : "",
   });
 
-  const roadmap = roadmapSchema.safeParse(raw);
-  if (!roadmap.success) return fail(roadmap.error.issues[0].message);
+  const input = await readRoadmapInput(formData);
+  if (!input.ok) return fail(input.message);
 
   const db = getDb();
   const [project] = await db
@@ -63,15 +54,18 @@ export async function generateImportProposal(
     return fail("This project is view-only on this server.");
   }
 
+  // Without a model, a sample export gets the proposal written for it.
+  const demoFixtures = importFixturesFor(input.roadmap);
   try {
     const { proposalId, summary } = await runImport(
       db,
       // Visitors to a public server only reach demo projects here, and must not spend the Anthropic key.
       isPublicDeployment()
-        ? getDemoLLMProvider(DEMO_LLM_FIXTURES)
-        : getLLMProvider(DEMO_LLM_FIXTURES),
+        ? getDemoLLMProvider(demoFixtures)
+        : getLLMProvider(demoFixtures),
       project.id,
-      roadmap.data,
+      input.roadmap,
+      input.source,
     );
     // The new proposal adds one to the review queue count in the top bar.
     refresh();

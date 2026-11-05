@@ -41,9 +41,14 @@ pnpm db:seed
 unset DATABASE_URL DATABASE_URL_UNPOOLED
 ```
 
-Deploys do not migrate on their own, so a preview deployment can never change the production schema. Production therefore has to be migrated by hand, and the timing matters:
+Deploys do not migrate on their own, so a preview deployment can never change the production schema. Both databases therefore have to be migrated by hand, and the timing matters:
 
-**Migrate before you merge.** Once the Vercel project is connected to the repository (section 3), every merge to `main` deploys to production straight away, so a merged change whose migration has not run fails as soon as it is live. Before merging a pull request that adds a file under `src/db/migrations`, check out its branch, run `pnpm db:migrate` against production as above, and then merge. The code still on production keeps working meanwhile, because it ignores the new columns and types.
+**Migrate before you merge.** Once the Vercel project is connected to the repository (section 3), every merge to `main` deploys to staging, and every push to `release` deploys to production, straight away. A change whose migration has not run fails as soon as it is live. So migrate each database one step ahead of the code:
+
+- Before merging a pull request that adds a file under `src/db/migrations`, check out its branch and run `pnpm db:migrate` against the staging branch's connection strings, then merge.
+- Before moving `release` forward to a commit with new migrations, run `pnpm db:migrate` against production from that commit, then push.
+
+The code already live keeps working meanwhile, because it ignores the new columns and types.
 
 **The production build checks this.** On a Vercel production build (`VERCEL_ENV=production` with `DATABASE_URL` set), `pnpm build` first runs `src/db/check-migrations.ts`. It reads the rows drizzle-kit writes to `drizzle.__drizzle_migrations` when it applies a migration and compares them with `src/db/migrations/meta/_journal.json` in the commit being built. If any migration is missing, the build stops before `next build` with a message naming the files:
 
@@ -54,7 +59,7 @@ The current production deployment keeps serving, and nothing was changed.
 Run `pnpm db:migrate` against production (docs/DEPLOY.md, "Migrate before you merge"), then redeploy.
 ```
 
-A failed build never goes live, so the previous deployment keeps serving. Run the migrations as above, then redeploy the failed deployment from the Vercel dashboard (or `vercel redeploy <deployment url>`). The check only reads; it never migrates, so deploys still cannot change the schema. If it cannot reach the database, the build fails too, with the connection error. If it still names a migration after `pnpm db:migrate` succeeded, that migration's journal timestamp is older than one production already has, so drizzle-kit skips it; delete it and its journal entry and generate it again with `pnpm db:generate`. Preview deployments, CI, local builds and builds without a database URL skip the check entirely.
+A failed build never goes live, so the previous deployment keeps serving. Run the migrations as above, then redeploy the failed deployment from the Vercel dashboard (or `vercel redeploy <deployment url>`). The check only reads; it never migrates, so deploys still cannot change the schema. If it cannot reach the database, the build fails too, with the connection error. If it still names a migration after `pnpm db:migrate` succeeded, that migration's journal timestamp is older than one production already has, so drizzle-kit skips it; delete it and its journal entry and generate it again with `pnpm db:generate`. Preview deployments, including staging, CI, local builds and builds without a database URL skip the check entirely, so a staging deployment with a missing migration builds and then fails at runtime.
 
 This only holds for additive migrations: new tables, nullable columns, columns with defaults, new enum values. A change that renames or removes something takes two pull requests: first stop using the old name and let that deploy, then drop it. If a pull request is abandoned after its migration ran, its columns stay in production unused until a later migration removes them.
 
@@ -76,7 +81,10 @@ Until both are set, the workflow fails on every pull request, so set them before
 
 ## 3. Create the Vercel project
 
-1. In Vercel, choose **Add New → Project** and import the GitHub repository. Vercel detects Next.js and pnpm; keep the default build settings. Importing connects the project to the repository, so every merge to `main` deploys to production and every pull request gets a preview. A project created with `vercel deploy` from your machine is not connected: it keeps serving whatever was last uploaded, and merges never reach it. To check, open the project's **Settings → Git**. It should name this repository, with `main` as the production branch. If it does not, use **Connect Git Repository** there, or run `vercel git connect` from your clone, after migrating production to match `main` (the connection deploys `main` from then on).
+1. In Vercel, choose **Add New → Project** and import the GitHub repository. Vercel detects Next.js and pnpm; keep the default build settings. Importing connects the project to the repository, so every push to the production branch deploys to production and every other branch and pull request gets a preview. A project created with `vercel deploy` from your machine is not connected: it keeps serving whatever was last uploaded, and merges never reach it. To check, open the project's **Settings → Git**. It should name this repository. If it does not, use **Connect Git Repository** there, or run `vercel git connect` from your clone, after migrating production to match the production branch (the connection deploys it from then on).
+
+   In the project's settings, set the production branch to `release` (under **Environments → Production**), and create the branch with `git push origin main:release`. Merges to `main` then build as previews, which act as staging (see [Staging](#staging)), and production changes only when you push to `release`.
+
 2. Before deploying, add these environment variables for **Production**:
 
 | Variable             | Value                                                                                                              |
@@ -96,6 +104,33 @@ Until both are set, the workflow fails on every pull request, so set them before
 
    Once a day is the most often the Hobby plan runs a cron.
 
+### Staging
+
+Every merge to `main` deploys to staging: a preview deployment with its own database and settings, which behaves the way the public site does. Its address is the branch alias, `https://<project>-git-main-<team>.vercel.app`, which always points at the newest `main` build. Like other previews, it sits behind Vercel sign-in unless you turn Deployment Protection off.
+
+1. In Neon, create a branch named `staging` from `production`. Neon may offer an expiry date for a new branch; leave it off, or staging loses its database when the branch is deleted. Run `pnpm db:migrate` against it like production in section 2. It starts as a copy of production's data and drifts from there.
+2. Add Preview environment variables scoped to the Git branch `main`, so pull request previews do not pick them up. Each command asks for the value:
+
+   ```bash
+   vercel env add DATABASE_URL preview main --sensitive        # the staging branch's pooled string
+   vercel env add OPENROUTER_API_KEY preview main --sensitive
+   vercel env add OPENROUTER_MODEL preview main
+   openssl rand -hex 32 | tr -d '\n' | vercel env add CRON_SECRET preview main --sensitive
+   printf 'true' | vercel env add PUBLIC_DEPLOYMENT preview main
+   ```
+
+   Use a different `CRON_SECRET` from production's, so a leak in one does not open the other.
+
+3. Push to `main`, or redeploy its latest deployment, to pick up the variables.
+
+Vercel runs cron jobs only on production, so staging's demo does not reset nightly and its queued agent jobs run only when a webhook starts them. To reset the demo by hand, call the reset route with the staging `CRON_SECRET`, as in section 4.
+
+To release, fast-forward `release` to the `main` commit you checked on staging, after migrating production if it adds migrations:
+
+```bash
+git push origin <commit>:release
+```
+
 ## 4. Check it
 
 1. Open the deployment's URL in a private browser window. **Open demo** should go straight to the Acme Analytics product view with no sign-in.
@@ -109,7 +144,7 @@ Until both are set, the workflow fails on every pull request, so set them before
 
    The approved proposal is back in the queue.
 
-4. Merge a pull request, or push to `main`. A Vercel deployment should appear on that commit in GitHub, and the site should serve the new code within a few minutes. If nothing appears, the project is not connected to the repository; see section 3.
+4. Merge a pull request, or push to `main`. A Vercel preview deployment should appear on that commit in GitHub, and staging should serve the new code within a few minutes. Push that commit to `release`, and production should follow. If nothing appears, the project is not connected to the repository; see section 3.
 
 If you set up the GitHub App, set its webhook URL to `https://<your-host>/api/github/webhook`.
 

@@ -1,4 +1,4 @@
-/** Zod schemas for the typed graph operations a proposal carries. Exports graphOperationSchema, operationListSchema, leafStatusSchema, workTypeSchema and their types. */
+/** Zod schemas for the typed graph operations a proposal carries. Exports graphOperationSchema, operationListSchema, leafStatusSchema, workTypeSchema, WORK_TYPE_LABELS and their types. */
 import { z } from "zod";
 
 import { targetSchema } from "./schedule";
@@ -159,3 +159,12 @@ export type GraphOperationInput = z.input<typeof graphOperationSchema>;
 export type LeafStatus = z.infer<typeof leafStatusSchema>;
 
 export type WorkType = z.infer<typeof workTypeSchema>;
+
+/** Plain names for the kinds of work, for the review queue, plan page and technical view. */
+export const WORK_TYPE_LABELS: Record<WorkType, string> = {
+  feature: "Feature",
+  infrastructure: "Infrastructure",
+  security: "Security",
+  tech_debt: "Tech debt",
+  research: "Research",
+};

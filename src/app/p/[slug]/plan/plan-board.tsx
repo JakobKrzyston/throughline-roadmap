@@ -10,9 +10,8 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/button";
-import type { WorkType } from "@/core/operations";
+import { WORK_TYPE_LABELS, type WorkType } from "@/core/operations";
 import { formatTarget } from "@/core/product-text";
-import { WORK_TYPE_LABELS } from "@/core/proposal-diff";
 
 import {
   moveOutcome,
@@ -52,6 +51,7 @@ const INPUT_CLASS =
  * Args:
  *   slug: The project's slug.
  *   outcomes: Live outcomes, highest priority first.
+ *   teams: The project's team names, suggested in the team boxes so one team keeps one spelling.
  *   editable: False on a view-only project: the plan is shown without controls.
  *   allowFreeText: False to leave out free-text fields, the reason for a move and team names (on a
  *     public deployment).
@@ -59,17 +59,20 @@ const INPUT_CLASS =
 export function PlanBoard({
   slug,
   outcomes,
+  teams,
   editable,
   allowFreeText,
 }: {
   slug: string;
   outcomes: PlanOutcome[];
+  teams: string[];
   editable: boolean;
   allowFreeText: boolean;
 }): ReactElement {
   const [dragging, setDragging] = useState<string | null>(null);
   const [state, setState] = useState<PlanState>({ status: "idle" });
   const [pending, startTransition] = useTransition();
+  const teamListId = useId();
 
   const move = (key: string, toKey: string): void =>
     startTransition(async () => setState(await moveOutcome(slug, key, toKey)));
@@ -82,6 +85,11 @@ export function PlanBoard({
           <p className="text-destructive">{state.message}</p>
         )}
       </div>
+      <datalist id={teamListId}>
+        {teams.map((team) => (
+          <option key={team} value={team} />
+        ))}
+      </datalist>
       <ol className="flex flex-col gap-3">
         {outcomes.map((outcome, i) => (
           <li
@@ -203,6 +211,7 @@ export function PlanBoard({
                           requirement={requirement}
                           editable={editable}
                           allowTeam={allowFreeText}
+                          teamListId={teamListId}
                         />
                       </li>
                     ))}
@@ -309,11 +318,13 @@ function OwnershipForm({
   requirement,
   editable,
   allowTeam,
+  teamListId,
 }: {
   slug: string;
   requirement: PlanOutcome["requirements"][number];
   editable: boolean;
   allowTeam: boolean;
+  teamListId: string;
 }): ReactElement {
   const [state, formAction, pending] = useActionState<PlanState, FormData>(
     saveOwnership.bind(null, slug),
@@ -367,6 +378,7 @@ function OwnershipForm({
             <input
               id={`${id}-team`}
               name="team"
+              list={teamListId}
               value={team}
               onChange={(event) => setTeam(event.target.value)}
               // An empty box keeps the inherited team, so show which one that is.

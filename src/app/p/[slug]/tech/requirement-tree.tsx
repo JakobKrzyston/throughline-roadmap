@@ -2,9 +2,9 @@
 import type { ReactElement } from "react";
 
 import { Badge, type BadgeTone } from "@/components/badge";
-import { WORK_TYPE_LABELS } from "@/core/proposal-diff";
 import type { LinkedWorkItem, RequirementTree } from "@/core/roadmap";
 import { requirementProgress } from "@/core/rollup";
+import { WORK_TYPE_LABELS } from "@/core/operations";
 import { formatTarget } from "@/core/product-text";
 
 const LEAF_STATUS: Record<
@@ -131,16 +131,24 @@ function RequirementItem({
         )}
         {requirement.people.length > 0 && (
           <p className="text-sm">
-            <span className="font-medium">Working on it: </span>
+            {/* Everyone on its linked work, finished or not: the people to ask about it. */}
+            <span className="font-medium">People: </span>
             {requirement.people.join(", ")}
           </p>
         )}
         {isParent ? (
-          <RequirementList
-            requirements={requirement.children}
-            lateKeys={lateKeys}
-            shown={shown}
-          />
+          shown &&
+          !requirement.children.some((child) => shown.has(child.key)) ? (
+            <p className="text-sm text-muted-foreground">
+              None of its pieces match the filter.
+            </p>
+          ) : (
+            <RequirementList
+              requirements={requirement.children}
+              lateKeys={lateKeys}
+              shown={shown}
+            />
+          )
         ) : requirement.workItems.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No issues or pull requests linked yet.

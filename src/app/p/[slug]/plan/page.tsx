@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { type ReactElement, Suspense } from "react";
 
+import { filterOptions } from "@/core/breakdown";
 import {
   type OutcomeTree,
   loadRoadmap,
@@ -100,6 +101,7 @@ async function PlanView({
         <PlanBoard
           slug={slug}
           outcomes={roadmap.map((outcome) => toPlanOutcome(outcome, today))}
+          teams={filterOptions(roadmap).teams}
           editable={!viewOnly}
           // Visitors' wording would show on the public demo until the nightly reset.
           allowFreeText={!isPublicDeployment()}

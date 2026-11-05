@@ -73,5 +73,8 @@ export function filterOptions(roadmap: { requirements: BreakdownNode[] }[]): {
     node.children.forEach(visit);
   };
   roadmap.forEach((outcome) => outcome.requirements.forEach(visit));
-  return { teams: [...teams].sort(), people: [...people].sort() };
+  // The same order as the rollup by team, which uses localeCompare too.
+  const sorted = (values: Set<string>): string[] =>
+    [...values].sort((a, b) => a.localeCompare(b));
+  return { teams: sorted(teams), people: sorted(people) };
 }

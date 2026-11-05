@@ -132,7 +132,7 @@ Mirrors of GitHub issues and pull requests.
 | `source_updated_at`      | When GitHub last changed the item. A delivery older than this is ignored, since webhooks can arrive out of order  |
 | `people`                 | Logins of the people working on it: a PR's author and the item's assignees, bots left out. Refreshed on each sync |
 
-People come from the source, never from Throughline: a requirement's people are everyone on the work items linked to it, and Throughline never assigns work. An issue's author only reported it, so only its assignees count.
+People come from the source, never from Throughline: a requirement's people are everyone on the work items linked to it, and Throughline never assigns work. An issue's author only reported it, so only its assignees count. Work items stored before `people` existed have none until GitHub next sends a change for them; queueing a `backfill` job for a repository again refreshes its open issues and recently merged PRs.
 
 ### `links`
 

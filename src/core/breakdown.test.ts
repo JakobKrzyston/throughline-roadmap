@@ -63,6 +63,19 @@ describe("visibleKeys", () => {
 });
 
 describe("filterOptions", () => {
+  it("sorts teams the way the rollup by team does, ignoring case", () => {
+    expect(
+      filterOptions([
+        {
+          requirements: [
+            node("TL-1", { team: "Web" }),
+            node("TL-2", { team: "data" }),
+          ],
+        },
+      ]).teams,
+    ).toEqual(["data", "Web"]);
+  });
+
   it("lists each team and person once, sorted", () => {
     expect(
       filterOptions([{ requirements: roots }, { requirements: [] }]),

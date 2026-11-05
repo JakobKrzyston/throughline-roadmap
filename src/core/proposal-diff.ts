@@ -1,5 +1,10 @@
-/** Turns a proposal's operations into a readable diff against the current graph, for the review queue. Exports describeOperations, WORK_TYPE_LABELS, DiffEntry, GraphSnapshot. */
-import type { GraphOperation, LeafStatus, WorkType } from "./operations";
+/** Turns a proposal's operations into a readable diff against the current graph, for the review queue. Exports describeOperations, DiffEntry, GraphSnapshot. */
+import {
+  type GraphOperation,
+  type LeafStatus,
+  WORK_TYPE_LABELS,
+  type WorkType,
+} from "./operations";
 
 /** One field an operation sets. `before` is absent for something new, and null when the field was empty. */
 export type DiffChange = {
@@ -44,15 +49,6 @@ const STATUS_LABELS: Record<LeafStatus, string> = {
   in_progress: "In progress",
   done: "Done",
   dropped: "Dropped",
-};
-
-/** Plain names for the kinds of work, shared by the review queue, plan page and technical view. */
-export const WORK_TYPE_LABELS: Record<WorkType, string> = {
-  feature: "Feature",
-  infrastructure: "Infrastructure",
-  security: "Security",
-  tech_debt: "Tech debt",
-  research: "Research",
 };
 
 const workTypeLabel = (

@@ -12,8 +12,7 @@ import {
   filterOptions,
   visibleKeys,
 } from "@/core/breakdown";
-import { workTypeSchema } from "@/core/operations";
-import { WORK_TYPE_LABELS } from "@/core/proposal-diff";
+import { WORK_TYPE_LABELS, workTypeSchema } from "@/core/operations";
 import { loadRoadmap, loadSplitHistory } from "@/core/roadmap";
 import { outcomeProgress, teamProgress } from "@/core/rollup";
 import { formatTarget } from "@/core/product-text";
@@ -111,6 +110,8 @@ async function TechView({
         </h2>
         {roadmap.length > 0 && (
           <form
+            // Remount when the filter changes, so a link such as "Show everything" resets the choices.
+            key={JSON.stringify(filter)}
             method="get"
             aria-label="Filter requirements"
             className="flex flex-wrap items-end gap-3"

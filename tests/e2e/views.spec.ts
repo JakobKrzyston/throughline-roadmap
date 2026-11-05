@@ -80,6 +80,7 @@ test("technical view filters requirements by person and sums them up by team", a
   await expect(
     page.getByText("Background job queue", { exact: true }),
   ).toBeVisible();
+  await expect(page.getByLabel("Person")).toHaveValue("");
 });
 
 test("plan page reorders outcomes and moves targets into the change feed", async ({

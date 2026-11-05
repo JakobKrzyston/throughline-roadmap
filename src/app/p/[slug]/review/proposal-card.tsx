@@ -3,12 +3,8 @@
 import { type ReactElement, useActionState, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import type { GraphOperation } from "@/core/operations";
-import {
-  type DiffChange,
-  type DiffEntry,
-  WORK_TYPE_LABELS,
-} from "@/core/proposal-diff";
+import { type GraphOperation, WORK_TYPE_LABELS } from "@/core/operations";
+import type { DiffChange, DiffEntry } from "@/core/proposal-diff";
 
 import { type DecideState, decideProposal } from "./actions";
 

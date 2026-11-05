@@ -1,4 +1,4 @@
-/** One product outcome in plain language: status, target, progress, what customers can use and what is still to come. Exports OutcomeCard, STATUS_TONE, STATUS_COLOUR. */
+/** One product outcome in plain language: status, target, progress, what customers can use and what is still to come. Exports OutcomeCard, StatusProgressBar, STATUS_TONE, STATUS_COLOUR. */
 import {
   CalendarDays,
   ChevronRight,
@@ -33,6 +33,46 @@ export const STATUS_COLOUR: Record<ProductStatus, string> = {
   partially_available: "bg-sky-600 dark:bg-sky-400",
   delivered: "bg-emerald-600 dark:bg-emerald-400",
 };
+
+/**
+ * A progress bar filled in the colour of a product status.
+ *
+ * Args:
+ *   label: The bar's accessible name.
+ *   percent: How much is done, from 0 to 100.
+ *   status: The product status that sets the fill colour.
+ *   className: Extra layout classes for the bar, such as flex-1.
+ *
+ * Returns:
+ *   The progress bar.
+ */
+export function StatusProgressBar({
+  label,
+  percent,
+  status,
+  className = "",
+}: {
+  label: string;
+  percent: number;
+  status: ProductStatus;
+  className?: string;
+}): ReactElement {
+  return (
+    <div
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={percent}
+      className={`h-2 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-700 ${className}`}
+    >
+      <div
+        className={`h-full ${STATUS_COLOUR[status]}`}
+        style={{ width: `${percent}%` }}
+      />
+    </div>
+  );
+}
 
 /**
  * A card for one outcome in the product view.
@@ -91,19 +131,11 @@ export function OutcomeCard({
           </span>
           <span className="text-muted-foreground">{percent}% done</span>
         </div>
-        <div
-          role="progressbar"
-          aria-label={`Progress on ${outcome.title}`}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={percent}
-          className="h-2 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-700"
-        >
-          <div
-            className={`h-full ${STATUS_COLOUR[statusKey]}`}
-            style={{ width: `${percent}%` }}
-          />
-        </div>
+        <StatusProgressBar
+          label={`Progress on ${outcome.title}`}
+          percent={percent}
+          status={statusKey}
+        />
         {late.length > 0 && (
           <p className="flex items-start gap-1.5 text-sm text-amber-900 dark:text-amber-300">
             <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />

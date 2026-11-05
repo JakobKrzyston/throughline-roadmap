@@ -12,7 +12,7 @@ import { DEMO_SLUG } from "@/db/seed";
  */
 export default function ProjectNotFound(): ReactElement {
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col items-start gap-4 px-4 py-12">
+    <div className="mx-auto flex w-full max-w-5xl flex-col items-start gap-4 px-4 py-12">
       <h1 className="text-3xl font-semibold tracking-tight">
         We could not find that project
       </h1>

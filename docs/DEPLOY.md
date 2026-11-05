@@ -19,6 +19,14 @@ You make changes to your own projects from a local copy of the app pointed at th
 
 With the [Neon CLI](https://neon.com/docs/cli/install) you can skip the copying: `neon link --project-id <id> --branch production` followed by `neon deploy` writes both strings to `.env.local` as `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (direct), and `neon.ts` declares the project's Neon services. The app then talks to Neon locally too, so the commands below need no `export`.
 
+To work against local PGlite on a machine linked this way, blank both variables in the shell; a variable set in the shell, even to an empty string, wins over `.env.local`:
+
+```bash
+export DATABASE_URL="" DATABASE_URL_UNPOOLED=""
+```
+
+An empty `DATABASE_URL` alone is enough for `pnpm db:migrate`, which ignores `DATABASE_URL_UNPOOLED` unless `DATABASE_URL` is set too, but blanking both leaves nothing to get wrong. `pnpm test:e2e` blanks both for its own server, so it always uses its own PGlite database in `./.pglite-e2e`.
+
 **Check the hostname's shape.** Neon's newer hostnames put the cell in its own label: `ep-...bdmohu8h-pooler.c-8.us-east-2.aws.neon.tech`. If every query fails with "Hostname/IP does not match certificate's altnames", the hostname is in a different shape, such as `ep-...bdmohu8h.c-8-pooler.us-east-2.aws.neon.tech`, which Neon's certificate does not cover; the `pg` driver since 8.16 verifies the hostname against it. Use the `-pooler.c-8.` form (the cell number is yours), whose certificate matches. The older form without a cell, `ep-...bdmohu8h-pooler.us-east-2.aws.neon.tech`, does not reach a cell-based endpoint at all, and Neon reports that as a password failure. Do not work around any of this with `uselibpqcompat` or `rejectUnauthorized: false`; those turn off certificate checks.
 
 ## 2. Create the tables and the demo
@@ -36,6 +44,17 @@ unset DATABASE_URL DATABASE_URL_UNPOOLED
 Deploys do not migrate on their own, so a preview deployment can never change the production schema. Production therefore has to be migrated by hand, and the timing matters:
 
 **Migrate before you merge.** Once the Vercel project is connected to the repository (section 3), every merge to `main` deploys to production straight away, so a merged change whose migration has not run fails as soon as it is live. Before merging a pull request that adds a file under `src/db/migrations`, check out its branch, run `pnpm db:migrate` against production as above, and then merge. The code still on production keeps working meanwhile, because it ignores the new columns and types.
+
+**The production build checks this.** On a Vercel production build (`VERCEL_ENV=production` with `DATABASE_URL` set), `pnpm build` first runs `src/db/check-migrations.ts`. It reads the rows drizzle-kit writes to `drizzle.__drizzle_migrations` when it applies a migration and compares them with `src/db/migrations/meta/_journal.json` in the commit being built. If any migration is missing, the build stops before `next build` with a message naming the files:
+
+```
+Build stopped: the production database is missing 1 migration(s) this commit needs:
+  src/db/migrations/0010_feedback.sql
+The current production deployment keeps serving, and nothing was changed.
+Run `pnpm db:migrate` against production (docs/DEPLOY.md, "Migrate before you merge"), then redeploy.
+```
+
+A failed build never goes live, so the previous deployment keeps serving. Run the migrations as above, then redeploy the failed deployment from the Vercel dashboard (or `vercel redeploy <deployment url>`). The check only reads; it never migrates, so deploys still cannot change the schema. If it cannot reach the database, the build fails too, with the connection error. If it still names a migration after `pnpm db:migrate` succeeded, that migration's journal timestamp is older than one production already has, so drizzle-kit skips it; delete it and its journal entry and generate it again with `pnpm db:generate`. Preview deployments, CI, local builds and builds without a database URL skip the check entirely.
 
 This only holds for additive migrations: new tables, nullable columns, columns with defaults, new enum values. A change that renames or removes something takes two pull requests: first stop using the old name and let that deploy, then drop it. If a pull request is abandoned after its migration ran, its columns stay in production unused until a later migration removes them.
 

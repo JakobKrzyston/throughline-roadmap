@@ -15,7 +15,11 @@ export default defineConfig({
     url: `http://localhost:${PORT}`,
     timeout: 300_000,
     reuseExistingServer: false,
-    // A separate PGlite database, so the tests never touch ./.pglite or a DATABASE_URL in .env.local.
-    env: { DATABASE_URL: "", PGLITE_DATA_DIR: ".pglite-e2e" },
+    // A separate PGlite database, so the tests never touch ./.pglite or a database URL in .env.local.
+    env: {
+      DATABASE_URL: "",
+      DATABASE_URL_UNPOOLED: "",
+      PGLITE_DATA_DIR: ".pglite-e2e",
+    },
   },
 });

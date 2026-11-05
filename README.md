@@ -73,7 +73,7 @@ pnpm db:seed      # load the "Acme Analytics" demo project
 pnpm dev
 ```
 
-Open http://localhost:3000 and click **Open demo**. Data is stored in an embedded Postgres (PGlite) under `./.pglite`. To use a Postgres server such as Neon instead, copy `.env.example` to `.env.local` and set `DATABASE_URL`.
+Open http://localhost:3000 and click **Open demo**. Data is stored in an embedded Postgres (PGlite) under `./.pglite`. To use a Postgres server such as Neon instead, copy `.env.example` to `.env.local` and set `DATABASE_URL`. To go back to PGlite while `.env.local` points at Neon, run `export DATABASE_URL="" DATABASE_URL_UNPOOLED=""` in the shell first.
 
 What to try:
 
@@ -91,6 +91,10 @@ pnpm lint && pnpm format:check && pnpm typecheck && pnpm test
 pnpm exec playwright install chromium   # once
 pnpm test:e2e                           # builds the app and loads the demo
 ```
+
+`pnpm test:e2e` always uses its own PGlite database in `./.pglite-e2e`, whatever `.env.local` contains.
+
+On a Vercel production build, `pnpm build` first checks that the production database has every migration in the commit and fails, naming the missing files, if it does not. The previous deployment keeps serving. The check never migrates; see "Migrate before you merge" in [`docs/DEPLOY.md`](docs/DEPLOY.md#2-create-the-tables-and-the-demo).
 
 ## Design decisions
 

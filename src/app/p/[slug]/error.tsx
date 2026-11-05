@@ -1,8 +1,9 @@
 "use client";
-/** Error state for every project page: a plain-language message and a way to try again. */
+/** Error state for every project page: a plain-language message, a way to try again and a way out. */
+import Link from "next/link";
 import { type ReactElement, useEffect } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 
 /**
  * Shown when a project page fails to load.
@@ -34,7 +35,12 @@ export default function ProjectError({
         Something went wrong on our side, and it is usually temporary. Try
         again, and if it keeps happening, come back in a few minutes.
       </p>
-      <Button onClick={() => retry()}>Try again</Button>
+      <div className="flex flex-wrap gap-3">
+        <Button onClick={() => retry()}>Try again</Button>
+        <Link href="/" className={buttonVariants({ variant: "outline" })}>
+          Go to the home page
+        </Link>
+      </div>
     </main>
   );
 }

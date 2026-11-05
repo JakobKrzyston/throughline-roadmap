@@ -33,7 +33,11 @@ pnpm db:seed
 unset DATABASE_URL DATABASE_URL_UNPOOLED
 ```
 
-Run `pnpm db:migrate` the same way before deploying any change that adds a migration under `src/db/migrations`. Deploys do not migrate on their own, so a preview deployment can never change the production schema.
+Deploys do not migrate on their own, so a preview deployment can never change the production schema. Production therefore has to be migrated by hand, and the timing matters:
+
+**Migrate before you merge.** Once the Vercel project is connected to the repository (section 3), every merge to `main` deploys to production straight away, so a merged change whose migration has not run fails as soon as it is live. Before merging a pull request that adds a file under `src/db/migrations`, check out its branch, run `pnpm db:migrate` against production as above, and then merge. The code still on production keeps working meanwhile, because it ignores the new columns and types.
+
+This only holds for additive migrations: new tables, nullable columns, columns with defaults, new enum values. A change that renames or removes something takes two pull requests: first stop using the old name and let that deploy, then drop it. If a pull request is abandoned after its migration ran, its columns stay in production unused until a later migration removes them.
 
 ### A database branch per pull request
 
@@ -53,7 +57,7 @@ Until both are set, the workflow fails on every pull request, so set them before
 
 ## 3. Create the Vercel project
 
-1. In Vercel, choose **Add New → Project** and import the GitHub repository. Vercel detects Next.js and pnpm; keep the default build settings.
+1. In Vercel, choose **Add New → Project** and import the GitHub repository. Vercel detects Next.js and pnpm; keep the default build settings. Importing connects the project to the repository, so every merge to `main` deploys to production and every pull request gets a preview. A project created with `vercel deploy` from your machine is not connected: it keeps serving whatever was last uploaded, and merges never reach it. To check, open the project's **Settings → Git**. It should name this repository, with `main` as the production branch. If it does not, use **Connect Git Repository** there, or run `vercel git connect` from your clone, after migrating production to match `main` (the connection deploys `main` from then on).
 2. Before deploying, add these environment variables for **Production**:
 
 | Variable             | Value                                                                                                              |
@@ -85,6 +89,8 @@ Until both are set, the workflow fails on every pull request, so set them before
    ```
 
    The approved proposal is back in the queue.
+
+4. Merge a pull request, or push to `main`. A Vercel deployment should appear on that commit in GitHub, and the site should serve the new code within a few minutes. If nothing appears, the project is not connected to the repository; see section 3.
 
 If you set up the GitHub App, set its webhook URL to `https://<your-host>/api/github/webhook`.
 

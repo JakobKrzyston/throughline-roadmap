@@ -56,7 +56,7 @@ describe("moveOutcome", () => {
     expect(latest).toMatchObject({
       note: "Now comes before “Customers can export reports to Excel and CSV”.",
       outcomeTitle: "Dashboards load in under two seconds",
-      moved: true,
+      kind: "replanned",
     });
     const [proposal] = await db
       .select()
@@ -118,7 +118,7 @@ describe("saveTarget", () => {
     const [latest] = await loadRecentChanges(db, projectId, roadmap);
     expect(latest).toMatchObject({
       note: "Moved from Q1 2027 to Q2 2027. Caching took longer than planned.",
-      moved: true,
+      kind: "replanned",
     });
     // The new target is checked against the outcome's work after the response.
     expect(await db.select().from(jobs)).toMatchObject([

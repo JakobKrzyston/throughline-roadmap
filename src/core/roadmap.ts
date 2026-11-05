@@ -1,11 +1,11 @@
-/** Reads a project's graph for the product and technical views. Exports loadRoadmap, loadOutcomes, outcomeIdOf, loadRecentChanges, loadSplitHistory, availableToday. */
+/** Reads a project's graph for the product and technical views. Exports loadRoadmap, loadOutcomes, outcomeIdOf, loadRecentChanges, loadSplitHistory, availableToday, stillToCome, quarterOf, groupByQuarter, groupByDay. */
 import { and, desc, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
 
 import type { Database } from "@/db/client";
 import { events, links, outcomes, requirements, workItems } from "@/db/schema";
 
 import type { GraphOperation, WorkType } from "./operations";
-import type { ScheduledRequirement } from "./schedule";
+import { type ScheduledRequirement, targetEnd, targetSchema } from "./schedule";
 
 type WorkItemRow = typeof workItems.$inferSelect;
 type RequirementRow = typeof requirements.$inferSelect;
@@ -55,6 +55,10 @@ export interface OutcomeTree {
   requirements: RequirementTree[];
 }
 
+/** What kind of change a feed entry is, so the product view can tell them apart. */
+export type ChangeKind =
+  "shipped" | "dropped" | "replanned" | "split" | "added" | "updated";
+
 /** One entry in the "What changed this week" feed. */
 export interface RecentChange {
   id: string;
@@ -64,8 +68,8 @@ export interface RecentChange {
   outcomeTitle: string;
   /** The outcome or requirement key, shown only as technical detail. */
   entityKey: string;
-  /** True when the change moved an outcome's target or priority. */
-  moved: boolean;
+  /** `replanned` when the change moved a target or an outcome's priority. */
+  kind: ChangeKind;
 }
 
 /** One requirement split, newest first in the technical view. */
@@ -277,6 +281,76 @@ export function availableToday(
 }
 
 /**
+ * Plain-language lines for what is still to come in one outcome.
+ *
+ * Args:
+ *   roots: The outcome's root requirements.
+ *
+ * Returns:
+ *   One line per planned or in-progress leaf that customers will notice (its product note, else
+ *   its title), plus behind-the-scenes leaves that have a product note. Other behind-the-scenes
+ *   work has only a technical title, so it is left out.
+ */
+export function stillToCome(
+  roots: RequirementTree[],
+): { key: string; text: string }[] {
+  return roots.flatMap((node) => {
+    if (node.children.length > 0) return stillToCome(node.children);
+    if (node.status !== "planned" && node.status !== "in_progress") return [];
+    if (node.userVisible) {
+      return [{ key: node.key, text: node.productNote ?? node.title }];
+    }
+    return node.productNote ? [{ key: node.key, text: node.productNote }] : [];
+  });
+}
+
+/**
+ * The quarter a target falls in.
+ *
+ * Args:
+ *   target: A quarter ("2027-Q1"), an ISO date ("2027-01-11"), or null.
+ *
+ * Returns:
+ *   The quarter, e.g. "2027-Q1", or null when there is no target or it is not a valid one.
+ */
+export function quarterOf(target: string | null): string | null {
+  if (target === null || !targetSchema.safeParse(target).success) return null;
+  if (target.includes("Q")) return target;
+  const month = Number(target.slice(5, 7));
+  return `${target.slice(0, 4)}-Q${Math.ceil(month / 3)}`;
+}
+
+/**
+ * Group outcomes by the quarter they are due, earliest first, for the product view's timeline.
+ *
+ * Args:
+ *   roadmap: Outcomes in priority order, as loadRoadmap returns them.
+ *
+ * Returns:
+ *   One group per quarter in time order, then one with quarter null for outcomes with no valid
+ *   target. Within a quarter, outcomes are ordered by the last day their target allows, then
+ *   by priority.
+ */
+export function groupByQuarter(
+  roadmap: OutcomeTree[],
+): { quarter: string | null; outcomes: OutcomeTree[] }[] {
+  const dueBy = (outcome: OutcomeTree): string =>
+    quarterOf(outcome.target) ? targetEnd(outcome.target!) : "";
+  // Sorting is stable, so outcomes due the same day keep their priority order.
+  const sorted = roadmap.toSorted((a, b) => dueBy(a).localeCompare(dueBy(b)));
+  const byQuarter = Map.groupBy(sorted, (outcome) => quarterOf(outcome.target));
+  return [...byQuarter]
+    .map(([quarter, outcomes]) => ({ quarter, outcomes }))
+    .sort((a, b) =>
+      a.quarter === null
+        ? 1
+        : b.quarter === null
+          ? -1
+          : a.quarter.localeCompare(b.quarter),
+    );
+}
+
+/**
  * Load the plain-language notes of recent graph changes, for the product view's feed.
  *
  * Args:
@@ -325,19 +399,56 @@ export async function loadRecentChanges(
 
   return eventRows.map((event) => {
     const label = labels.get(event.entityId)!;
-    // The payload is the validated operation that applyProposal stored.
-    const op = event.payload as GraphOperation;
     return {
       id: event.id,
       note: event.productNote!,
       at: event.createdAt,
       outcomeTitle: label.outcomeTitle,
       entityKey: label.key,
-      moved:
-        op.type === "update_outcome" &&
-        (op.target !== undefined || op.priority !== undefined),
+      // The payload is the validated operation that applyProposal stored.
+      kind: changeKind(event.payload as GraphOperation),
     };
   });
+}
+
+function changeKind(op: GraphOperation): ChangeKind {
+  switch (op.type) {
+    case "set_status":
+      if (op.status === "done") return "shipped";
+      if (op.status === "dropped") return "dropped";
+      return "updated";
+    case "update_outcome":
+      return op.target !== undefined || op.priority !== undefined
+        ? "replanned"
+        : "updated";
+    case "update_requirement":
+      return op.target !== undefined ? "replanned" : "updated";
+    case "split_requirement":
+      return "split";
+    case "create_outcome":
+    case "create_requirement":
+      return "added";
+    default:
+      return "updated";
+  }
+}
+
+/**
+ * Group feed entries by the day they happened, so each date is shown once.
+ *
+ * Args:
+ *   changes: Entries newest first, as loadRecentChanges returns them.
+ *
+ * Returns:
+ *   One group per UTC day (an ISO date), newest first, each keeping its entries' order.
+ */
+export function groupByDay(
+  changes: RecentChange[],
+): { day: string; changes: RecentChange[] }[] {
+  const byDay = Map.groupBy(changes, (change) =>
+    change.at.toISOString().slice(0, 10),
+  );
+  return [...byDay].map(([day, entries]) => ({ day, changes: entries }));
 }
 
 /**

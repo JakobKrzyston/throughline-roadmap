@@ -123,17 +123,40 @@ test("plan page reorders outcomes and moves targets into the change feed", async
 
   const share = "Customers can share a dashboard with a link";
   await expect(page.getByRole("article").nth(4)).toHaveAccessibleName(share);
-  await page.getByRole("button", { name: `Move “${share}” up` }).click();
+  const up = page.getByRole("button", { name: `Move “${share}” up` });
+  await up.click();
   await expect(page.getByRole("article").nth(3)).toHaveAccessibleName(share);
+  // Focus follows the moved outcome, and the new place is announced.
+  await expect(up).toBeFocused();
+  await expect(
+    page.getByText(`“${share}” is now number 4 of 5.`),
+  ).toBeVisible();
   // Dragging works as well as the buttons.
   await page
     .getByRole("heading", { name: share })
     .dragTo(page.getByRole("article").first().getByRole("heading"));
   await expect(page.getByRole("article").first()).toHaveAccessibleName(share);
 
+  // A requirement saves its target, kind of work and team together, and keeps them when refused.
+  await page.getByText("Requirements (").nth(1).click();
+  const csv = "TL-3 CSV export";
+  const kind = page.getByRole("combobox", { name: `Kind of work for ${csv}` });
+  const target = page.getByRole("combobox", { name: `Target for ${csv}` });
+  const saveRow = page.getByRole("button", { name: `Save ${csv}` });
+  await kind.selectOption("research");
+  await target.fill("next spring");
+  await saveRow.click();
+  await expect(page.getByText("Use a quarter like 2027-Q1")).toBeVisible();
+  await expect(kind).toHaveValue("research");
+  await expect(target).toHaveValue("next spring");
+  await target.fill("2027-Q2");
+  await saveRow.click();
+  await expect(saveRow).toBeDisabled();
+  await expect(kind).toHaveValue("research");
+
   const dashboards = "Dashboards load in under two seconds";
   await page
-    .getByRole("textbox", { name: `Target for ${dashboards}` })
+    .getByRole("combobox", { name: `Target for ${dashboards}` })
     .fill("2027-Q3");
   const save = page.getByRole("button", {
     name: `Save target for ${dashboards}`,

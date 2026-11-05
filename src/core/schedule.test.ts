@@ -11,6 +11,7 @@ import {
   scheduleWarnings,
   targetEnd,
   targetSchema,
+  upcomingQuarters,
 } from "./schedule";
 
 const leaf = (
@@ -175,5 +176,18 @@ describe("scheduleWarnings", () => {
       late: [],
       passed: false,
     });
+  });
+});
+
+describe("upcomingQuarters", () => {
+  it("starts with today's quarter and carries into the next year", () => {
+    expect(upcomingQuarters("2026-11-04", 4)).toEqual([
+      "2026-Q4",
+      "2027-Q1",
+      "2027-Q2",
+      "2027-Q3",
+    ]);
+    expect(upcomingQuarters("2027-01-01", 2)).toEqual(["2027-Q1", "2027-Q2"]);
+    expect(upcomingQuarters("2027-03-31", 1)).toEqual(["2027-Q1"]);
   });
 });

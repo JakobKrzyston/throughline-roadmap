@@ -7,6 +7,7 @@ import { connection } from "next/server";
 import { type ReactElement, Suspense } from "react";
 
 import { Badge, type BadgeTone } from "@/components/badge";
+import { CardsSkeleton } from "@/components/skeleton";
 import { operationListSchema } from "@/core/operations";
 import {
   describeOperations,
@@ -24,7 +25,6 @@ import {
 } from "@/db/schema";
 import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
 
-import { ProjectNav } from "../project-nav";
 import { ViewOnlyNotice } from "../view-only-notice";
 import type { ProposalView } from "./proposal-card";
 import { type DecidedView, ReviewQueue } from "./review-queue";
@@ -44,6 +44,8 @@ const SOURCES: Record<Source, { label: string; tone: BadgeTone }> = {
   work_started: { label: "Work started", tone: "neutral" },
   manual: { label: "Planning change", tone: "neutral" },
 };
+
+export const metadata = { title: "Review queue" };
 
 // The sources that wait in this queue for a person, and where an approved one shows. The others
 // are approved as they are made, by the GitHub sync or by a person on the plan or feedback page.
@@ -69,7 +71,7 @@ export default function ReviewPage({
   params,
 }: PageProps<"/p/[slug]/review">): ReactElement {
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-12">
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-semibold tracking-tight">Review queue</h1>
         <p className="text-muted-foreground">
@@ -78,7 +80,7 @@ export default function ReviewPage({
         </p>
       </div>
       {/* The proposals are read per request; the heading above is the static shell. */}
-      <Suspense fallback={<p className="text-muted-foreground">Loading…</p>}>
+      <Suspense fallback={<CardsSkeleton />}>
         <PendingProposals params={params} />
       </Suspense>
     </main>
@@ -188,7 +190,6 @@ async function PendingProposals({
 
   return (
     <>
-      <ProjectNav slug={slug} name={project.name} current="/review" />
       {viewOnly && <ViewOnlyNotice />}
       {views.length > 0 && (
         <section

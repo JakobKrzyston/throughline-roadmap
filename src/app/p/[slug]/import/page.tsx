@@ -5,16 +5,18 @@ import { connection } from "next/server";
 import { type ReactElement, Suspense } from "react";
 
 import { demoModels, isDemoLLM } from "@/adapters/llm";
+import { FormSkeleton } from "@/components/skeleton";
 import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
 import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
 
-import { ProjectNav } from "../project-nav";
 import { ViewOnlyNotice } from "../view-only-notice";
 import { ImportForm } from "./import-form";
 
 // Up to two model calls run in this page's server action; allow them more than the platform default.
 export const maxDuration = 300;
+
+export const metadata = { title: "Import a roadmap" };
 
 /**
  * Import page: a static heading plus the paste form for the project in the URL.
@@ -29,7 +31,7 @@ export default function ImportPage({
   params,
 }: PageProps<"/p/[slug]/import">): ReactElement {
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-12">
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-semibold tracking-tight">
           Import a roadmap
@@ -41,7 +43,7 @@ export default function ImportPage({
         </p>
       </div>
       {/* The project lookup runs per request; the heading above is the static shell. */}
-      <Suspense fallback={<p className="text-muted-foreground">Loading…</p>}>
+      <Suspense fallback={<FormSkeleton />}>
         <ProjectImport params={params} />
       </Suspense>
     </main>
@@ -62,7 +64,6 @@ async function ProjectImport({
 
   return (
     <>
-      <ProjectNav slug={slug} name={project.name} current="/import" />
       {isViewOnly(project) ? (
         <ViewOnlyNotice />
       ) : (

@@ -8,15 +8,17 @@ import { connection } from "next/server";
 import { type ReactElement, type ReactNode, Suspense } from "react";
 
 import { Badge } from "@/components/badge";
+import { CardsSkeleton } from "@/components/skeleton";
 import { buttonVariants } from "@/components/ui/button";
 import { type FeedbackView, loadFeedbackBoard } from "@/core/feedback";
 import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
 import { isViewOnly } from "@/lib/public-deployment";
 
-import { ProjectNav } from "../project-nav";
 import { ViewOnlyNotice } from "../view-only-notice";
 import { LinkFeedbackForm, UnlinkFeedbackButton } from "./feedback-forms";
+
+export const metadata = { title: "Customer feedback" };
 
 /**
  * Feedback page: a static heading plus the project's feedback.
@@ -31,7 +33,7 @@ export default function FeedbackPage({
   params,
 }: PageProps<"/p/[slug]/feedback">): ReactElement {
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-12">
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-semibold tracking-tight">
           Customer feedback
@@ -42,7 +44,7 @@ export default function FeedbackPage({
         </p>
       </div>
       {/* The feedback is read per request; the heading above is the static shell. */}
-      <Suspense fallback={<p className="text-muted-foreground">Loading…</p>}>
+      <Suspense fallback={<CardsSkeleton />}>
         <FeedbackBoardView params={params} />
       </Suspense>
     </main>
@@ -80,7 +82,6 @@ async function FeedbackBoardView({
 
   return (
     <>
-      <ProjectNav slug={slug} name={project.name} current="/feedback" />
       {!editable && <ViewOnlyNotice />}
       {total === 0 ? (
         <p className="rounded-md border border-border p-6 text-center text-muted-foreground">

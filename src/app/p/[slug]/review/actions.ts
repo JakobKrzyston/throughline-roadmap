@@ -15,8 +15,11 @@ import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
 /** Recorded as the decider until there is sign-in (see the "Teams and permissions" issue). */
 const REVIEWER = "reviewer";
 
+/** The queue's state after its last decision; `proposalId` says which proposal it was about. */
 export type DecideState =
-  { status: "idle" } | { status: "error"; message: string };
+  | { status: "idle" }
+  | { status: "decided"; proposalId: string }
+  | { status: "error"; proposalId: string; message: string };
 
 const decisionSchema = z.object({
   proposalId: z.uuid(),
@@ -34,15 +37,19 @@ const decisionSchema = z.object({
  *   formData: `proposalId`, `decision` (`approve` or `reject`) and, after an edit, `operations`.
  *
  * Returns:
- *   The idle state once decided (the page refreshes and the proposal leaves the queue), or an
- *   error message to show on the proposal.
+ *   The decision once made (the page refreshes and the proposal moves to "Recently decided"), or
+ *   an error message to show on the proposal.
  */
 export async function decideProposal(
   slug: string,
   _previous: DecideState,
   formData: FormData,
 ): Promise<DecideState> {
-  const fail = (message: string): DecideState => ({ status: "error", message });
+  const fail = (message: string): DecideState => ({
+    status: "error",
+    proposalId: String(formData.get("proposalId")),
+    message,
+  });
   const input = decisionSchema.safeParse(Object.fromEntries(formData));
   if (!input.success) return fail("That request was not understood.");
   const { proposalId, decision, operations } = input.data;
@@ -92,5 +99,5 @@ export async function decideProposal(
     return fail("Something went wrong, so nothing changed. Please try again.");
   }
   refresh();
-  return { status: "idle" };
+  return { status: "decided", proposalId };
 }

@@ -1,12 +1,12 @@
 "use client";
 /** One pending proposal in the review queue: summary, rationale, readable diff, and approve / edit / reject. Exports ProposalCard, ProposalView. */
-import { type ReactElement, useActionState, useState } from "react";
+import { type MouseEvent, type ReactElement, useState } from "react";
+import { useFormStatus } from "react-dom";
 
+import { Badge, type BadgeTone } from "@/components/badge";
 import { Button } from "@/components/ui/button";
 import { type GraphOperation, WORK_TYPE_LABELS } from "@/core/operations";
 import type { DiffChange, DiffEntry } from "@/core/proposal-diff";
-
-import { type DecideState, decideProposal } from "./actions";
 
 /** What the page passes for each proposal. */
 export type ProposalView = {
@@ -14,7 +14,11 @@ export type ProposalView = {
   summary: string;
   rationale: string;
   sourceLabel: string;
+  sourceTone: BadgeTone;
+  /** ISO timestamp, for ordering and the `<time>` element. */
   createdAt: string;
+  /** The creation date as the page shows it, formatted on the server. */
+  createdOn: string;
   trigger?: { title: string; url: string };
   /** Null when the stored operations are invalid; the proposal can then only be rejected. */
   operations: GraphOperation[] | null;
@@ -96,47 +100,69 @@ const OPTIONS: Record<string, [string, string][]> = {
 const LONG_TEXT = new Set(["description", "product_note", "split_reason"]);
 // Optional fields that should be cleared, not set to an empty string, when emptied.
 const NULLABLE = new Set(["target", "product_note", "work_type", "team"]);
+// Past this many changes, the rest fold away so long imports stay easy to scan.
+const SHOWN_CHANGES = 4;
+
+// The second click of a double click would land on the next proposal once this one has left.
+const ignoreRepeatClick = (event: MouseEvent): void => {
+  if (event.detail > 1) event.preventDefault();
+};
 
 /**
  * A pending proposal with its readable diff and decision buttons.
  *
  * Args:
- *   slug: The project's slug.
  *   proposal: The proposal to show.
+ *   formAction: The queue's decision action.
+ *   onSubmit: Called as a decision on this proposal is submitted.
+ *   pending: True while any decision in the queue is being saved.
+ *   error: Why the last decision on this proposal failed, if it did.
  *   viewOnly: True to show the proposal without the decision buttons.
  *   canEdit: False to offer approve and reject only.
+ *
+ * Returns:
+ *   The card.
  */
 export function ProposalCard({
-  slug,
   proposal,
+  formAction,
+  onSubmit,
+  pending,
+  error,
   viewOnly,
   canEdit,
 }: {
-  slug: string;
   proposal: ProposalView;
+  formAction: (formData: FormData) => void;
+  onSubmit: () => void;
+  pending: boolean;
+  error?: string;
   viewOnly: boolean;
   canEdit: boolean;
 }): ReactElement {
-  const [state, formAction, pending] = useActionState<DecideState, FormData>(
-    decideProposal.bind(null, slug),
-    { status: "idle" },
-  );
   const [draft, setDraft] = useState<Draft[] | null>(null);
   const editing = draft !== null;
+  const shown = proposal.entries.slice(0, SHOWN_CHANGES);
+  const folded = proposal.entries.slice(SHOWN_CHANGES);
 
   return (
     <article
       id={`proposal-${proposal.id}`}
-      className="flex flex-col gap-4 rounded-lg border border-border p-5"
+      aria-labelledby={`proposal-${proposal.id}-summary`}
+      // Linked to as #proposal-<id>: clear of the sticky top bar, and outlined while targeted.
+      className="flex scroll-mt-24 flex-col gap-4 rounded-lg border border-border bg-card p-4 text-card-foreground target:border-ring target:ring-3 target:ring-ring/50 sm:p-5"
     >
-      <header className="flex flex-col gap-1">
-        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          {proposal.sourceLabel} ·{" "}
-          <time dateTime={proposal.createdAt}>
-            {new Date(proposal.createdAt).toLocaleDateString()}
-          </time>
+      <header className="flex flex-col gap-2">
+        <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <Badge tone={proposal.sourceTone}>{proposal.sourceLabel}</Badge>
+          <time dateTime={proposal.createdAt}>{proposal.createdOn}</time>
         </p>
-        <h2 className="text-lg font-semibold">{proposal.summary}</h2>
+        <h2
+          id={`proposal-${proposal.id}-summary`}
+          className="text-lg font-semibold break-words"
+        >
+          {proposal.summary}
+        </h2>
         {proposal.trigger && (
           <p className="text-sm text-muted-foreground">
             Prompted by{" "}
@@ -175,14 +201,33 @@ export function ProposalCard({
             />
           ))
         ) : (
-          proposal.entries.map((entry, i) => (
-            <DiffBlock key={i} entry={entry} />
-          ))
+          <>
+            {shown.map((entry, i) => (
+              <DiffBlock key={i} entry={entry} />
+            ))}
+            {folded.length > 0 && (
+              <details className="flex flex-col gap-3">
+                <summary className="cursor-pointer text-sm text-muted-foreground">
+                  {folded.length} more{" "}
+                  {folded.length === 1 ? "change" : "changes"}
+                </summary>
+                <div className="mt-3 flex flex-col gap-3">
+                  {folded.map((entry, i) => (
+                    <DiffBlock key={i} entry={entry} />
+                  ))}
+                </div>
+              </details>
+            )}
+          </>
         )}
       </section>
 
       {!viewOnly && (
-        <form action={formAction} className="flex flex-wrap items-center gap-2">
+        <form
+          action={formAction}
+          onSubmit={onSubmit}
+          className="flex flex-wrap items-center gap-2"
+        >
           <input type="hidden" name="proposalId" value={proposal.id} />
           {editing && (
             <input
@@ -197,6 +242,7 @@ export function ProposalCard({
               name="decision"
               value="approve"
               disabled={pending}
+              onClick={ignoreRepeatClick}
             >
               {editing ? "Approve with edits" : "Approve"}
             </Button>
@@ -229,19 +275,18 @@ export function ProposalCard({
               value="reject"
               variant="destructive"
               disabled={pending}
+              onClick={ignoreRepeatClick}
             >
               Reject
             </Button>
           )}
-          {pending && (
-            <span className="text-sm text-muted-foreground">Saving…</span>
-          )}
+          <Saving />
         </form>
       )}
       <div aria-live="polite">
-        {state.status === "error" && (
+        {error && (
           <p className="text-sm whitespace-pre-line text-destructive">
-            {state.message}
+            {error}
           </p>
         )}
       </div>
@@ -249,12 +294,20 @@ export function ProposalCard({
   );
 }
 
+/** "Saving…" on the card whose decision is in flight, not on every card the queue disables. */
+function Saving(): ReactElement | null {
+  const { pending } = useFormStatus();
+  return pending ? (
+    <span className="text-sm text-muted-foreground">Saving…</span>
+  ) : null;
+}
+
 function DiffBlock({ entry }: { entry: DiffEntry }): ReactElement {
   return (
-    <div className="flex flex-col gap-1 rounded-md bg-muted/50 p-3">
+    <div className="flex flex-col gap-1 rounded-md bg-muted/50 p-3 break-words">
       <p className="text-sm font-medium">{entry.heading}</p>
       {entry.changes.length > 0 && (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
           {entry.changes.map((change) => (
             <ChangeRow key={change.field} change={change} />
           ))}

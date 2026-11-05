@@ -1,4 +1,4 @@
-/** Turns a proposal's operations into a readable diff against the current graph, for the review queue. Exports describeOperations, DiffEntry, GraphSnapshot. */
+/** Turns a proposal into readable text against the current graph, for the review queue. Exports describeOperations, readableSummary, DiffEntry, GraphSnapshot. */
 import {
   type GraphOperation,
   type LeafStatus,
@@ -64,13 +64,13 @@ const workTypeLabel = (
  *   graph: The current graph. Keys created earlier in the same proposal are simply not found.
  *
  * Returns:
- *   One entry per operation, in order.
+ *   One entry per operation, in order. Fields a new outcome or requirement leaves empty are left out.
  */
 export function describeOperations(
   operations: GraphOperation[],
   graph: GraphSnapshot,
 ): DiffEntry[] {
-  return operations.map((op) => {
+  const entries = operations.map((op): DiffEntry => {
     switch (op.type) {
       case "create_outcome":
         return {
@@ -105,7 +105,7 @@ export function describeOperations(
           changes: [
             { field: "Description", after: op.description || null },
             { field: "Visible to customers", after: yesNo(op.user_visible) },
-            { field: "Product note", after: op.product_note ?? null },
+            { field: "Product note", after: op.product_note || null },
             ...(op.target ? [{ field: "Target", after: op.target }] : []),
             ...(op.work_type
               ? [
@@ -229,6 +229,46 @@ export function describeOperations(
       }
     }
   });
+  return entries.map((entry) => ({
+    ...entry,
+    // Only new, empty fields are dropped: an update that clears a field shows its old value.
+    changes: entry.changes.filter(
+      (change) => change.before !== undefined || change.after !== null,
+    ),
+  }));
+}
+
+/**
+ * Put names in place of the outcome and requirement keys in a proposal's summary.
+ *
+ * Agents write summaries such as `Count feedback "..." towards OUT-5 Share dashboards`, which
+ * lead with a key. A known key becomes its quoted title, and a title written right after the
+ * key is not repeated.
+ *
+ * Args:
+ *   summary: The proposal's summary.
+ *   graph: The current outcomes and requirements, by key.
+ *
+ * Returns:
+ *   The summary with known keys replaced; unknown keys stay as they are.
+ */
+export function readableSummary(
+  summary: string,
+  graph: Pick<GraphSnapshot, "outcomes" | "requirements">,
+): string {
+  let result = "";
+  let rest = 0;
+  for (const match of summary.matchAll(/\b[A-Z]+-\d+\b(?!\.\d)/g)) {
+    const title = (
+      graph.outcomes.get(match[0]) ?? graph.requirements.get(match[0])
+    )?.title;
+    if (!title) continue;
+    let end = match.index + match[0].length;
+    if (summary.startsWith(` ${title}`, end)) end += title.length + 1;
+    result += `${summary.slice(rest, match.index)}“${title}”`;
+    rest = end;
+  }
+  return result + summary.slice(rest);
 }
 
 function named(key: string, current: { title: string } | undefined): string {

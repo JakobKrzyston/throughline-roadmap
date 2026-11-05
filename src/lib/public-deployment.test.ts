@@ -114,6 +114,7 @@ describe("on a public deployment", () => {
 
     expect(result).toEqual({
       status: "error",
+      proposalId: id,
       message: "This project is view-only on this server.",
     });
     const [row] = await db.select().from(proposals).where(eq(proposals.id, id));
@@ -129,7 +130,7 @@ describe("on a public deployment", () => {
       form({ proposalId: id, decision: "reject" }),
     );
 
-    expect(result).toEqual({ status: "idle" });
+    expect(result).toEqual({ status: "decided", proposalId: id });
     const [row] = await db.select().from(proposals).where(eq(proposals.id, id));
     expect(row.status).toBe("rejected");
   });
@@ -153,6 +154,7 @@ describe("on a public deployment", () => {
 
     expect(result).toEqual({
       status: "error",
+      proposalId: id,
       message:
         "Editing is turned off on this server. Approve or reject instead.",
     });

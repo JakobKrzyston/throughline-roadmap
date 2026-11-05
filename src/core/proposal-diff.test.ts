@@ -1,8 +1,12 @@
-/** Tests for describeOperations, the review queue's readable diff. */
+/** Tests for describeOperations and readableSummary, the review queue's readable text. */
 import { describe, expect, it } from "vitest";
 
 import { operationListSchema } from "./operations";
-import { describeOperations, type GraphSnapshot } from "./proposal-diff";
+import {
+  describeOperations,
+  type GraphSnapshot,
+  readableSummary,
+} from "./proposal-diff";
 
 const PULL_ID = "6f1c1e0e-4c7d-4a43-9b0e-6f2a1c9d5e11";
 const FEEDBACK_ID = "7f0c1a52-1b0e-4c1e-9c39-2f0f6f0d2a11";
@@ -214,5 +218,47 @@ describe("describeOperations", () => {
     expect(entries[2].changes).toEqual([
       { field: "Target", before: null, after: "2027-Q2" },
     ]);
+  });
+
+  it("leaves out the fields a new outcome or requirement leaves empty", () => {
+    const entries = describe_([
+      { type: "create_outcome", key: "OUT-2", title: "Alerts", priority: 2 },
+      {
+        type: "create_requirement",
+        key: "TL-30",
+        outcome_key: "OUT-2",
+        title: "Alert rules",
+        product_note: "",
+      },
+    ]);
+    expect(entries.map((entry) => entry.changes)).toEqual([
+      [{ field: "Priority", after: "2" }],
+      [{ field: "Visible to customers", after: "No" }],
+    ]);
+  });
+});
+
+describe("readableSummary", () => {
+  it("names a known outcome or requirement in place of its key", () => {
+    expect(
+      readableSummary('Count feedback "Excel please" towards OUT-1', graph),
+    ).toBe(
+      'Count feedback "Excel please" towards “Customers can export reports”',
+    );
+    expect(readableSummary("TL-4 is finished", graph)).toBe(
+      "“Excel export” is finished",
+    );
+  });
+
+  it("does not repeat a title written after its key", () => {
+    expect(readableSummary('Link "Writer" to TL-4 Excel export', graph)).toBe(
+      'Link "Writer" to “Excel export”',
+    );
+  });
+
+  it("keeps keys it does not know", () => {
+    expect(readableSummary("Add OUT-9 next to TL-4.1", graph)).toBe(
+      "Add OUT-9 next to TL-4.1",
+    );
   });
 });

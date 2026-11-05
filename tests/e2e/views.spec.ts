@@ -67,43 +67,71 @@ test("technical view shows the requirement tree and split history", async ({
   await expect(
     page.getByRole("heading", { name: "Technical roadmap" }),
   ).toBeVisible();
-  // Leaves start closed; opening one shows its linked pull requests.
-  const queue = page.getByText("Background job queue", { exact: true });
-  await expect(queue).toBeVisible();
-  await queue.click();
+  const tree = page.getByRole("region", { name: "Outcomes and requirements" });
+  // Leaves start closed, hinting at what they hold; opening one shows its linked pull requests.
+  const queue = tree
+    .locator("summary")
+    .filter({ hasText: "Background job queue" })
+    .locator("..");
+  await expect(queue).not.toHaveAttribute("open");
+  await expect(queue.getByTitle("2 pull requests")).toBeVisible();
+  await queue.getByText("Background job queue", { exact: true }).click();
+  await expect(queue).toHaveAttribute("open");
   await expect(
     page.getByRole("link", { name: "Add background job queue" }),
   ).toBeVisible();
+
+  await page.getByRole("button", { name: "Collapse all" }).click();
+  await expect(tree.locator("details[open]")).toHaveCount(0);
+  await page.getByRole("button", { name: "Expand all" }).click();
+  await expect(tree.locator("details:not([open])")).toHaveCount(0);
+
+  // Each split lists the requirements it created.
+  const split = page
+    .getByRole("region", { name: "Split history" })
+    .getByRole("listitem")
+    .filter({ hasText: "Email delivery service" });
   await expect(
-    page.getByRole("heading", { name: "Split history" }),
-  ).toBeVisible();
+    split.getByRole("list", { name: "Split into" }).getByRole("listitem"),
+  ).toHaveText([
+    "TL-9Email provider integration",
+    "TL-10Retry and bounce handling",
+  ]);
 });
 
 test("technical view filters requirements by person and sums them up by team", async ({
   page,
 }) => {
   await page.goto("/p/acme-analytics/tech");
-  const exportOutcome = page
+  const tree = page.getByRole("region", { name: "Outcomes and requirements" });
+  const exportOutcome = tree
     .getByRole("listitem")
     .filter({ hasText: "Customers can export reports to Excel and CSV" })
     .first();
   await expect(
-    exportOutcome.getByText("Data: 2 of 3 done · Web: 0 of 1 done"),
-  ).toBeVisible();
+    exportOutcome
+      .getByRole("list", { name: "Progress by team" })
+      .getByRole("listitem"),
+  ).toHaveText(["Data2 of 3 done", "Web0 of 1 done"]);
 
+  // A choice applies at once, with no Filter button, and "Any" stays out of the address.
+  // Expand all appears on hydration, after which the form listens for changes.
+  await expect(page.getByRole("button", { name: "Expand all" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Filter" })).toHaveCount(0);
   await page.getByLabel("Person").selectOption("leo-martins");
-  await page.getByRole("button", { name: "Filter" }).click();
-  await expect(page).toHaveURL(/person=leo-martins/);
+  await expect(page).toHaveURL(/\/tech\?person=leo-martins$/);
+  // The form is rebuilt for the new filter; focus stays on the choice that changed.
+  await expect(page.getByLabel("Person")).toBeFocused();
   await expect(
-    page.getByText("Export button in report toolbar", { exact: true }),
+    tree.getByText("Export button in report toolbar", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("Background job queue", { exact: true }),
+    tree.getByText("Background job queue", { exact: true }),
   ).toBeHidden();
 
   await page.getByRole("link", { name: "Show everything" }).click();
   await expect(
-    page.getByText("Background job queue", { exact: true }),
+    tree.getByText("Background job queue", { exact: true }),
   ).toBeVisible();
   await expect(page.getByLabel("Person")).toHaveValue("");
 });

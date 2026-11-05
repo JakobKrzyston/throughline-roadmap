@@ -79,6 +79,18 @@ describe("filterOptions", () => {
   it("lists each team and person once, sorted", () => {
     expect(
       filterOptions([{ requirements: roots }, { requirements: [] }]),
-    ).toEqual({ teams: ["Data", "Web"], people: ["leo", "maya-chen"] });
+    ).toEqual({
+      workTypes: ["feature", "infrastructure", "security"],
+      teams: ["Data", "Web"],
+      people: ["leo", "maya-chen"],
+    });
+  });
+
+  it("offers nothing to choose from a roadmap without kinds, teams or people", () => {
+    expect(filterOptions([{ requirements: [node("TL-1")] }])).toEqual({
+      workTypes: [],
+      teams: [],
+      people: [],
+    });
   });
 });

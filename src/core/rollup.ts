@@ -1,4 +1,4 @@
-/** Pure progress and product-status rollups over a requirement tree. Exports requirementProgress, outcomeProgress, productStatus, statusCounts, teamProgress. */
+/** Pure progress and product-status rollups over a requirement tree. Exports requirementProgress, rolledUpStatus, outcomeProgress, productStatus, statusCounts, teamProgress. */
 import type { LeafStatus } from "./operations";
 
 /** The parts of a requirement the rollup needs. A node with no children is a leaf. */
@@ -70,6 +70,25 @@ function progressOf(nodes: RequirementNode[]): number {
  */
 export function requirementProgress(requirement: RequirementNode): number {
   return progressOf([requirement]);
+}
+
+/**
+ * The leaf status that best describes some requirements together, so a rolled-up row can be
+ * coloured like a leaf in the same state.
+ *
+ * Args:
+ *   nodes: Requirements to describe, e.g. one parent or an outcome's root requirements.
+ *
+ * Returns:
+ *   `done` when every counted leaf is done; `in_progress` when any is done or under way;
+ *   `dropped` when every leaf under them is dropped; otherwise `planned`, as for no requirements.
+ */
+export function rolledUpStatus(nodes: RequirementNode[]): LeafStatus {
+  const leaves = countedLeaves(nodes);
+  if (leaves.length === 0) return nodes.length > 0 ? "dropped" : "planned";
+  if (leaves.every((leaf) => leaf.status === "done")) return "done";
+  if (leaves.some((leaf) => leaf.status !== "planned")) return "in_progress";
+  return "planned";
 }
 
 /**

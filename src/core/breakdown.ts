@@ -1,5 +1,5 @@
 /** Filters the technical view's requirement tree by kind of work, team and person. Exports BreakdownFilter, BreakdownNode, visibleKeys, filterOptions. */
-import type { WorkType } from "./operations";
+import { WORK_TYPE_LABELS, type WorkType } from "./operations";
 
 /** What the reader filters by. A field left out does not filter. */
 export interface BreakdownFilter {
@@ -53,21 +53,25 @@ export function visibleKeys(
 }
 
 /**
- * The teams and people that appear in a roadmap, for the filter's choices.
+ * The kinds of work, teams and people that appear in a roadmap, for the filter's choices.
  *
  * Args:
  *   roadmap: Outcomes with their requirement trees.
  *
  * Returns:
- *   Distinct teams and people, each sorted.
+ *   Distinct kinds of work in the order WORK_TYPE_LABELS lists them, and distinct teams and
+ *   people, each sorted.
  */
 export function filterOptions(roadmap: { requirements: BreakdownNode[] }[]): {
+  workTypes: WorkType[];
   teams: string[];
   people: string[];
 } {
+  const workTypes = new Set<WorkType>();
   const teams = new Set<string>();
   const people = new Set<string>();
   const visit = (node: BreakdownNode): void => {
+    if (node.workType) workTypes.add(node.workType);
     if (node.team) teams.add(node.team);
     node.people.forEach((person) => people.add(person));
     node.children.forEach(visit);
@@ -76,5 +80,11 @@ export function filterOptions(roadmap: { requirements: BreakdownNode[] }[]): {
   // The same order as the rollup by team, which uses localeCompare too.
   const sorted = (values: Set<string>): string[] =>
     [...values].sort((a, b) => a.localeCompare(b));
-  return { teams: sorted(teams), people: sorted(people) };
+  return {
+    workTypes: (Object.keys(WORK_TYPE_LABELS) as WorkType[]).filter((type) =>
+      workTypes.has(type),
+    ),
+    teams: sorted(teams),
+    people: sorted(people),
+  };
 }

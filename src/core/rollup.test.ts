@@ -7,6 +7,7 @@ import {
   productStatus,
   type RequirementNode,
   requirementProgress,
+  rolledUpStatus,
   type TeamNode,
   teamProgress,
 } from "./rollup";
@@ -34,6 +35,38 @@ describe("a single leaf", () => {
     expect(productStatus([leaf("planned")])).toBe("not_started");
     expect(productStatus([leaf("in_progress")])).toBe("in_progress");
     expect(productStatus([leaf("done")])).toBe("delivered");
+  });
+});
+
+describe("rolledUpStatus", () => {
+  it("matches the leaf's own status for a single leaf", () => {
+    for (const status of ["planned", "in_progress", "done", "dropped"] as const)
+      expect(rolledUpStatus([leaf(status)])).toBe(status);
+  });
+
+  it("is done only when every counted leaf is done, ignoring dropped ones", () => {
+    expect(rolledUpStatus([parent(leaf("done"), leaf("dropped"))])).toBe(
+      "done",
+    );
+    expect(rolledUpStatus([parent(leaf("done"), leaf("planned"))])).toBe(
+      "in_progress",
+    );
+  });
+
+  it("is in progress once any leaf has started, even with nothing done", () => {
+    expect(rolledUpStatus([parent(leaf("planned"), leaf("in_progress"))])).toBe(
+      "in_progress",
+    );
+    expect(rolledUpStatus([parent(leaf("planned"), leaf("planned"))])).toBe(
+      "planned",
+    );
+  });
+
+  it("is dropped when everything under it is dropped, planned when there is nothing", () => {
+    expect(
+      rolledUpStatus([parent(leaf("dropped"), parent(leaf("dropped")))]),
+    ).toBe("dropped");
+    expect(rolledUpStatus([])).toBe("planned");
   });
 });
 

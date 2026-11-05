@@ -1,12 +1,12 @@
 /** /p/[slug]/tech: the technical view, outcome → requirement → work item tree and split history for engineering. */
 import { eq } from "drizzle-orm";
+import { Target } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { type ReactElement, Suspense } from "react";
 import { z } from "zod";
 
-import { Badge } from "@/components/badge";
 import {
   type BreakdownFilter,
   filterOptions,
@@ -14,14 +14,21 @@ import {
 } from "@/core/breakdown";
 import { WORK_TYPE_LABELS, workTypeSchema } from "@/core/operations";
 import { loadRoadmap, loadSplitHistory } from "@/core/roadmap";
-import { outcomeProgress, teamProgress } from "@/core/rollup";
+import { teamProgress } from "@/core/rollup";
 import { formatTarget } from "@/core/product-text";
 import { lateRequirements } from "@/core/schedule";
 import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
 
 import { ProjectNav } from "../project-nav";
-import { RequirementList, SUMMARY_CLASS } from "./requirement-tree";
+import { ExpandAll } from "./expand-all";
+import { FilterForm } from "./filter-form";
+import {
+  RequirementList,
+  RollupBadge,
+  RowSummary,
+  Tag,
+} from "./requirement-tree";
 
 // Anything else in the address, such as a repeated or unknown value, is ignored rather than refused.
 const filterSchema = z.object({
@@ -95,6 +102,28 @@ async function TechView({
   const roadmap = await loadRoadmap(db, project.id);
   const splits = await loadSplitHistory(db, project.id, roadmap);
   const options = filterOptions(roadmap);
+  const allSelects: Parameters<typeof FilterSelect>[0][] = [
+    {
+      name: "type",
+      label: "Kind of work",
+      value: filter.workType,
+      options: options.workTypes.map((type) => [type, WORK_TYPE_LABELS[type]]),
+    },
+    {
+      name: "team",
+      label: "Team",
+      value: filter.team,
+      options: options.teams.map((team) => [team, team]),
+    },
+    {
+      name: "person",
+      label: "Person",
+      value: filter.person,
+      options: options.people.map((person) => [person, person]),
+    },
+  ];
+  // A filter with nothing to choose from is left out.
+  const selects = allSelects.filter((select) => select.options.length > 0);
   const shown = roadmap.flatMap((outcome) => {
     const keys = filtering ? visibleKeys(outcome.requirements, filter) : null;
     return keys?.size === 0 ? [] : [{ outcome, keys }];
@@ -105,50 +134,39 @@ async function TechView({
       <ProjectNav slug={slug} name={project.name} current="/tech" />
 
       <section aria-labelledby="tree" className="flex flex-col gap-4">
-        <h2 id="tree" className="text-xl font-semibold">
-          Outcomes and requirements
-        </h2>
-        {roadmap.length > 0 && (
-          <form
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="tree" className="text-xl font-semibold">
+            Outcomes and requirements
+          </h2>
+          {shown.length > 0 && <ExpandAll />}
+        </div>
+        {roadmap.length > 0 && (selects.length > 0 || filtering) && (
+          <FilterForm
             // Remount when the filter changes, so a link such as "Show everything" resets the choices.
             key={JSON.stringify(filter)}
-            method="get"
-            aria-label="Filter requirements"
-            className="flex flex-wrap items-end gap-3"
+            label="Filter requirements"
           >
-            <FilterSelect
-              name="type"
-              label="Kind of work"
-              value={filter.workType}
-              options={Object.entries(WORK_TYPE_LABELS)}
-            />
-            <FilterSelect
-              name="team"
-              label="Team"
-              value={filter.team}
-              options={options.teams.map((team) => [team, team])}
-            />
-            <FilterSelect
-              name="person"
-              label="Person"
-              value={filter.person}
-              options={options.people.map((person) => [person, person])}
-            />
-            <button
-              type="submit"
-              className="rounded-md border border-border px-3 py-1 text-sm font-medium hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-            >
-              Filter
-            </button>
+            {selects.map((select) => (
+              <FilterSelect key={select.name} {...select} />
+            ))}
+            {/* With JavaScript on, the form applies each change as it is made. */}
+            <noscript>
+              <button
+                type="submit"
+                className="rounded-md border border-border px-3 py-1 text-sm font-medium hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
+                Filter
+              </button>
+            </noscript>
             {filtering && (
               <Link
                 href={`/p/${slug}/tech`}
-                className="text-sm underline underline-offset-4"
+                className="pb-1 text-sm underline underline-offset-4"
               >
                 Show everything
               </Link>
             )}
-          </form>
+          </FilterForm>
         )}
         {roadmap.length === 0 ? (
           <p className="rounded-md border border-border p-6 text-center text-muted-foreground">
@@ -170,24 +188,27 @@ async function TechView({
             {shown.map(({ outcome, keys }) => (
               <li
                 key={outcome.id}
-                className="rounded-lg border border-border p-4"
+                className="rounded-lg border border-border bg-card p-3 sm:p-4"
               >
                 <details open>
-                  <summary className={SUMMARY_CLASS}>
-                    <span className="font-mono text-sm text-muted-foreground">
-                      {outcome.key}
-                    </span>
-                    <span className="font-semibold">{outcome.title}</span>
-                    <Badge tone="blue">
-                      {Math.round(outcomeProgress(outcome.requirements) * 100)}%
-                      done
-                    </Badge>
+                  <RowSummary
+                    rowKey={outcome.key}
+                    title={
+                      <span className="font-semibold">{outcome.title}</span>
+                    }
+                    status={<RollupBadge requirements={outcome.requirements} />}
+                    hint={
+                      outcome.requirements.length === 1
+                        ? "1 requirement"
+                        : `${outcome.requirements.length} requirements`
+                    }
+                  >
                     {outcome.target && (
-                      <span className="text-xs text-muted-foreground">
+                      <Tag icon={Target}>
                         Target {formatTarget(outcome.target)}
-                      </span>
+                      </Tag>
                     )}
-                  </summary>
+                  </RowSummary>
                   <TeamRollup requirements={outcome.requirements} />
                   <div className="pt-2">
                     {outcome.requirements.length === 0 ? (
@@ -226,30 +247,40 @@ async function TechView({
             planned, the split and its reason are recorded here.
           </p>
         ) : (
-          <ol className="flex flex-col gap-4">
+          <ol className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
             {splits.map((split) => (
-              <li key={split.id} className="flex flex-col gap-1">
-                <p>
-                  <span className="font-mono text-sm">
-                    {split.requirementKey}
-                  </span>{" "}
-                  {split.requirementTitle} was split into{" "}
-                  {split.children
-                    .map((child) => `${child.key} ${child.title}`)
-                    .join(", ")}
-                  .
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  <time dateTime={split.at.toISOString()}>
+              <li key={split.id} className="flex flex-col gap-1.5 p-3 text-sm">
+                <div className="flex items-baseline gap-2">
+                  <span className="min-w-0 flex-1">
+                    <span className="mr-1.5 font-mono text-xs text-muted-foreground">
+                      {split.requirementKey}
+                    </span>
+                    <span className="font-medium">
+                      {split.requirementTitle}
+                    </span>
+                  </span>
+                  <time
+                    dateTime={split.at.toISOString()}
+                    className="shrink-0 text-xs text-muted-foreground"
+                  >
                     {split.at.toLocaleDateString("en-GB", {
                       day: "numeric",
                       month: "long",
-                      year: "numeric",
                       timeZone: "UTC",
                     })}
                   </time>
-                  : {split.reason}
-                </p>
+                </div>
+                <p className="text-muted-foreground">{split.reason}</p>
+                <ul aria-label="Split into" className="flex flex-wrap gap-1.5">
+                  {split.children.map((child) => (
+                    <li key={child.key}>
+                      <Tag>
+                        <span className="font-mono">{child.key}</span>
+                        <span className="text-foreground">{child.title}</span>
+                      </Tag>
+                    </li>
+                  ))}
+                </ul>
               </li>
             ))}
           </ol>
@@ -271,9 +302,17 @@ function FilterSelect({
   options: [string, string][];
 }): ReactElement {
   return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <select name={name} defaultValue={value ?? ""} className={SELECT_CLASS}>
+    // A label that wraps the select would also take the option names into its accessible name.
+    <div className="flex flex-col gap-1 text-sm">
+      <label htmlFor={`filter-${name}`} className="text-muted-foreground">
+        {label}
+      </label>
+      <select
+        id={`filter-${name}`}
+        name={name}
+        defaultValue={value ?? ""}
+        className={SELECT_CLASS}
+      >
         <option value="">Any</option>
         {options.map(([option, optionLabel]) => (
           <option key={option} value={option}>
@@ -281,11 +320,11 @@ function FilterSelect({
           </option>
         ))}
       </select>
-    </label>
+    </div>
   );
 }
 
-/** "Platform: 3 of 8 done" for each team with work under an outcome, once any team is set. */
+/** "Platform 3 of 8 done" with a small bar for each team with work under an outcome, once any team is set. */
 function TeamRollup({
   requirements,
 }: {
@@ -294,13 +333,30 @@ function TeamRollup({
   const teams = teamProgress(requirements);
   if (teams.every((entry) => entry.team === null)) return null;
   return (
-    <p className="pt-1 text-sm text-muted-foreground">
-      {teams
-        .map(
-          (entry) =>
-            `${entry.team ?? "No team"}: ${entry.done} of ${entry.total} done`,
-        )
-        .join(" · ")}
-    </p>
+    <ul
+      aria-label="Progress by team"
+      className="flex flex-wrap gap-1.5 pt-1 pl-6"
+    >
+      {teams.map((entry) => (
+        <li
+          key={entry.team ?? ""}
+          className="flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 text-xs"
+        >
+          <span className="font-medium">{entry.team ?? "No team"}</span>
+          <span className="text-muted-foreground">
+            {entry.done} of {entry.total} done
+          </span>
+          <span
+            aria-hidden
+            className="hidden h-1.5 w-10 overflow-hidden rounded-full bg-muted sm:block"
+          >
+            <span
+              className="block h-full rounded-full bg-emerald-500 dark:bg-emerald-400"
+              style={{ width: `${(entry.done / entry.total) * 100}%` }}
+            />
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }

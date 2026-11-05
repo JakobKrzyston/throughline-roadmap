@@ -47,6 +47,9 @@ export type SlipOutput = {
   reason: string;
 };
 
+// A reason that opens with the move, e.g. "Moved from Q1 2027 to Q2 2027 because…" or "Moved to Q2…".
+const REPEATED_MOVE = /^\s*moved\s+(?:from|to)\b/i;
+
 /**
  * The schema the model's answer must match. A new target must fit what the context shows.
  *
@@ -55,7 +58,8 @@ export type SlipOutput = {
  *
  * Returns:
  *   A schema whose new target, when given, is later than the current one, no earlier than any
- *   late requirement, and not already in the past.
+ *   late requirement, and not already in the past, and whose reason then does not open by
+ *   repeating the move.
  */
 export function slipOutputSchema(context: SlipContext): z.ZodType<SlipOutput> {
   const latest = context.late
@@ -86,6 +90,16 @@ export function slipOutputSchema(context: SlipContext): z.ZodType<SlipOutput> {
     .superRefine((output, ctx) => {
       const target = output.new_target;
       if (target === null) return;
+      // The feed already starts the note with "Moved from … to …". Rewriting the reason would risk
+      // cutting the why, so the model is asked again instead.
+      if (REPEATED_MOVE.test(output.reason)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["reason"],
+          message:
+            "reason must not start by saying the target moved; Throughline adds that. Start with why it moved.",
+        });
+      }
       const problem = !isLater(target, context.outcome.target)
         ? `new_target must be later than the current target ${context.outcome.target}.`
         : latest && isLater(latest, target)
@@ -116,26 +130,6 @@ Rules:
 - Answer null for new_target only when the late work is clearly not needed for customers to get the outcome, for example a follow-up that can ship after it.
 - Write the reason for sales and leadership: plain language, no ticket numbers, branch names or engineering jargon.
 - Do not repeat the old or new target in the reason. Throughline puts "Moved from <old> to <new>." in front of it.`;
-
-// "Moved from Q1 2027 to Q2 2027 because", "…2027.", "…2027, as" and the like. Lazy matches let a
-// date with a comma ("to 30 June, 2027") run on to the real separator.
-const REPEATED_MOVE =
-  /^\s*moved from .+? to .+?(?:[.;:](?:\s+|$)|,?\s+(?:because|since|as)\s+|\s+[—–-]\s+)/i;
-
-/**
- * Drop a leading "Moved from … to …" the model wrote despite the prompt, since the feed adds its own.
- *
- * Args:
- *   reason: The model's reason.
- *
- * Returns:
- *   The reason without a leading move, trimmed and with its first letter capitalised. Empty when
- *   the reason was only the move.
- */
-function withoutRepeatedMove(reason: string): string {
-  const rest = reason.replace(REPEATED_MOVE, "").trim();
-  return rest.charAt(0).toUpperCase() + rest.slice(1);
-}
 
 /**
  * Build the prompt for one slip check.
@@ -290,11 +284,7 @@ export async function runSlipCheck(
         source: "reschedule",
         summary: output.summary,
         rationale: output.rationale,
-        operations: outcomeTargetOperations(
-          outcome,
-          newTarget,
-          withoutRepeatedMove(output.reason),
-        ),
+        operations: outcomeTargetOperations(outcome, newTarget, output.reason),
       })
       .returning({ id: proposals.id });
     return proposal.id;

@@ -12,6 +12,8 @@ export type SourceWorkItem = {
   url: string;
   /** For an issue, `closed` means done and `not_planned` means closed without doing it. */
   state: "open" | "closed" | "merged" | "not_planned";
+  /** Logins of the people working on it: a pull request's author and the item's assignees. Bots are left out. */
+  people: string[];
   mergedAt: Date | null;
   closedAt: Date | null;
   /** When the source last changed the item. Used to ignore deliveries that arrive out of order. */

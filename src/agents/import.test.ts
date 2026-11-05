@@ -76,6 +76,7 @@ describe("runImport", () => {
       outcome_key: "OUT-2",
       title: "Anomaly detection job",
       user_visible: false,
+      work_type: "infrastructure",
     });
   });
 

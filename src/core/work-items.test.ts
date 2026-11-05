@@ -64,6 +64,7 @@ function pr(overrides: Partial<SourceWorkItem> = {}): SourceWorkItem {
     body: "Implements TL-1",
     url: "https://github.com/acme/analytics/pull/41",
     state: "open",
+    people: ["maya"],
     mergedAt: null,
     closedAt: null,
     updatedAt: new Date("2026-11-01T09:00:00Z"),
@@ -101,7 +102,11 @@ describe("syncWorkItem", () => {
     const second = await syncWorkItem(
       db,
       projectId,
-      pr({ title: "Add CSV and TSV export" }),
+      pr({
+        title: "Add CSV and TSV export",
+        people: ["maya", "sam"],
+        updatedAt: new Date("2026-11-01T10:00:00Z"),
+      }),
     );
 
     expect(second.workItemId).toBe(first.workItemId);
@@ -110,6 +115,7 @@ describe("syncWorkItem", () => {
     expect(rows[0]).toMatchObject({
       title: "Add CSV and TSV export",
       state: "open",
+      people: ["maya", "sam"],
     });
   });
 

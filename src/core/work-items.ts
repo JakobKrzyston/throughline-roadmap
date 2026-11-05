@@ -70,6 +70,7 @@ export async function syncWorkItem(
       url: item.url,
       state: item.state,
       bodyExcerpt: item.body.slice(0, BODY_EXCERPT_LENGTH),
+      people: item.people,
       mergedAt: item.mergedAt,
       closedAt: item.closedAt,
       sourceUpdatedAt: item.updatedAt,

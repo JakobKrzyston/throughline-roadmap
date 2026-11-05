@@ -1,5 +1,10 @@
 /** Turns a proposal's operations into a readable diff against the current graph, for the review queue. Exports describeOperations, DiffEntry, GraphSnapshot. */
-import type { GraphOperation, LeafStatus } from "./operations";
+import {
+  type GraphOperation,
+  type LeafStatus,
+  WORK_TYPE_LABELS,
+  type WorkType,
+} from "./operations";
 
 /** One field an operation sets. `before` is absent for something new, and null when the field was empty. */
 export type DiffChange = {
@@ -31,6 +36,9 @@ export type GraphSnapshot = {
       userVisible: boolean;
       productNote: string | null;
       target: string | null;
+      workType: WorkType | null;
+      /** The requirement's own team, not one it inherits. */
+      team: string | null;
     }
   >;
   workItems: Map<string, { title: string; kind: "issue" | "pull_request" }>;
@@ -42,6 +50,10 @@ const STATUS_LABELS: Record<LeafStatus, string> = {
   done: "Done",
   dropped: "Dropped",
 };
+
+const workTypeLabel = (
+  type: WorkType | null | undefined,
+): string | null | undefined => (type ? WORK_TYPE_LABELS[type] : type);
 
 /**
  * Describe each operation as a heading plus the fields it changes, with current values where they exist.
@@ -94,6 +106,15 @@ export function describeOperations(
             { field: "Visible to customers", after: yesNo(op.user_visible) },
             { field: "Product note", after: op.product_note ?? null },
             ...(op.target ? [{ field: "Target", after: op.target }] : []),
+            ...(op.work_type
+              ? [
+                  {
+                    field: "Kind of work",
+                    after: WORK_TYPE_LABELS[op.work_type],
+                  },
+                ]
+              : []),
+            ...(op.team ? [{ field: "Team", after: op.team }] : []),
           ],
         };
 
@@ -111,7 +132,13 @@ export function describeOperations(
             { field: "Product note", after: op.product_note },
             ...op.children.map((child) => ({
               field: `New piece ${child.key}`,
-              after: `${child.title} (${STATUS_LABELS[child.status]}${child.user_visible ? ", visible to customers" : ""})`,
+              after: `${child.title} (${[
+                STATUS_LABELS[child.status],
+                child.work_type && WORK_TYPE_LABELS[child.work_type],
+                child.user_visible && "visible to customers",
+              ]
+                .filter(Boolean)
+                .join(", ")})`,
             })),
           ],
         };
@@ -133,6 +160,12 @@ export function describeOperations(
             ),
             change("Product note", current?.productNote, op.product_note),
             change("Target", current?.target, op.target),
+            change(
+              "Kind of work",
+              workTypeLabel(current?.workType),
+              workTypeLabel(op.work_type),
+            ),
+            change("Team", current?.team, op.team),
           ].filter((c) => c !== null),
         };
       }

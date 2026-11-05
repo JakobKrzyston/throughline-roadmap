@@ -1,4 +1,4 @@
-/** Pure progress and product-status rollups over a requirement tree. Exports requirementProgress, outcomeProgress, productStatus. */
+/** Pure progress and product-status rollups over a requirement tree. Exports requirementProgress, outcomeProgress, productStatus, teamProgress. */
 import type { LeafStatus } from "./operations";
 
 /** The parts of a requirement the rollup needs. A node with no children is a leaf. */
@@ -7,6 +7,20 @@ export interface RequirementNode {
   status: LeafStatus | null;
   userVisible: boolean;
   children: RequirementNode[];
+}
+
+/** A requirement whose owning team is already resolved, inherited or its own. */
+export interface TeamNode extends RequirementNode {
+  team: string | null;
+  children: TeamNode[];
+}
+
+/** One team's share of an outcome's work. */
+export interface TeamProgress {
+  /** Null for work no team owns. */
+  team: string | null;
+  done: number;
+  total: number;
 }
 
 export type ProductStatus =
@@ -21,7 +35,9 @@ export type ProductStatus =
  * Returns:
  *   Every non-dropped leaf at any depth.
  */
-function countedLeaves(nodes: RequirementNode[]): RequirementNode[] {
+function countedLeaves<T extends RequirementNode & { children: T[] }>(
+  nodes: T[],
+): T[] {
   return nodes.flatMap((node) => {
     if (node.children.length > 0) return countedLeaves(node.children);
     return node.status === "dropped" ? [] : [node];
@@ -90,4 +106,28 @@ export function productStatus(roots: RequirementNode[]): ProductStatus {
     return "in_progress";
   }
   return "not_started";
+}
+
+/**
+ * How many counted leaves each team owns and how many of those are done, e.g. "Platform has 3
+ * of 8 requirements done".
+ *
+ * Args:
+ *   roots: An outcome's root requirements, with each node's team resolved.
+ *
+ * Returns:
+ *   One entry per team that owns a counted leaf, sorted by name, with work no team owns last.
+ *   Dropped leaves are left out, as in every other rollup.
+ */
+export function teamProgress(roots: TeamNode[]): TeamProgress[] {
+  const byTeam = Map.groupBy(countedLeaves(roots), (leaf) => leaf.team);
+  return [...byTeam]
+    .map(([team, leaves]) => ({
+      team,
+      done: leaves.filter((leaf) => leaf.status === "done").length,
+      total: leaves.length,
+    }))
+    .sort((a, b) =>
+      a.team === null ? 1 : b.team === null ? -1 : a.team.localeCompare(b.team),
+    );
 }

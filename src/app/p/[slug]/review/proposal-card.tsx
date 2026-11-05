@@ -3,7 +3,7 @@
 import { type ReactElement, useActionState, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import type { GraphOperation } from "@/core/operations";
+import { type GraphOperation, WORK_TYPE_LABELS } from "@/core/operations";
 import type { DiffChange, DiffEntry } from "@/core/proposal-diff";
 
 import { type DecideState, decideProposal } from "./actions";
@@ -40,6 +40,8 @@ const EDITABLE: Record<GraphOperation["type"], string[]> = {
     "user_visible",
     "product_note",
     "target",
+    "work_type",
+    "team",
   ],
   split_requirement: ["split_reason", "product_note"],
   update_requirement: [
@@ -48,12 +50,20 @@ const EDITABLE: Record<GraphOperation["type"], string[]> = {
     "user_visible",
     "product_note",
     "target",
+    "work_type",
+    "team",
   ],
   set_status: ["status", "product_note"],
   link_work_item: ["relation"],
   unlink_work_item: [],
 };
-const CHILD_FIELDS = ["title", "description", "user_visible", "status"];
+const CHILD_FIELDS = [
+  "title",
+  "description",
+  "user_visible",
+  "status",
+  "work_type",
+];
 
 const LABELS: Record<string, string> = {
   title: "Title",
@@ -65,6 +75,8 @@ const LABELS: Record<string, string> = {
   split_reason: "Why it was split",
   status: "Status",
   relation: "Relation",
+  work_type: "Kind of work",
+  team: "Team (optional)",
 };
 const OPTIONS: Record<string, [string, string][]> = {
   status: [
@@ -77,10 +89,11 @@ const OPTIONS: Record<string, [string, string][]> = {
     ["implements", "Implements it"],
     ["part_of", "Part of it"],
   ],
+  work_type: [["", "Not set"], ...Object.entries(WORK_TYPE_LABELS)],
 };
 const LONG_TEXT = new Set(["description", "product_note", "split_reason"]);
 // Optional fields that should be cleared, not set to an empty string, when emptied.
-const NULLABLE = new Set(["target", "product_note"]);
+const NULLABLE = new Set(["target", "product_note", "work_type", "team"]);
 
 /**
  * A pending proposal with its readable diff and decision buttons.
@@ -360,8 +373,8 @@ function Field({
   if (OPTIONS[name]) {
     input = (
       <select
-        value={String(value)}
-        onChange={(event) => onChange(event.target.value)}
+        value={String(value ?? "")}
+        onChange={(event) => onChange(text(event.target.value))}
         className={inputClass}
       >
         {OPTIONS[name].map(([option, optionLabel]) => (

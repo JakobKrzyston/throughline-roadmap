@@ -7,6 +7,8 @@ import {
   productStatus,
   type RequirementNode,
   requirementProgress,
+  type TeamNode,
+  teamProgress,
 } from "./rollup";
 
 const leaf = (status: LeafStatus, userVisible = false): RequirementNode => ({
@@ -97,5 +99,39 @@ describe("an empty outcome", () => {
   it("has no progress and has not started", () => {
     expect(outcomeProgress([])).toBe(0);
     expect(productStatus([])).toBe("not_started");
+  });
+});
+
+describe("progress by team", () => {
+  const owned = (
+    team: string | null,
+    status: LeafStatus | null,
+    ...children: TeamNode[]
+  ): TeamNode => ({ team, status, userVisible: false, children });
+
+  it("counts each team's leaves and how many are done, with unowned work last", () => {
+    expect(
+      teamProgress([
+        owned(
+          "Platform",
+          null,
+          owned("Platform", "done"),
+          owned("Platform", "in_progress"),
+          owned("Data", "done"),
+        ),
+        owned(null, "planned"),
+        owned("Data", "planned"),
+      ]),
+    ).toEqual([
+      { team: "Data", done: 1, total: 2 },
+      { team: "Platform", done: 1, total: 2 },
+      { team: null, done: 0, total: 1 },
+    ]);
+  });
+
+  it("leaves out dropped work, and a team with nothing else", () => {
+    expect(
+      teamProgress([owned("Web", "dropped"), owned("Data", "done")]),
+    ).toEqual([{ team: "Data", done: 1, total: 1 }]);
   });
 });

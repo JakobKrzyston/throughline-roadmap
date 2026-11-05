@@ -1,5 +1,5 @@
 /** Mirrors source work items and feedback into a project, links explicit references and queues reconciliation, a link suggestion or a feedback match. Exports syncWorkItem, syncFeedback, syncRepositoryItem, isFinished, SYNC_ACTOR, BODY_EXCERPT_LENGTH. */
-import { and, eq, inArray, isNull, lte, or } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lte, or } from "drizzle-orm";
 
 import type {
   SourceFeedback,
@@ -257,8 +257,9 @@ async function startWork(
  * Store a piece of feedback in a project, and queue the feedback agent the first time it arrives.
  *
  * Safe to repeat: feedback is keyed by (project, source, external id). A delivery older than the
- * stored copy changes nothing. Feedback that had been withdrawn counts again. A copy of the same
- * issue stored as a work item before it was labelled is left as it is.
+ * stored copy changes nothing. Feedback that had been withdrawn counts again and is sorted again,
+ * since its match was superseded when it was withdrawn (or it was withdrawn before it was ever
+ * sorted). A copy of the same issue stored as a work item before it was labelled is left as it is.
  *
  * Args:
  *   db: Database to write to.
@@ -298,7 +299,11 @@ export async function syncFeedback(
     }
 
     const [existing] = await tx
-      .select({ id: feedback.id, sourceUpdatedAt: feedback.sourceUpdatedAt })
+      .select({
+        id: feedback.id,
+        sourceUpdatedAt: feedback.sourceUpdatedAt,
+        withdrawn: feedback.withdrawn,
+      })
       .from(feedback)
       .where(
         and(
@@ -309,13 +314,14 @@ export async function syncFeedback(
       )
       .for("update");
     // Deliveries arrive out of order, as in upsertWorkItem.
-    if (
-      !existing.sourceUpdatedAt ||
-      item.updatedAt >= existing.sourceUpdatedAt
-    ) {
-      await tx.update(feedback).set(fields).where(eq(feedback.id, existing.id));
+    if (existing.sourceUpdatedAt && item.updatedAt < existing.sourceUpdatedAt) {
+      return { feedbackId: existing.id, matchJob: false };
     }
-    return { feedbackId: existing.id, matchJob: false };
+    await tx.update(feedback).set(fields).where(eq(feedback.id, existing.id));
+    if (existing.withdrawn) {
+      await enqueue(tx, "feedback_match", { feedbackId: existing.id });
+    }
+    return { feedbackId: existing.id, matchJob: existing.withdrawn };
   });
 }
 
@@ -327,6 +333,9 @@ export async function syncFeedback(
  *   db: Database to write to.
  *   repository: The repository as the source reports it now.
  *   item: The issue, pull request or feedback.
+ *
+ * An issue delivery older than the issue's stored feedback is skipped: GitHub does not deliver in
+ * order, so it is from before the label was added and must not create a work item for feedback.
  *
  * Returns:
  *   How many connected projects it was synced into; 0 if the repository is not connected.
@@ -348,7 +357,9 @@ export async function syncRepositoryItem(
     .returning({ projectId: repositories.projectId });
   for (const { projectId } of connected) {
     if (item.kind === "feedback") await syncFeedback(db, projectId, item);
-    else await syncWorkItem(db, projectId, item);
+    else if (!(await hasNewerFeedback(db, projectId, item))) {
+      await syncWorkItem(db, projectId, item);
+    }
   }
   return connected.length;
 }
@@ -411,6 +422,25 @@ async function withdrawFeedback(
         eq(proposals.status, "pending"),
       ),
     );
+}
+
+/** Whether the project holds this issue as feedback, from a delivery newer than this one. */
+async function hasNewerFeedback(
+  db: Database,
+  projectId: string,
+  item: SourceWorkItem,
+): Promise<boolean> {
+  const newer = await db.$count(
+    feedback,
+    and(
+      eq(feedback.projectId, projectId),
+      eq(feedback.source, item.source),
+      eq(feedback.externalId, item.externalId),
+      eq(feedback.withdrawn, false),
+      gt(feedback.sourceUpdatedAt, item.updatedAt),
+    ),
+  );
+  return newer > 0;
 }
 
 async function upsertWorkItem(

@@ -263,6 +263,36 @@ describe("feedback against the demo seed", () => {
     expect(await db.$count(events)).toBe(before);
   });
 
+  it("refuses to link withdrawn feedback or link to an archived outcome", async () => {
+    const id = await feedbackId("Let us check dashboards on a phone");
+    await db
+      .update(outcomes)
+      .set({ archived: true })
+      .where(eq(outcomes.key, "OUT-5"));
+
+    await expect(
+      saveFeedbackLink(
+        db,
+        projectId,
+        { feedbackId: id, outcomeKey: "OUT-5", link: true },
+        "planner",
+      ),
+    ).rejects.toThrow("Outcome OUT-5 is archived");
+
+    await db
+      .update(feedback)
+      .set({ withdrawn: true })
+      .where(eq(feedback.id, id));
+    await expect(
+      saveFeedbackLink(
+        db,
+        projectId,
+        { feedbackId: id, outcomeKey: "OUT-4", link: true },
+        "planner",
+      ),
+    ).rejects.toThrow("is no longer labelled as feedback");
+  });
+
   it("refuses to link feedback from another project", async () => {
     const id = await feedbackId("Let us check dashboards on a phone");
     const otherProject = await seedOtherProject(db);

@@ -596,6 +596,8 @@ describe("syncFeedback", () => {
     );
     const [back] = await db.select().from(feedback);
     expect(back.withdrawn).toBe(false);
+    // Its match was superseded, so it is sorted again.
+    expect(await db.$count(jobs, eq(jobs.type, "feedback_match"))).toBe(2);
   });
 
   it("does not withdraw feedback for an issue delivery older than the feedback", async () => {
@@ -657,6 +659,26 @@ describe("syncRepositoryItem", () => {
     expect(await syncRepositoryItem(db, repository, feedbackItem())).toBe(1);
     expect(await db.$count(feedback)).toBe(1);
     expect(await db.$count(workItems)).toBe(0);
+  });
+
+  it("skips an issue delivery from before the issue was labelled as feedback", async () => {
+    await db.insert(repositories).values({
+      projectId,
+      source: "github",
+      externalId: "4242",
+      fullName: "acme/analytics",
+    });
+    // The labelled delivery arrives first; the earlier unlabelled one arrives after it.
+    await syncRepositoryItem(db, repository, feedbackItem());
+    await syncRepositoryItem(
+      db,
+      repository,
+      sameIssue({ body: "TL-1", updatedAt: new Date("2026-10-01T09:00:00Z") }),
+    );
+
+    expect(await db.$count(workItems)).toBe(0);
+    const [stored] = await db.select().from(feedback);
+    expect(stored.withdrawn).toBe(false);
   });
 
   it("does nothing for a repository that is not connected", async () => {

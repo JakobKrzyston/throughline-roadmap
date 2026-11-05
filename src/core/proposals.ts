@@ -321,8 +321,12 @@ async function applyOperation(
 
     case "link_feedback": {
       const outcome = await findOutcome(tx, projectId, op.outcome_key);
+      // Feedback only counts towards live outcomes, so a link to an archived one would be hidden.
+      if (outcome.archived) {
+        throw new ProposalError(`Outcome ${op.outcome_key} is archived`);
+      }
       const [found] = await tx
-        .select({ id: feedback.id })
+        .select({ id: feedback.id, withdrawn: feedback.withdrawn })
         .from(feedback)
         .where(
           and(
@@ -332,6 +336,11 @@ async function applyOperation(
         );
       if (!found)
         throw new ProposalError(`Feedback ${op.feedback_id} not found`);
+      if (found.withdrawn) {
+        throw new ProposalError(
+          `Feedback ${op.feedback_id} is no longer labelled as feedback`,
+        );
+      }
       const linked = await tx
         .insert(feedbackLinks)
         .values({ feedbackId: op.feedback_id, outcomeId: outcome.id })

@@ -146,21 +146,7 @@ export async function runFeedbackMatch(
     .select()
     .from(feedback)
     .where(eq(feedback.id, payload.feedbackId));
-  if (!item || item.withdrawn) return null;
-  // A person may have linked it by hand since the job was queued, and a retried job may already
-  // have made its match.
-  const [linked, pending] = await Promise.all([
-    db.$count(feedbackLinks, eq(feedbackLinks.feedbackId, item.id)),
-    db.$count(
-      proposals,
-      and(
-        eq(proposals.triggerFeedbackId, item.id),
-        eq(proposals.source, "feedback_match"),
-        eq(proposals.status, "pending"),
-      ),
-    ),
-  ]);
-  if (linked > 0 || pending > 0) return null;
+  if (!item || item.withdrawn || (await isSorted(db, item.id))) return null;
 
   const [outcomeRows, themes] = await Promise.all([
     db
@@ -194,6 +180,16 @@ export async function runFeedbackMatch(
     output.theme;
 
   return db.transaction(async (tx) => {
+    // Check again under the row lock: the label may have been removed, or a person may have
+    // linked it, while the model was answering. Withdrawal and manual links take the same lock.
+    const [current] = await tx
+      .select({ withdrawn: feedback.withdrawn })
+      .from(feedback)
+      .where(eq(feedback.id, item.id))
+      .for("update");
+    if (!current || current.withdrawn || (await isSorted(tx, item.id))) {
+      return null;
+    }
     await tx.update(feedback).set({ theme }).where(eq(feedback.id, item.id));
     if (!output.outcome_key) return null;
     const match = outcomeRows.find((o) => o.key === output.outcome_key)!;
@@ -216,6 +212,28 @@ export async function runFeedbackMatch(
       .returning({ id: proposals.id });
     return proposal.id;
   });
+}
+
+/**
+ * Whether feedback needs no match: a person linked it by hand, or a match (perhaps from an
+ * earlier attempt at this job) is already waiting.
+ */
+async function isSorted(
+  db: Pick<Database, "$count">,
+  feedbackId: string,
+): Promise<boolean> {
+  const [linked, pending] = await Promise.all([
+    db.$count(feedbackLinks, eq(feedbackLinks.feedbackId, feedbackId)),
+    db.$count(
+      proposals,
+      and(
+        eq(proposals.triggerFeedbackId, feedbackId),
+        eq(proposals.source, "feedback_match"),
+        eq(proposals.status, "pending"),
+      ),
+    ),
+  ]);
+  return linked > 0 || pending > 0;
 }
 
 /** The project's themes, most common first, from feedback that still counts. */

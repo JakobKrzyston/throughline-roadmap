@@ -201,7 +201,9 @@ export async function saveFeedbackLink(
           eq(feedback.projectId, projectId),
           eq(feedback.id, change.feedbackId),
         ),
-      );
+      )
+      // The feedback agent takes this lock before adding a match, so the two cannot cross.
+      .for("update");
     const title = item?.title ?? "feedback";
     const [proposal] = await tx
       .insert(proposals)

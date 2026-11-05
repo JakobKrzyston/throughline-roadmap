@@ -3,7 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { FakeLLMProvider } from "@/adapters/llm/fake";
-import { LLMOutputError } from "@/adapters/llm/provider";
+import { type LLMProvider, LLMOutputError } from "@/adapters/llm/provider";
+import { saveFeedbackLink } from "@/core/feedback";
 import { applyProposal } from "@/core/proposals";
 import { feedback, proposals } from "@/db/schema";
 import { seedDemoProject } from "@/db/seed";
@@ -156,6 +157,50 @@ describe("runFeedbackMatch", () => {
       expect(await runFeedbackMatch(db, llm, { feedbackId })).toBeNull();
     }
     expect(llm.prompts).toHaveLength(0);
+  });
+
+  it("proposes nothing when the feedback is withdrawn or linked while the model answers", async () => {
+    const answer = {
+      outcome_key: "OUT-1",
+      theme: "Export reports to Excel",
+      rationale: "Fits.",
+    };
+    const withdrawn = await newFeedback("Excel please");
+    const linked = await newFeedback("Excel too");
+    const changes: Record<string, () => Promise<unknown>> = {
+      [withdrawn]: () =>
+        db
+          .update(feedback)
+          .set({ withdrawn: true })
+          .where(eq(feedback.id, withdrawn)),
+      [linked]: () =>
+        saveFeedbackLink(
+          db,
+          projectId,
+          { feedbackId: linked, outcomeKey: "OUT-2", link: true },
+          "planner",
+        ),
+    };
+
+    for (const [feedbackId, change] of Object.entries(changes)) {
+      const fake = fakeLLM(answer);
+      const llm: LLMProvider = {
+        generateStructured: async (schema, prompt) => {
+          await change();
+          return fake.generateStructured(schema, prompt);
+        },
+      };
+      expect(await runFeedbackMatch(db, llm, { feedbackId })).toBeNull();
+      expect(
+        await db.$count(
+          proposals,
+          and(
+            eq(proposals.triggerFeedbackId, feedbackId),
+            eq(proposals.source, "feedback_match"),
+          ),
+        ),
+      ).toBe(0);
+    }
   });
 
   it("writes nothing when the model never returns a valid answer", async () => {

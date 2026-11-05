@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { type ReactElement, Suspense } from "react";
 
+import { CardsSkeleton } from "@/components/skeleton";
 import { operationListSchema } from "@/core/operations";
 import { describeOperations, type GraphSnapshot } from "@/core/proposal-diff";
 import { getDb } from "@/db/client";
@@ -17,7 +18,6 @@ import {
 } from "@/db/schema";
 import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
 
-import { ProjectNav } from "../project-nav";
 import { ViewOnlyNotice } from "../view-only-notice";
 import { type ProposalView, ProposalCard } from "./proposal-card";
 
@@ -35,6 +35,8 @@ const SOURCE_LABELS: Record<typeof proposals.$inferSelect.source, string> = {
   feedback_match: "Customer feedback",
 };
 
+export const metadata = { title: "Review queue" };
+
 /**
  * Review page: a static heading plus the project's pending proposals.
  *
@@ -48,7 +50,7 @@ export default function ReviewPage({
   params,
 }: PageProps<"/p/[slug]/review">): ReactElement {
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-12">
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-semibold tracking-tight">Review queue</h1>
         <p className="text-muted-foreground">
@@ -57,7 +59,7 @@ export default function ReviewPage({
         </p>
       </div>
       {/* The proposals are read per request; the heading above is the static shell. */}
-      <Suspense fallback={<p className="text-muted-foreground">Loading…</p>}>
+      <Suspense fallback={<CardsSkeleton />}>
         <PendingProposals params={params} />
       </Suspense>
     </main>
@@ -127,7 +129,6 @@ async function PendingProposals({
 
   return (
     <>
-      <ProjectNav slug={slug} name={project.name} current="/review" />
       {viewOnly && <ViewOnlyNotice />}
       {views.length === 0 ? (
         <p className="rounded-md border border-border p-6 text-center text-muted-foreground">

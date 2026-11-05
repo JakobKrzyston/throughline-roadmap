@@ -6,13 +6,13 @@ import { connection } from "next/server";
 import { type ReactElement, Suspense } from "react";
 
 import { Badge } from "@/components/badge";
+import { CardsSkeleton } from "@/components/skeleton";
 import { buttonVariants } from "@/components/ui/button";
 import { loadRecentChanges, loadRoadmap } from "@/core/roadmap";
 import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
 
 import { OutcomeCard } from "./outcome-card";
-import { ProjectNav } from "./project-nav";
 
 /**
  * Product view: a static heading plus the project's outcomes and recent changes.
@@ -29,7 +29,7 @@ export default function ProductPage({
   searchParams,
 }: PageProps<"/p/[slug]">): ReactElement {
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-4 py-12">
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-semibold tracking-tight">
           Product roadmap
@@ -40,9 +40,7 @@ export default function ProductPage({
         </p>
       </div>
       {/* The roadmap is read per request; the heading above is the static shell. */}
-      <Suspense
-        fallback={<p className="text-muted-foreground">Loading the roadmap…</p>}
-      >
+      <Suspense fallback={<CardsSkeleton />}>
         <ProductView params={params} searchParams={searchParams} />
       </Suspense>
     </main>
@@ -76,7 +74,6 @@ async function ProductView({
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <ProjectNav slug={slug} name={project.name} current="" />
         <Link
           href={showDetail ? `/p/${slug}` : `/p/${slug}?detail=1`}
           scroll={false}

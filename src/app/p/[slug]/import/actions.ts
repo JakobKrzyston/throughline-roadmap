@@ -1,6 +1,7 @@
 "use server";
 /** Server action behind the import page. Exports generateImportProposal and its state type. */
 import { eq } from "drizzle-orm";
+import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { getDemoLLMProvider, getLLMProvider } from "@/adapters/llm";
@@ -72,6 +73,8 @@ export async function generateImportProposal(
       project.id,
       roadmap.data,
     );
+    // The new proposal adds one to the review queue count in the top bar.
+    refresh();
     return {
       status: "success",
       summary,

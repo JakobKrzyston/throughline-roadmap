@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import { type ReactElement, Suspense } from "react";
 
 import { githubInstallUrl, missingGitHubSettings } from "@/adapters/github";
+import { SectionsSkeleton } from "@/components/skeleton";
 import { loadDigest } from "@/core/digest";
 import { getDb } from "@/db/client";
 import { projects, repositories } from "@/db/schema";
@@ -12,12 +13,13 @@ import { type BackfillStatus, backfillStatuses } from "@/jobs/backfill";
 import { isPublicDeployment } from "@/lib/public-deployment";
 import { appOrigin } from "@/lib/app-origin";
 
-import { ProjectNav } from "../project-nav";
 import { ConnectForm } from "./connect-form";
 import { DigestForm } from "./digest-form";
 
 // The connect action imports the repository's history after responding; allow it time to finish.
 export const maxDuration = 300;
+
+export const metadata = { title: "Settings" };
 
 /**
  * Settings page: a static heading plus the project's connected repositories and connect form.
@@ -32,7 +34,7 @@ export default function SettingsPage({
   params,
 }: PageProps<"/p/[slug]/settings">): ReactElement {
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-12">
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
         <p className="text-muted-foreground">
@@ -43,7 +45,7 @@ export default function SettingsPage({
         </p>
       </div>
       {/* The project lookup runs per request; the heading above is the static shell. */}
-      <Suspense fallback={<p className="text-muted-foreground">Loading…</p>}>
+      <Suspense fallback={<SectionsSkeleton />}>
         <ProjectSettings params={params} />
       </Suspense>
     </main>
@@ -86,8 +88,6 @@ async function ProjectSettings({
 
   return (
     <>
-      <ProjectNav slug={slug} name={project.name} current="/settings" />
-
       <section className="flex flex-col gap-3">
         <h2 className="text-xl font-semibold">GitHub repositories</h2>
         {connected.length === 0 ? (

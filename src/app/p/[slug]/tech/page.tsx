@@ -7,6 +7,7 @@ import { type ReactElement, Suspense } from "react";
 import { z } from "zod";
 
 import { Badge } from "@/components/badge";
+import { CardsSkeleton } from "@/components/skeleton";
 import {
   type BreakdownFilter,
   filterOptions,
@@ -20,7 +21,6 @@ import { lateRequirements } from "@/core/schedule";
 import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
 
-import { ProjectNav } from "../project-nav";
 import { RequirementList, SUMMARY_CLASS } from "./requirement-tree";
 
 // Anything else in the address, such as a repeated or unknown value, is ignored rather than refused.
@@ -32,6 +32,8 @@ const filterSchema = z.object({
 
 const SELECT_CLASS =
   "rounded-md border border-input bg-transparent px-2 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+
+export const metadata = { title: "Technical roadmap" };
 
 /**
  * Technical view: a static heading plus the project's requirement tree and split history.
@@ -48,7 +50,7 @@ export default function TechPage({
   searchParams,
 }: PageProps<"/p/[slug]/tech">): ReactElement {
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-12">
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-semibold tracking-tight">
           Technical roadmap
@@ -59,9 +61,7 @@ export default function TechPage({
         </p>
       </div>
       {/* The tree is read per request; the heading above is the static shell. */}
-      <Suspense
-        fallback={<p className="text-muted-foreground">Loading the roadmap…</p>}
-      >
+      <Suspense fallback={<CardsSkeleton />}>
         <TechView params={params} searchParams={searchParams} />
       </Suspense>
     </main>
@@ -102,8 +102,6 @@ async function TechView({
 
   return (
     <>
-      <ProjectNav slug={slug} name={project.name} current="/tech" />
-
       <section aria-labelledby="tree" className="flex flex-col gap-4">
         <h2 id="tree" className="text-xl font-semibold">
           Outcomes and requirements

@@ -94,7 +94,7 @@ async function TechView({
   await connection();
   const db = getDb();
   const [project] = await db
-    .select({ id: projects.id, name: projects.name })
+    .select({ id: projects.id, name: projects.name, isDemo: projects.isDemo })
     .from(projects)
     .where(eq(projects.slug, slug));
   if (!project) notFound();
@@ -217,6 +217,7 @@ async function TechView({
                       <RequirementList
                         requirements={outcome.requirements}
                         shown={keys}
+                        sample={project.isDemo}
                         lateKeys={
                           new Set(
                             lateRequirements(

@@ -4,6 +4,7 @@ import { type MouseEvent, type ReactElement, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Badge, type BadgeTone } from "@/components/badge";
+import { SourceLink } from "@/components/source-link";
 import { Button } from "@/components/ui/button";
 import { type GraphOperation, WORK_TYPE_LABELS } from "@/core/operations";
 import type { DiffChange, DiffEntry } from "@/core/proposal-diff";
@@ -19,7 +20,8 @@ export type ProposalView = {
   createdAt: string;
   /** The creation date as the page shows it, formatted on the server. */
   createdOn: string;
-  trigger?: { title: string; url: string };
+  /** `sample` is true in a demo project, whose triggers have no real GitHub page. */
+  trigger?: { title: string; url: string; sample: boolean };
   /** Null when the stored operations are invalid; the proposal can then only be rejected. */
   operations: GraphOperation[] | null;
   entries: DiffEntry[];
@@ -166,9 +168,13 @@ export function ProposalCard({
         {proposal.trigger && (
           <p className="text-sm text-muted-foreground">
             Prompted by{" "}
-            <a href={proposal.trigger.url} className="underline">
+            <SourceLink
+              href={proposal.trigger.url}
+              sample={proposal.trigger.sample}
+              className="underline"
+            >
               {proposal.trigger.title}
-            </a>
+            </SourceLink>
           </p>
         )}
       </header>

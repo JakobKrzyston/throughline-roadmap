@@ -10,6 +10,7 @@ import {
 import type { ReactElement, ReactNode } from "react";
 
 import { Badge, type BadgeTone } from "@/components/badge";
+import { SourceLink } from "@/components/source-link";
 import type { LeafStatus } from "@/core/operations";
 import { formatTarget } from "@/core/product-text";
 import type { LinkedWorkItem, RequirementTree } from "@/core/roadmap";
@@ -169,6 +170,7 @@ export function RowSummary({
  *   requirements: Requirements at one level of the tree.
  *   lateKeys: Keys of unfinished requirements due after their outcome's target.
  *   shown: Keys of the requirements a filter leaves in, or null to show every one.
+ *   sample: True for a demo project, whose work items have no real GitHub page.
  *
  * Returns:
  *   The nested list.
@@ -177,10 +179,12 @@ export function RequirementList({
   requirements,
   lateKeys,
   shown,
+  sample,
 }: {
   requirements: RequirementTree[];
   lateKeys: Set<string>;
   shown: Set<string> | null;
+  sample: boolean;
 }): ReactElement {
   return (
     // The rule sits under the parent's caret; the indent stays small so deep rows fit on a phone.
@@ -193,6 +197,7 @@ export function RequirementList({
               requirement={requirement}
               lateKeys={lateKeys}
               shown={shown}
+              sample={sample}
             />
           </li>
         ))}
@@ -204,10 +209,12 @@ function RequirementItem({
   requirement,
   lateKeys,
   shown,
+  sample,
 }: {
   requirement: RequirementTree;
   lateKeys: Set<string>;
   shown: Set<string> | null;
+  sample: boolean;
 }): ReactElement {
   const isParent = requirement.children.length > 0;
   const dropped = requirement.status === "dropped";
@@ -288,7 +295,7 @@ function RequirementItem({
           ) : (
             <ul className="flex flex-col gap-1.5">
               {requirement.workItems.map((item) => (
-                <WorkItemRow key={item.id} item={item} />
+                <WorkItemRow key={item.id} item={item} sample={sample} />
               ))}
             </ul>
           ))}
@@ -305,6 +312,7 @@ function RequirementItem({
           requirements={requirement.children}
           lateKeys={lateKeys}
           shown={shown}
+          sample={sample}
         />
       )}
     </details>
@@ -341,7 +349,13 @@ function LinkedWorkHint({ items }: { items: LinkedWorkItem[] }): ReactNode {
   });
 }
 
-function WorkItemRow({ item }: { item: LinkedWorkItem }): ReactElement {
+function WorkItemRow({
+  item,
+  sample,
+}: {
+  item: LinkedWorkItem;
+  sample: boolean;
+}): ReactElement {
   const state = WORK_ITEM_STATE[item.state];
   const Icon = item.kind === "pull_request" ? GitPullRequest : CircleDot;
   return (
@@ -351,12 +365,13 @@ function WorkItemRow({ item }: { item: LinkedWorkItem }): ReactElement {
         className="mt-0.5 size-4 shrink-0 text-muted-foreground"
       />
       <span className="min-w-0 flex-1">
-        <a
+        <SourceLink
           href={item.url}
+          sample={sample}
           className="rounded-sm underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         >
           {item.title}
-        </a>
+        </SourceLink>
         <span className="ml-1.5 text-xs whitespace-nowrap text-muted-foreground">
           {item.kind === "pull_request" ? "PR" : "Issue"} #{item.number}
           {item.confidence === "suggested" && " · Suggested link"}

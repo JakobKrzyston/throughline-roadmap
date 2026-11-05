@@ -1,5 +1,5 @@
 "use server";
-/** Server actions behind the plan page: reorder outcomes, change targets, and set a requirement's kind of work and team. Exports moveOutcome, saveTarget, saveOwnership and their state type. */
+/** Server actions behind the plan page: reorder outcomes, change their targets, and set a requirement's target, kind of work and team. Exports moveOutcome, saveTarget, saveRequirement and their state type. */
 import { and, eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { after } from "next/server";
@@ -31,25 +31,33 @@ const moveSchema = z.object({
   toKey: z.string().min(1),
 });
 
+// Empty values clear the field: no target, no kind of work, or the parent's team.
+const emptyToNull = (value: string): string | null => value.trim() || null;
+const targetField = z
+  .string()
+  .transform(emptyToNull)
+  .pipe(targetSchema.nullable());
+const TARGET_HELP =
+  "Use a quarter like 2027-Q1 or a date like 2027-01-11, or leave it empty.";
+
 const targetFormSchema = z.object({
-  kind: z.enum(["outcome", "requirement"]),
   key: z.string().min(1),
-  // An empty box clears the target.
-  target: z
-    .string()
-    .trim()
-    .transform((value) => value || null)
-    .pipe(targetSchema.nullable()),
+  target: targetField,
   reason: z.string().trim().max(500).optional(),
 });
 
-// Empty values clear the field: no kind of work, or the parent's team.
-const emptyToNull = (value: string): string | null => value.trim() || null;
-const ownershipFormSchema = z.object({
+const requirementFormSchema = z.object({
   key: z.string().min(1),
+  target: targetField,
   work_type: z.string().transform(emptyToNull).pipe(workTypeSchema.nullable()),
   team: z.string().transform(emptyToNull).pipe(z.string().max(60).nullable()),
 });
+
+const FIELD_NAMES = {
+  target: "target",
+  work_type: "kind of work",
+  team: "team",
+} as const;
 
 /**
  * Move one outcome to where another one is now in the priority order.
@@ -89,13 +97,13 @@ export async function moveOutcome(
 }
 
 /**
- * Set or clear the target of an outcome or a requirement.
+ * Set or clear an outcome's target.
  *
  * Args:
  *   slug: The project's slug, bound by the page.
  *   _previous: The form's previous state (unused; required by useActionState).
- *   formData: `kind` (`outcome` or `requirement`), `key`, `target` (empty to clear) and, for an
- *     outcome, an optional plain-language `reason` added to the change feed.
+ *   formData: `key`, `target` (empty to clear) and an optional plain-language `reason` added to
+ *     the change feed.
  *
  * Returns:
  *   The idle state once saved, or an error message to show.
@@ -107,14 +115,13 @@ export async function saveTarget(
 ): Promise<PlanState> {
   const input = targetFormSchema.safeParse(Object.fromEntries(formData));
   if (!input.success) {
-    const targetIssue = input.error.issues.find((i) => i.path[0] === "target");
     return fail(
-      targetIssue
-        ? "Use a quarter like 2027-Q1 or a date like 2027-01-11, or leave it empty."
+      input.error.issues.some((i) => i.path[0] === "target")
+        ? TARGET_HELP
         : "That request was not understood.",
     );
   }
-  const { kind, key, target, reason } = input.data;
+  const { key, target, reason } = input.data;
   // Visitors' wording would show on the public demo's change feed until the nightly reset.
   if (reason && isPublicDeployment()) {
     return fail("Notes are turned off on this server. Save without one.");
@@ -122,63 +129,54 @@ export async function saveTarget(
 
   const project = await editableProject(slug);
   if ("status" in project) return project;
-  const shown = target ? formatTarget(target) : "no target";
-
-  if (kind === "requirement") {
-    const [requirement] = await getDb()
-      .select({ target: requirements.target })
-      .from(requirements)
-      .where(
-        and(eq(requirements.projectId, project.id), eq(requirements.key, key)),
-      );
-    if (!requirement) return fail(`Requirement ${key} not found.`);
-    // An update must change something, so saving the same target is a no-op.
-    if (requirement.target === target) return { status: "idle" };
-    return save(project.id, `Set ${key}'s target to ${shown}`, [
-      { type: "update_requirement", requirement_key: key, target },
-    ]);
-  }
   const outcome = (await loadOutcomes(getDb(), project.id)).find(
     (o) => o.key === key,
   );
   if (!outcome) return fail("Outcome not found.");
   return save(
     project.id,
-    `Move “${outcome.title}” to ${shown}`,
+    `Move “${outcome.title}” to ${target ? formatTarget(target) : "no target"}`,
     outcomeTargetOperations(outcome, target, reason),
   );
 }
 
 /**
- * Set a requirement's kind of work and its team.
+ * Set a requirement's target, kind of work and team in one save.
  *
  * Args:
  *   slug: The project's slug, bound by the page.
  *   _previous: The form's previous state (unused; required by useActionState).
- *   formData: `key`, `work_type` (empty for none) and `team` (empty to use the parent's).
+ *   formData: `key`, `target` (empty to clear), `work_type` (empty for none) and `team` (empty to
+ *     use the parent's).
  *
  * Returns:
  *   The idle state once saved, or an error message to show.
  */
-export async function saveOwnership(
+export async function saveRequirement(
   slug: string,
   _previous: PlanState,
   formData: FormData,
 ): Promise<PlanState> {
-  const input = ownershipFormSchema.safeParse(Object.fromEntries(formData));
+  const input = requirementFormSchema.safeParse(Object.fromEntries(formData));
   if (!input.success) {
+    const fields = input.error.issues.map((i) => i.path[0]);
+    if (fields.includes("target")) return fail(TARGET_HELP);
     return fail(
-      input.error.issues.some((i) => i.path[0] === "team")
+      fields.includes("team")
         ? "Keep the team name to 60 characters."
         : "That request was not understood.",
     );
   }
-  const { key, work_type, team } = input.data;
+  const { key, target, work_type, team } = input.data;
   const project = await editableProject(slug);
   if ("status" in project) return project;
 
   const [requirement] = await getDb()
-    .select({ workType: requirements.workType, team: requirements.team })
+    .select({
+      target: requirements.target,
+      workType: requirements.workType,
+      team: requirements.team,
+    })
     .from(requirements)
     .where(
       and(eq(requirements.projectId, project.id), eq(requirements.key, key)),
@@ -186,15 +184,20 @@ export async function saveOwnership(
   if (!requirement) return fail(`Requirement ${key} not found.`);
   // Only what changed, since an update must change something and each field gets its own row in the history.
   const changes = {
+    ...(requirement.target !== target ? { target } : {}),
     ...(requirement.workType !== work_type ? { work_type } : {}),
     ...(requirement.team !== team ? { team } : {}),
   };
-  if (Object.keys(changes).length === 0) return { status: "idle" };
+  const changed = Object.keys(changes) as (keyof typeof FIELD_NAMES)[];
+  if (changed.length === 0) return { status: "idle" };
   // Visitors' team names would show in the public demo's technical view until the nightly reset.
   if ("team" in changes && isPublicDeployment()) {
     return fail("Team names are turned off on this server.");
   }
-  return save(project.id, `Set ${key}'s kind of work and team`, [
+  const named = new Intl.ListFormat("en-GB").format(
+    changed.map((field) => FIELD_NAMES[field]),
+  );
+  return save(project.id, `Set ${key}'s ${named}`, [
     { type: "update_requirement", requirement_key: key, ...changes },
   ]);
 }

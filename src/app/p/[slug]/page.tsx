@@ -6,13 +6,21 @@ import { connection } from "next/server";
 import { type ReactElement, Suspense } from "react";
 
 import { Badge } from "@/components/badge";
+import { CardsSkeleton } from "@/components/skeleton";
 import { buttonVariants } from "@/components/ui/button";
-import { loadRecentChanges, loadRoadmap } from "@/core/roadmap";
+import { formatTarget } from "@/core/product-text";
+import {
+  groupByQuarter,
+  loadRecentChanges,
+  loadRoadmap,
+  quarterOf,
+} from "@/core/roadmap";
 import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
 
+import { ChangeFeed } from "./change-feed";
 import { OutcomeCard } from "./outcome-card";
-import { ProjectNav } from "./project-nav";
+import { RoadmapSummary } from "./roadmap-summary";
 
 /**
  * Product view: a static heading plus the project's outcomes and recent changes.
@@ -29,7 +37,7 @@ export default function ProductPage({
   searchParams,
 }: PageProps<"/p/[slug]">): ReactElement {
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-4 py-12">
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-semibold tracking-tight">
           Product roadmap
@@ -40,9 +48,7 @@ export default function ProductPage({
         </p>
       </div>
       {/* The roadmap is read per request; the heading above is the static shell. */}
-      <Suspense
-        fallback={<p className="text-muted-foreground">Loading the roadmap…</p>}
-      >
+      <Suspense fallback={<CardsSkeleton />}>
         <ProductView params={params} searchParams={searchParams} />
       </Suspense>
     </main>
@@ -72,86 +78,76 @@ async function ProductView({
 
   const roadmap = await loadRoadmap(db, project.id);
   const changes = await loadRecentChanges(db, project.id, roadmap);
+  const thisQuarter = quarterOf(new Date().toISOString().slice(0, 10));
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <ProjectNav slug={slug} name={project.name} current="" />
-        <Link
-          href={showDetail ? `/p/${slug}` : `/p/${slug}?detail=1`}
-          scroll={false}
-          className={buttonVariants({ variant: "outline", size: "sm" })}
-        >
-          {showDetail ? "Hide technical detail" : "Show technical detail"}
-        </Link>
+      {roadmap.length > 0 && <RoadmapSummary roadmap={roadmap} />}
+
+      {/* Side by side only when the page itself is wide, whatever the window size. */}
+      <div className="@container">
+        <div className="grid gap-10 @4xl:grid-cols-[minmax(0,1fr)_20rem]">
+          <section aria-labelledby="outcomes" className="flex flex-col gap-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 id="outcomes" className="text-xl font-semibold">
+                Outcomes by target date
+              </h2>
+              <Link
+                href={showDetail ? `/p/${slug}` : `/p/${slug}?detail=1`}
+                scroll={false}
+                className={buttonVariants({ variant: "outline", size: "sm" })}
+              >
+                {showDetail ? "Hide technical detail" : "Show technical detail"}
+              </Link>
+            </div>
+            {roadmap.length === 0 ? (
+              <p className="rounded-md border border-border p-6 text-center text-muted-foreground">
+                This roadmap is empty.{" "}
+                <Link
+                  href={`/p/${slug}/import`}
+                  className="font-medium text-foreground underline"
+                >
+                  Import a roadmap
+                </Link>{" "}
+                to describe what customers will get.
+              </p>
+            ) : (
+              groupByQuarter(roadmap).map(({ quarter, outcomes }) => (
+                <section
+                  key={quarter ?? "none"}
+                  aria-labelledby={`quarter-${quarter ?? "none"}`}
+                  className="flex flex-col gap-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <h3
+                      id={`quarter-${quarter ?? "none"}`}
+                      className="text-base font-semibold"
+                    >
+                      {quarter ? formatTarget(quarter) : "No target date yet"}
+                    </h3>
+                    {quarter === thisQuarter && (
+                      <Badge tone="blue">This quarter</Badge>
+                    )}
+                    <span aria-hidden className="h-px flex-1 bg-border" />
+                  </div>
+                  <ul className="flex flex-col gap-4">
+                    {outcomes.map((outcome) => (
+                      <li key={outcome.id}>
+                        <OutcomeCard
+                          outcome={outcome}
+                          showDetail={showDetail}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))
+            )}
+          </section>
+
+          <ChangeFeed changes={changes} showDetail={showDetail} />
+        </div>
       </div>
-
-      <section aria-labelledby="outcomes" className="flex flex-col gap-4">
-        <h2 id="outcomes" className="text-xl font-semibold">
-          Outcomes
-        </h2>
-        {roadmap.length === 0 ? (
-          <p className="rounded-md border border-border p-6 text-center text-muted-foreground">
-            This roadmap is empty.{" "}
-            <Link
-              href={`/p/${slug}/import`}
-              className="font-medium text-foreground underline"
-            >
-              Import a roadmap
-            </Link>{" "}
-            to describe what customers will get.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-4">
-            {roadmap.map((outcome) => (
-              <li key={outcome.id}>
-                <OutcomeCard outcome={outcome} showDetail={showDetail} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section aria-labelledby="changes" className="flex flex-col gap-4">
-        <h2 id="changes" className="text-xl font-semibold">
-          What changed this week
-        </h2>
-        {changes.length === 0 ? (
-          <p className="text-muted-foreground">
-            Nothing changed this week. Changes appear here when work is finished
-            or plans change.
-          </p>
-        ) : (
-          <ol className="flex flex-col gap-4">
-            {changes.map((change) => (
-              <li key={change.id} className="flex flex-col gap-1">
-                <p>
-                  {change.moved && (
-                    <span className="mr-2">
-                      <Badge tone="amber">Plan change</Badge>
-                    </span>
-                  )}
-                  {change.note}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  <time dateTime={change.at.toISOString()}>
-                    {change.at.toLocaleDateString("en-GB", {
-                      weekday: "long",
-                      day: "numeric",
-                      month: "long",
-                      timeZone: "UTC",
-                    })}
-                  </time>
-                  {` · ${change.outcomeTitle}`}
-                  {showDetail && (
-                    <span className="ml-2 font-mono">{change.entityKey}</span>
-                  )}
-                </p>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
     </>
   );
 }

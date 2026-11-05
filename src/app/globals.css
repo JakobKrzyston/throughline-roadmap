@@ -126,5 +126,10 @@
   }
   html {
     @apply font-sans;
+    /* Native controls (selects, scrollbars, date pickers) follow the theme too. */
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
   }
 }

@@ -8,6 +8,7 @@ import {
   type RequirementNode,
   requirementProgress,
   rolledUpStatus,
+  statusCounts,
   type TeamNode,
   teamProgress,
 } from "./rollup";
@@ -132,6 +133,24 @@ describe("an empty outcome", () => {
   it("has no progress and has not started", () => {
     expect(outcomeProgress([])).toBe(0);
     expect(productStatus([])).toBe("not_started");
+  });
+});
+
+describe("status counts", () => {
+  it("counts each outcome once under its status, zero for the rest", () => {
+    expect(
+      statusCounts([
+        [leaf("done")],
+        [leaf("done", true), leaf("planned")],
+        [leaf("in_progress")],
+        [],
+      ]),
+    ).toEqual({
+      delivered: 1,
+      partially_available: 1,
+      in_progress: 1,
+      not_started: 1,
+    });
   });
 });
 

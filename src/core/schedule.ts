@@ -1,4 +1,4 @@
-/** Roadmap targets, written as a quarter ("2027-Q1") or a date ("2027-01-11"): validation, display, comparison and late work. Exports targetSchema, describeTargetMove, targetEnd, isLater, hasOpenWork, lateRequirements, scheduleWarnings, ScheduledRequirement. */
+/** Roadmap targets, written as a quarter ("2027-Q1") or a date ("2027-01-11"): validation, display, comparison and late work. Exports targetSchema, describeTargetMove, targetEnd, isLater, hasOpenWork, lateRequirements, scheduleWarnings, upcomingQuarters, ScheduledRequirement. */
 import { z } from "zod";
 
 import { formatTarget } from "./product-text";
@@ -136,6 +136,25 @@ export function scheduleWarnings(
     late: lateRequirements(target, roots),
     passed: isTarget(target) && targetEnd(target) < today && hasOpenWork(roots),
   };
+}
+
+/**
+ * The quarter a day falls in and the ones after it, to offer as targets.
+ *
+ * Args:
+ *   today: Today as an ISO date.
+ *   count: How many quarters to list.
+ *
+ * Returns:
+ *   Quarters such as "2026-Q4", "2027-Q1", soonest first.
+ */
+export function upcomingQuarters(today: string, count: number): string[] {
+  const year = Number(today.slice(0, 4));
+  const quarter = Math.floor((Number(today.slice(5, 7)) - 1) / 3);
+  return Array.from({ length: count }, (_, i) => {
+    const q = quarter + i;
+    return `${year + Math.floor(q / 4)}-Q${(q % 4) + 1}`;
+  });
 }
 
 function isTarget(target: string | null): target is string {

@@ -31,7 +31,7 @@ Keep this list accurate.
 
 ```bash
 pnpm dev           # run the app locally
-pnpm build         # production build
+pnpm build         # production build; on Vercel production it first fails if the database is missing a migration (never migrates)
 pnpm lint          # ESLint
 pnpm format        # Prettier, rewrite files
 pnpm format:check  # Prettier, check only (runs in CI)
@@ -39,7 +39,7 @@ pnpm typecheck     # next typegen && tsc --noEmit
 pnpm test          # Vitest unit tests
 pnpm test:e2e      # Playwright smoke tests: builds the app and seeds its own PGlite in ./.pglite-e2e
 pnpm db:generate   # generate a Drizzle migration from schema changes
-pnpm db:migrate    # apply migrations (PGlite in ./.pglite, or DATABASE_URL if set)
+pnpm db:migrate    # apply migrations (PGlite in ./.pglite, or DATABASE_URL_UNPOOLED, else DATABASE_URL, when DATABASE_URL is set)
 pnpm db:seed       # (re)create the "Acme Analytics" demo project; run db:migrate first
 ```
 

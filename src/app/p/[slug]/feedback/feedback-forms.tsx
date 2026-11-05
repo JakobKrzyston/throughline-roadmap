@@ -34,15 +34,19 @@ export function LinkFeedbackForm({
   );
   const id = useId();
   return (
-    <form action={action} className="flex flex-wrap items-center gap-2">
+    <form
+      action={action}
+      className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0"
+    >
       <label htmlFor={id} className="sr-only">
         Outcome for “{feedbackTitle}”
       </label>
+      {/* A select is as wide as its longest option unless its width is set, which made phones scroll sideways. */}
       <select
         id={id}
         name="outcome"
         defaultValue=""
-        className="max-w-full rounded-md border border-input bg-transparent px-2 py-1 text-sm"
+        className="h-7 min-w-0 flex-1 basis-0 rounded-md border border-input bg-transparent px-2 text-sm sm:w-56 sm:flex-none sm:basis-auto"
       >
         <option value="" disabled>
           Choose an outcome…

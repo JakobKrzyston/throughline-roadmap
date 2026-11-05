@@ -302,9 +302,11 @@ Trade-off: feedback is matched once, against the outcomes that exist when it arr
 
 For sales, leadership and anyone non-technical.
 
-- One card per outcome: plain title, a progress bar, the product status in words ("Partially available: customers can use part of this today"), and the target date.
-- Under the status, a list of what customers can use today: one line per finished, user-visible leaf. Each line is the product note on the leaf's latest "done" event, else the requirement's own product note, else its title (`availableToday` in `src/core/roadmap.ts`).
-- A "What changed this week" feed built from the last 7 days of events with product notes, each labelled with the outcome it belongs to. Changes under archived outcomes are left out, as they are from split history.
+- At the top, how many outcomes are delivered, partially available, in progress and not started (`statusCounts` in `src/core/rollup.ts`).
+- Outcomes grouped by the quarter of their target, earliest first, with undated outcomes last (`groupByQuarter` in `src/core/roadmap.ts`). A date target falls in its quarter and sorts before the quarter-only targets in it.
+- One card per outcome: plain title, the target, a progress bar in the status colour, and the product status in words ("Partially available: customers can use part of this today").
+- Under the status, a list of what customers can use today: one line per finished, user-visible leaf. Each line is the product note on the leaf's latest "done" event, else the requirement's own product note, else its title (`availableToday` in `src/core/roadmap.ts`). A collapsed "Still to come" list does the same for planned and in-progress leaves: user-visible ones by product note or title, behind-the-scenes ones only when they have a product note, since their titles are technical (`stillToCome`).
+- A "What changed this week" feed built from the last 7 days of events with product notes, grouped by day, each labelled with its kind (shipped, dropped, replanned, split, added or updated, from the event's operation) and the outcome it belongs to. Changes under archived outcomes are left out, as they are from split history. On a wide page the feed sits beside the outcomes.
 - No ticket numbers by default. The "Show technical detail" toggle is a link to `?detail=1`, so keys are only rendered on request and never sent to the browser otherwise.
 
 ### Schedule
@@ -323,7 +325,7 @@ For the PM, to reschedule and reprioritise in place.
 - Warnings for late requirements and for a target that has passed with work still open.
 - Every edit goes through `savePlanningChange`: it saves a `manual` proposal and approves it at once with `applyProposal`, in one transaction, so a person's edits take the same path as the agents' and each has an event. v1 has no sign-in, so the actor is `planner`. A change to an outcome's target, or to the target of any requirement under it, supersedes that outcome's pending `reschedule` proposals and queues a `slip_check`, which runs after the response is sent: the old proposal was judged against dates that have changed, and the check proposes again if the new plan still looks late.
 
-Moves of a target or priority are marked "Plan change" in the product view's change feed (`moved` on each `RecentChange`).
+Moves of a target or an outcome's priority are marked "Replanned" in the product view's change feed (`kind` on each `RecentChange`).
 
 Out of scope: sprints, story points, estimates and task-level scheduling. Those belong to the issue tracker Throughline reads from; Throughline plans at the outcome and requirement level.
 

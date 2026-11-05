@@ -12,16 +12,41 @@ test("product view explains the product in plain language", async ({
   await expect(
     page.getByRole("heading", { name: "Product roadmap" }),
   ).toBeVisible();
+  const summary = page.getByRole("region", { name: "Roadmap summary" });
+  for (const [status, count] of [
+    ["Delivered", "1"],
+    ["Partially available", "1"],
+    ["In progress", "2"],
+    ["Not started", "1"],
+  ]) {
+    await expect(
+      summary.locator("div").filter({ hasText: status }),
+    ).toContainText(count);
+  }
+
+  // Outcomes run in target order: the Q3 2026 sign-on outcome comes before Q4 2026's export.
+  await expect(
+    page.getByRole("heading", { name: "Q3 2026", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("article").first()).toHaveAccessibleName(
+    "Enterprise customers can sign in with single sign-on",
+  );
   const exportCard = page.getByRole("article", {
     name: "Customers can export reports to Excel and CSV",
   });
   await expect(exportCard.getByText("Partially available")).toBeVisible();
+  await expect(exportCard.getByText("Target Q4 2026")).toBeVisible();
   await expect(
     exportCard.getByText("Customers can now download any report as CSV."),
   ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "What changed this week" }),
-  ).toBeVisible();
+  const comingNext = exportCard.getByText("Export button in report toolbar");
+  await expect(comingNext).toBeHidden();
+  await exportCard.getByText("Still to come (2)").click();
+  await expect(comingNext).toBeVisible();
+
+  const feed = page.getByRole("region", { name: "What changed this week" });
+  await expect(feed.getByText("Shipped").first()).toBeVisible();
+  await expect(feed.getByText("Dropped")).toBeVisible();
   await expect(page.locator("main")).not.toContainText(TICKET_NUMBER);
   // Who works on what and which team owns it are technical detail.
   await expect(page.locator("main")).not.toContainText("maya-chen");
@@ -126,17 +151,40 @@ test("plan page reorders outcomes and moves targets into the change feed", async
 
   const share = "Customers can share a dashboard with a link";
   await expect(page.getByRole("article").nth(4)).toHaveAccessibleName(share);
-  await page.getByRole("button", { name: `Move “${share}” up` }).click();
+  const up = page.getByRole("button", { name: `Move “${share}” up` });
+  await up.click();
   await expect(page.getByRole("article").nth(3)).toHaveAccessibleName(share);
+  // Focus follows the moved outcome, and the new place is announced.
+  await expect(up).toBeFocused();
+  await expect(
+    page.getByText(`“${share}” is now number 4 of 5.`),
+  ).toBeVisible();
   // Dragging works as well as the buttons.
   await page
     .getByRole("heading", { name: share })
     .dragTo(page.getByRole("article").first().getByRole("heading"));
   await expect(page.getByRole("article").first()).toHaveAccessibleName(share);
 
+  // A requirement saves its target, kind of work and team together, and keeps them when refused.
+  await page.getByText("Requirements (").nth(1).click();
+  const csv = "TL-3 CSV export";
+  const kind = page.getByRole("combobox", { name: `Kind of work for ${csv}` });
+  const target = page.getByRole("combobox", { name: `Target for ${csv}` });
+  const saveRow = page.getByRole("button", { name: `Save ${csv}` });
+  await kind.selectOption("research");
+  await target.fill("next spring");
+  await saveRow.click();
+  await expect(page.getByText("Use a quarter like 2027-Q1")).toBeVisible();
+  await expect(kind).toHaveValue("research");
+  await expect(target).toHaveValue("next spring");
+  await target.fill("2027-Q2");
+  await saveRow.click();
+  await expect(saveRow).toBeDisabled();
+  await expect(kind).toHaveValue("research");
+
   const dashboards = "Dashboards load in under two seconds";
   await page
-    .getByRole("textbox", { name: `Target for ${dashboards}` })
+    .getByRole("combobox", { name: `Target for ${dashboards}` })
     .fill("2027-Q3");
   const save = page.getByRole("button", {
     name: `Save target for ${dashboards}`,
@@ -157,20 +205,38 @@ test("plan page reorders outcomes and moves targets into the change feed", async
 test("feedback page shows what customers ask for and links a gap to an outcome", async ({
   page,
 }) => {
+  // A phone-sized viewport: the outcome pickers used to make the page scroll sideways.
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/p/acme-analytics/feedback");
 
   const pull = page.getByRole("region", { name: "Asked for, by outcome" });
   await expect(
     pull.getByText("Customers can export reports to Excel and CSV"),
   ).toBeVisible();
-  await expect(pull.getByText("2 pieces of feedback").first()).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    390,
+  );
+  await expect(pull.getByText("2 requests").first()).toBeVisible();
+  // An outcome nobody asks for is a plain row, not one that opens onto nothing.
+  const unasked = pull
+    .getByRole("listitem")
+    .filter({ hasText: "Customers can share a dashboard with a link" });
+  await expect(unasked.getByText("No feedback yet")).toBeVisible();
+  await expect(unasked.locator("details")).toHaveCount(0);
+
+  const share = "Can I send a dashboard to a client who has no account?";
   await expect(
     page
       .getByRole("region", { name: "Waiting for review" })
-      .getByText("Can I send a dashboard to a client who has no account?"),
-  ).toBeVisible();
+      .getByRole("link", { name: `Review the match for “${share}”` }),
+  ).toHaveAttribute(
+    "href",
+    /^\/p\/acme-analytics\/review#proposal-[0-9a-f-]+$/,
+  );
   const gaps = page.getByRole("region", { name: "Not on the roadmap" });
-  await expect(gaps.getByRole("heading", { name: /Dark mode/ })).toBeVisible();
+  await expect(
+    gaps.getByRole("heading", { name: "Dark mode 2 requests" }),
+  ).toBeVisible();
 
   const phone = "Let us check dashboards on a phone";
   await gaps

@@ -77,9 +77,7 @@ test("technical view shows the requirement tree and split history", async ({
   await expect(queue.getByTitle("2 pull requests")).toBeVisible();
   await queue.getByText("Background job queue", { exact: true }).click();
   await expect(queue).toHaveAttribute("open");
-  await expect(
-    page.getByRole("link", { name: "Add background job queue" }),
-  ).toBeVisible();
+  await expect(queue.getByText("Add background job queue")).toBeVisible();
 
   await page.getByRole("button", { name: "Collapse all" }).click();
   await expect(tree.locator("details[open]")).toHaveCount(0);
@@ -245,7 +243,29 @@ test("feedback page shows what customers ask for and links a gap to an outcome",
   await gaps.getByRole("button", { name: `Link “${phone}”` }).click();
   await expect(gaps.getByText(phone)).toHaveCount(0);
   await pull.getByText("Dashboards load in under two seconds").click();
-  await expect(pull.getByRole("link", { name: phone })).toBeVisible();
+  await expect(pull.getByText(phone)).toBeVisible();
+});
+
+test("demo work items and feedback are marked as samples, not links to GitHub", async ({
+  page,
+}) => {
+  // The demo is seeded with made-up GitHub URLs, which would all 404. Each check waits for the
+  // streamed content first, so it cannot pass against the loading skeleton.
+  const githubLinks = page.locator('a[href^="https://github.com/"]');
+  for (const path of ["", "?detail=1"]) {
+    await page.goto(`/p/acme-analytics${path}`);
+    await expect(page.getByRole("article").first()).toBeVisible();
+    await expect(githubLinks).toHaveCount(0);
+  }
+  for (const path of ["/tech", "/review", "/feedback"]) {
+    await page.goto(`/p/acme-analytics${path}`);
+    await expect(page.getByText("sample", { exact: true })).not.toHaveCount(0);
+    await expect(githubLinks).toHaveCount(0);
+  }
+  await page.goto("/p/acme-analytics/review");
+  await expect(
+    page.getByText("Prompted by").first().getByText("sample"),
+  ).toBeVisible();
 });
 
 test("an unknown project gets a plain-language, unindexed page", async ({

@@ -162,7 +162,11 @@ async function PendingProposals({
       sourceTone: SOURCES[proposal.source].tone,
       createdAt: proposal.createdAt.toISOString(),
       createdOn: formatDay(proposal.createdAt),
-      trigger: trigger && { title: trigger.title, url: trigger.url },
+      trigger: trigger && {
+        title: trigger.title,
+        url: trigger.url,
+        sample: project.isDemo,
+      },
       operations: parsed.success ? parsed.data : null,
       entries: parsed.success ? describeOperations(parsed.data, graph) : [],
     };

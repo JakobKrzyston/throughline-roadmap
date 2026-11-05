@@ -9,6 +9,7 @@ import { type ReactElement, type ReactNode, Suspense } from "react";
 
 import { Badge } from "@/components/badge";
 import { CardsSkeleton } from "@/components/skeleton";
+import { SourceLink } from "@/components/source-link";
 import { buttonVariants } from "@/components/ui/button";
 import { type FeedbackView, loadFeedbackBoard } from "@/core/feedback";
 import { getDb } from "@/db/client";
@@ -133,7 +134,12 @@ async function FeedbackBoardView({
                     </h3>
                     <ul className="flex flex-col gap-3">
                       {gap.feedback.map((item) => (
-                        <FeedbackRow key={item.id} item={item} hideTheme>
+                        <FeedbackRow
+                          key={item.id}
+                          item={item}
+                          sample={project.isDemo}
+                          hideTheme
+                        >
                           {editable && outcomeOptions.length > 0 && (
                             <LinkFeedbackForm
                               slug={slug}
@@ -188,7 +194,11 @@ async function FeedbackBoardView({
                       </summary>
                       <ul className="mt-3 flex flex-col gap-3 pl-6">
                         {outcome.feedback.map((item) => (
-                          <FeedbackRow key={item.id} item={item}>
+                          <FeedbackRow
+                            key={item.id}
+                            item={item}
+                            sample={project.isDemo}
+                          >
                             {editable && (
                               <UnlinkFeedbackButton
                                 slug={slug}
@@ -223,6 +233,7 @@ async function FeedbackBoardView({
                   <FeedbackRow
                     key={item.id}
                     item={item}
+                    sample={project.isDemo}
                     note={`Suggested outcome: ${titleOf.get(item.outcomeKey) ?? item.outcomeKey}`}
                     className="px-4 py-3"
                   >
@@ -294,6 +305,7 @@ function Demand({
  *
  * Args:
  *   item: The feedback.
+ *   sample: True for a demo project, whose feedback has no real GitHub page.
  *   hideTheme: True to leave out the theme, when the group already names it.
  *   note: A line of detail under the title.
  *   className: Extra classes for the row.
@@ -304,12 +316,14 @@ function Demand({
  */
 function FeedbackRow({
   item,
+  sample,
   hideTheme = false,
   note,
   className = "",
   children,
 }: {
   item: FeedbackView;
+  sample: boolean;
   hideTheme?: boolean;
   note?: string;
   className?: string;
@@ -321,9 +335,13 @@ function FeedbackRow({
     >
       <span className="flex min-w-0 flex-col gap-1">
         <span>
-          <a href={item.url} className="underline underline-offset-4">
+          <SourceLink
+            href={item.url}
+            sample={sample}
+            className="underline underline-offset-4"
+          >
             {item.title}
-          </a>
+          </SourceLink>
           {!hideTheme && item.theme && (
             <span className="text-muted-foreground"> · {item.theme}</span>
           )}

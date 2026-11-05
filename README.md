@@ -2,7 +2,7 @@
 
 Traces every PR back to a customer-facing outcome, even after a requirement has split into several pieces.
 
-**Try it:** [run it locally](#run-it-locally) in a few minutes with no accounts or keys, or [deploy your own](docs/DEPLOY.md) public demo on Vercel. Either way, **Open demo** goes straight to a sample company's roadmap with no sign-in.
+**Try it:** [run it locally](#run-it-locally) in a few minutes with no accounts or keys, or [deploy your own](docs/DEPLOY.md) public demo on Vercel. Either way, the landing page previews a sample company's roadmap live, and **Open demo** goes straight to it with no sign-in.
 
 ## What Throughline does
 
@@ -17,15 +17,23 @@ Throughline keeps them connected:
 
 The **product view** answers "what can customers use today?" in plain language:
 
-![The product view: each customer outcome with a status, progress and what is available today](docs/images/product-view.png)
+![The product view: outcomes counted by status, then grouped by target quarter with what is available today, beside what changed this week](docs/images/product-view.png)
 
 The **technical view** shows every requirement, how it was split, and the issues and pull requests behind it:
 
-![The technical view: outcomes, requirements and their split children, with linked pull requests](docs/images/technical-view.png)
+![The technical view: outcomes, requirements and their split children, with kind of work, team, linked work and progress by team](docs/images/technical-view.png)
 
 The **review queue** is where a person approves, edits or rejects what the agents propose:
 
-![The review queue: a proposal to mark Excel export as done, with its reasoning and a diff](docs/images/review-queue.png)
+![The review queue: five pending proposals counted by kind, and a proposal to add an outcome with its reasoning and the changes it would make](docs/images/review-queue.png)
+
+The **plan** page is where a person sets priorities and targets:
+
+![The plan page: outcomes in priority order with their targets, and one outcome's requirements with target, kind of work and team](docs/images/plan.png)
+
+The **feedback** page shows what customers ask for, and what the roadmap is missing:
+
+![The feedback page: requests no outcome covers grouped by theme, then how much each outcome is asked for](docs/images/feedback.png)
 
 ## How it works
 
@@ -34,8 +42,9 @@ The **review queue** is where a person approves, edits or rejects what the agent
 3. **Reconcile when work ships.** When linked work merges, the reconciliation agent reads the pull request and the plan and proposes what changed: done, partly done, split into new pieces, or scope added. A merged pull request with no reference gets a suggested link instead.
 4. **Approve.** Every proposal waits in the review queue. Approving it changes the graph and writes an event with a plain-language note, which feeds the product view's "what changed this week".
 5. **Read the roadmaps.** Status rolls up from finished work to requirements to outcomes, so both views always agree.
-6. **Hear from customers.** An issue labelled `feedback` is customer feedback, not work. The feedback agent names what it asks for and proposes the outcome that would deliver it, so the feedback page shows how much each outcome is asked for, and feedback no outcome covers, grouped by theme, shows what the roadmap is missing.
-7. **Send a weekly digest.** Every Monday a plain-language summary of what changed and where each outcome stands can go to a Slack channel, for people who never open Throughline. Set it up on a project's settings page.
+6. **Replan when dates move.** On the plan page a person reorders outcomes and changes targets, and each change is recorded like any other. When work is due after its outcome's target, or a target passes with work still open, the slip check proposes a later target and gives the reason.
+7. **Hear from customers.** An issue labelled `feedback` is customer feedback, not work. The feedback agent names what it asks for and proposes the outcome that would deliver it, so the feedback page shows how much each outcome is asked for, and feedback no outcome covers, grouped by theme, shows what the roadmap is missing.
+8. **Send a weekly digest.** Every Monday a plain-language summary of what changed and where each outcome stands can go to a Slack channel, for people who never open Throughline. Set it up on a project's settings page.
 
 The full design, data model and trade-offs are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -73,16 +82,19 @@ pnpm db:seed      # load the "Acme Analytics" demo project
 pnpm dev
 ```
 
-Open http://localhost:3000 and click **Open demo**. Data is stored in an embedded Postgres (PGlite) under `./.pglite`. To use a Postgres server such as Neon instead, copy `.env.example` to `.env.local` and set `DATABASE_URL`. To go back to PGlite while `.env.local` points at Neon, run `export DATABASE_URL="" DATABASE_URL_UNPOOLED=""` in the shell first.
+Open http://localhost:3000. The landing page shows one demo outcome live in the product view, the technical view and the review queue; click **Open demo** for the whole project. Data is stored in an embedded Postgres (PGlite) under `./.pglite`. To use a Postgres server such as Neon instead, copy `.env.example` to `.env.local` and set `DATABASE_URL`. To go back to PGlite while `.env.local` points at Neon, run `export DATABASE_URL="" DATABASE_URL_UNPOOLED=""` in the shell first.
 
 What to try:
 
-- **Product view** (`/p/acme-analytics`): what customers can use today and what changed this week. **Show technical detail** adds requirement keys.
-- **Technical view** (`/p/acme-analytics/tech`): the requirement tree, linked work and split history, filterable by kind of work, team and person, with progress by team.
-- **Plan** (`/p/acme-analytics/plan`): drag outcomes into a new priority order, change targets in place, and set each requirement's kind of work and team; each move shows up in the product view's change feed. Work due after its outcome's target is flagged.
-- **Review queue** (`/p/acme-analytics/review`): approve, edit or reject the pending proposals, then watch the product view change.
+- **Product view** (`/p/acme-analytics`): how many outcomes are delivered, partially available, in progress and not started, then each outcome under its target quarter with what customers can use today and what is still to come, beside what changed this week. **Show technical detail** adds requirement keys.
+- **Technical view** (`/p/acme-analytics/tech`): the requirement tree with linked work, progress by team and split history. Open or close any row, and filter by kind of work, team and person. The demo's issues and pull requests are made up, so they are marked "sample" instead of linking to GitHub.
+- **Plan** (`/p/acme-analytics/plan`): drag outcomes, or use the arrow buttons, into a new priority order, change targets in place by picking a quarter or typing a date, and set each requirement's target, kind of work and team; each move shows up in the product view's change feed. Work due after its outcome's target is flagged.
+- **Feedback** (`/p/acme-analytics/feedback`): requests no outcome covers come first, grouped by theme, then how much each outcome is asked for. Link a request to an outcome yourself, or review the match an agent suggested.
+- **Review queue** (`/p/acme-analytics/review`): five pending proposals, one of each kind: an imported outcome, shipped work, a suggested link, a feedback match and a target at risk. Approve, edit or reject one; it is confirmed in place with a link to where the change shows.
 - **Import** (`/p/acme-analytics/import`): paste a roadmap. Without a model key you get a sample proposal; set `ANTHROPIC_API_KEY` in `.env.local` to use Claude, or `OPENROUTER_API_KEY` to use a free model through OpenRouter.
-- **Settings** (`/p/acme-analytics/settings`): connect a real repository once you have set up a GitHub App as described in [`docs/GITHUB_APP.md`](docs/GITHUB_APP.md).
+- **Settings** (`/p/acme-analytics/settings`): read the next weekly digest as it stands, and connect a real repository once you have set up a GitHub App as described in [`docs/GITHUB_APP.md`](docs/GITHUB_APP.md).
+
+Every page works on a phone and follows your system's light or dark theme; the control in the top bar overrides it.
 
 Checks that CI runs on every pull request:
 
@@ -112,16 +124,17 @@ Throughline is built to track its own build: its seven-stage plan, [`docs/PLAN.m
 
 ## Built with Claude
 
-Throughline was built with [Claude Code](https://claude.com/claude-code), one stage of [`docs/PLAN.md`](docs/PLAN.md) per pull request. [`CLAUDE.md`](CLAUDE.md) gives every session the design rules and conventions above, and each pull request was reviewed before it merged. Inside the app, the import, reconciliation, link suggestion and feedback agents call Claude through the Anthropic TypeScript SDK, or any OpenRouter model through a second provider that the public demo uses with a free model.
+Throughline was built with [Claude Code](https://claude.com/claude-code): first one stage of [`docs/PLAN.md`](docs/PLAN.md) per pull request, then issue by issue. [`CLAUDE.md`](CLAUDE.md) gives every session the design rules and conventions above, and each pull request was reviewed before it merged. Inside the app, the import, reconciliation, slip check, link suggestion and feedback agents call Claude through the Anthropic TypeScript SDK, or any OpenRouter model through a second provider that the public demo uses with a free model.
 
 ## Future work
 
-Designed for but not built in v1; each has an issue:
+Designed for but not built yet; each has an issue:
 
-- [Feedback ingestion](../../issues/8): GitHub issues labelled `feedback` are built; support and CRM sources are still to come.
 - [Research agent](../../issues/9): check planned approaches against current libraries and the market.
 - [More sources](../../issues/10): Linear and Jira alongside GitHub.
 - [Teams and permissions](../../issues/11): organisations, roles and SSO, replacing the public site's view-only rule.
+
+Two built features have a second half still to come: feedback from support and CRM tools (GitHub issues labelled `feedback` work today), and the weekly digest by email (Slack works today).
 
 ## Learn more
 

@@ -129,20 +129,38 @@ test("plan page reorders outcomes and moves targets into the change feed", async
 test("feedback page shows what customers ask for and links a gap to an outcome", async ({
   page,
 }) => {
+  // A phone-sized viewport: the outcome pickers used to make the page scroll sideways.
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/p/acme-analytics/feedback");
 
   const pull = page.getByRole("region", { name: "Asked for, by outcome" });
   await expect(
     pull.getByText("Customers can export reports to Excel and CSV"),
   ).toBeVisible();
-  await expect(pull.getByText("2 pieces of feedback").first()).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    390,
+  );
+  await expect(pull.getByText("2 requests").first()).toBeVisible();
+  // An outcome nobody asks for is a plain row, not one that opens onto nothing.
+  const unasked = pull
+    .getByRole("listitem")
+    .filter({ hasText: "Customers can share a dashboard with a link" });
+  await expect(unasked.getByText("No feedback yet")).toBeVisible();
+  await expect(unasked.locator("details")).toHaveCount(0);
+
+  const share = "Can I send a dashboard to a client who has no account?";
   await expect(
     page
       .getByRole("region", { name: "Waiting for review" })
-      .getByText("Can I send a dashboard to a client who has no account?"),
-  ).toBeVisible();
+      .getByRole("link", { name: `Review the match for “${share}”` }),
+  ).toHaveAttribute(
+    "href",
+    /^\/p\/acme-analytics\/review#proposal-[0-9a-f-]+$/,
+  );
   const gaps = page.getByRole("region", { name: "Not on the roadmap" });
-  await expect(gaps.getByRole("heading", { name: /Dark mode/ })).toBeVisible();
+  await expect(
+    gaps.getByRole("heading", { name: "Dark mode 2 requests" }),
+  ).toBeVisible();
 
   const phone = "Let us check dashboards on a phone";
   await gaps

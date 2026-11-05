@@ -12,16 +12,41 @@ test("product view explains the product in plain language", async ({
   await expect(
     page.getByRole("heading", { name: "Product roadmap" }),
   ).toBeVisible();
+  const summary = page.getByRole("region", { name: "Roadmap summary" });
+  for (const [status, count] of [
+    ["Delivered", "1"],
+    ["Partially available", "1"],
+    ["In progress", "2"],
+    ["Not started", "1"],
+  ]) {
+    await expect(
+      summary.locator("div").filter({ hasText: status }),
+    ).toContainText(count);
+  }
+
+  // Outcomes run in target order: the Q3 2026 sign-on outcome comes before Q4 2026's export.
+  await expect(
+    page.getByRole("heading", { name: "Q3 2026", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("article").first()).toHaveAccessibleName(
+    "Enterprise customers can sign in with single sign-on",
+  );
   const exportCard = page.getByRole("article", {
     name: "Customers can export reports to Excel and CSV",
   });
   await expect(exportCard.getByText("Partially available")).toBeVisible();
+  await expect(exportCard.getByText("Target Q4 2026")).toBeVisible();
   await expect(
     exportCard.getByText("Customers can now download any report as CSV."),
   ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "What changed this week" }),
-  ).toBeVisible();
+  const comingNext = exportCard.getByText("Export button in report toolbar");
+  await expect(comingNext).toBeHidden();
+  await exportCard.getByText("Still to come (2)").click();
+  await expect(comingNext).toBeVisible();
+
+  const feed = page.getByRole("region", { name: "What changed this week" });
+  await expect(feed.getByText("Shipped").first()).toBeVisible();
+  await expect(feed.getByText("Dropped")).toBeVisible();
   await expect(page.locator("main")).not.toContainText(TICKET_NUMBER);
   // Who works on what and which team owns it are technical detail.
   await expect(page.locator("main")).not.toContainText("maya-chen");

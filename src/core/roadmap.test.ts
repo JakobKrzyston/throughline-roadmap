@@ -10,11 +10,86 @@ import type { GraphOperationInput } from "./operations";
 import { applyProposal } from "./proposals";
 import {
   availableToday,
+  groupByDay,
+  groupByQuarter,
   loadRecentChanges,
   loadRoadmap,
   loadSplitHistory,
+  type OutcomeTree,
+  quarterOf,
+  type RecentChange,
+  stillToCome,
 } from "./roadmap";
 import { productStatus, teamProgress } from "./rollup";
+
+describe("quarterOf", () => {
+  it.each([
+    ["2027-Q1", "2027-Q1"],
+    ["2027-01-11", "2027-Q1"],
+    ["2026-12-31", "2026-Q4"],
+    ["2026-07-01", "2026-Q3"],
+    ["H1 2027", null],
+    [null, null],
+  ])("puts %s in %s", (target, quarter) => {
+    expect(quarterOf(target)).toBe(quarter);
+  });
+});
+
+describe("groupByQuarter", () => {
+  const outcome = (key: string, target: string | null): OutcomeTree => ({
+    id: key,
+    key,
+    title: key,
+    description: "",
+    target,
+    priority: 0,
+    requirements: [],
+  });
+
+  it("orders quarters by time, dates within a quarter by day, and undated outcomes last", () => {
+    const groups = groupByQuarter([
+      outcome("A", "2027-Q1"),
+      outcome("B", null),
+      outcome("C", "2026-Q3"),
+      outcome("D", "2027-02-15"),
+      outcome("E", "H1 2027"),
+      outcome("F", "2027-Q1"),
+      outcome("G", "2027-01-11"),
+    ]);
+
+    expect(
+      groups.map((g) => [g.quarter, g.outcomes.map((o) => o.key)]),
+    ).toEqual([
+      ["2026-Q3", ["C"]],
+      ["2027-Q1", ["G", "D", "A", "F"]],
+      [null, ["B", "E"]],
+    ]);
+  });
+});
+
+describe("groupByDay", () => {
+  const change = (id: string, at: string): RecentChange => ({
+    id,
+    note: id,
+    at: new Date(at),
+    outcomeTitle: "Export",
+    entityKey: "TL-1",
+    kind: "updated",
+  });
+
+  it("shows each UTC day once, newest first, keeping the order within a day", () => {
+    const groups = groupByDay([
+      change("c", "2026-11-04T23:30:00Z"),
+      change("b", "2026-11-04T08:00:00Z"),
+      change("a", "2026-11-02T12:00:00Z"),
+    ]);
+
+    expect(groups.map((g) => [g.day, g.changes.map((c) => c.id)])).toEqual([
+      ["2026-11-04", ["c", "b"]],
+      ["2026-11-02", ["a"]],
+    ]);
+  });
+});
 
 describe("roadmap loaders", () => {
   let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -143,6 +218,50 @@ describe("roadmap loaders", () => {
     ).toEqual([]);
   });
 
+  it("lists what is still to come in plain language, leaving out technical-only work", async () => {
+    const roadmap = await loadRoadmap(db, projectId);
+    const dashboards = roadmap.find((o) => o.key === "OUT-4")!;
+
+    // TL-2 and TL-3 are done and TL-6 was dropped.
+    expect(stillToCome(roadmap[0].requirements)).toEqual([
+      { key: "TL-4", text: "Excel export" },
+      { key: "TL-5", text: "Export button in report toolbar" },
+    ]);
+    // The cache work under TL-15 is behind the scenes and has no product note.
+    expect(stillToCome(dashboards.requirements)).toEqual([
+      { key: "TL-20", text: "Lazy-load dashboard widgets" },
+    ]);
+  });
+
+  it("tells shipped, dropped, split, added and replanned changes apart", async () => {
+    const roadmap = await loadRoadmap(db, projectId);
+    const changes = await loadRecentChanges(db, projectId, roadmap);
+    const kindOf = (note: string): string | undefined =>
+      changes.find((c) => c.note === note)?.kind;
+
+    expect(kindOf("Customers can now download any report as CSV.")).toBe(
+      "shipped",
+    );
+    expect(
+      kindOf(
+        "Export audit log is no longer planned; no customer asked for it.",
+      ),
+    ).toBe("dropped");
+    expect(
+      kindOf(
+        "Reports can be emailed; handling bounced emails is planned next.",
+      ),
+    ).toBe("split");
+    expect(
+      kindOf("Exports run in the background so large reports don't time out."),
+    ).toBe("added");
+    expect(
+      kindOf(
+        "Moved from Q1 2027 to Q2 2027. Single sign-on and exports come first.",
+      ),
+    ).toBe("replanned");
+  });
+
   it("marks changes that moved an outcome's target or priority", async () => {
     await approve([
       {
@@ -164,9 +283,9 @@ describe("roadmap loaders", () => {
       note: "Moved from Q1 2027 to Q2 2027.",
       entityKey: "OUT-4",
       outcomeTitle: "Dashboards load in under two seconds",
-      moved: true,
+      kind: "replanned",
     });
-    expect(reworded).toMatchObject({ note: "Reworded.", moved: false });
+    expect(reworded).toMatchObject({ note: "Reworded.", kind: "updated" });
   });
 
   it("carries requirement targets into the tree", async () => {

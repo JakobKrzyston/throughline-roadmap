@@ -1,4 +1,4 @@
-/** Pure progress and product-status rollups over a requirement tree. Exports requirementProgress, outcomeProgress, productStatus, teamProgress. */
+/** Pure progress and product-status rollups over a requirement tree. Exports requirementProgress, outcomeProgress, productStatus, statusCounts, teamProgress. */
 import type { LeafStatus } from "./operations";
 
 /** The parts of a requirement the rollup needs. A node with no children is a leaf. */
@@ -106,6 +106,28 @@ export function productStatus(roots: RequirementNode[]): ProductStatus {
     return "in_progress";
   }
   return "not_started";
+}
+
+/**
+ * How many outcomes are in each product status, for the product view's summary.
+ *
+ * Args:
+ *   outcomes: Each outcome's root requirements, with children filled in.
+ *
+ * Returns:
+ *   A count for every status, zero where no outcome has it.
+ */
+export function statusCounts(
+  outcomes: RequirementNode[][],
+): Record<ProductStatus, number> {
+  const counts: Record<ProductStatus, number> = {
+    delivered: 0,
+    partially_available: 0,
+    in_progress: 0,
+    not_started: 0,
+  };
+  for (const roots of outcomes) counts[productStatus(roots)]++;
+  return counts;
 }
 
 /**

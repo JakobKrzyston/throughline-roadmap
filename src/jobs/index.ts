@@ -5,12 +5,13 @@ import { getGitHubAdapter, isGitHubConfigured } from "@/adapters/github";
 import { getDemoLLMProvider, getLLMProvider } from "@/adapters/llm";
 import type { LLMProvider } from "@/adapters/llm/provider";
 import type { SourceAdapter } from "@/adapters/source";
+import { runFeedbackMatch } from "@/agents/feedback-match";
 import { DEMO_LLM_FIXTURES } from "@/agents/fixtures";
 import { runLinkSuggest } from "@/agents/link-suggest";
 import { runReconcile } from "@/agents/reconcile";
 import { runSlipCheck } from "@/agents/slip";
 import { getDb } from "@/db/client";
-import { outcomes, projects, workItems } from "@/db/schema";
+import { feedback, outcomes, projects, workItems } from "@/db/schema";
 
 import { runBackfill } from "./backfill";
 import { runJobs } from "./queue";
@@ -69,6 +70,18 @@ export async function runQueuedJobs(): Promise<{
         row?.isDemo ? getDemoLLMProvider(DEMO_LLM_FIXTURES) : llm,
         outcomeId,
         new Date().toISOString().slice(0, 10),
+      );
+    },
+    feedback_match: async ({ feedbackId }) => {
+      const [row] = await db
+        .select({ isDemo: projects.isDemo })
+        .from(feedback)
+        .innerJoin(projects, eq(feedback.projectId, projects.id))
+        .where(eq(feedback.id, feedbackId));
+      await runFeedbackMatch(
+        db,
+        row?.isDemo ? getDemoLLMProvider(DEMO_LLM_FIXTURES) : llm,
+        { feedbackId },
       );
     },
   });

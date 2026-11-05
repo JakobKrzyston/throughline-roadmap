@@ -1,4 +1,4 @@
-/** POST /api/github/webhook: receives GitHub App deliveries, mirrors issues and PRs, and links explicit references. */
+/** POST /api/github/webhook: receives GitHub App deliveries, mirrors issues, PRs and feedback, and links explicit references. */
 import { after } from "next/server";
 import { ZodError } from "zod";
 
@@ -57,10 +57,10 @@ export async function POST(request: Request): Promise<Response> {
   }
   if (!event) return Response.json({ status: "ignored" });
 
-  const results = await syncRepositoryItem(
+  const projects = await syncRepositoryItem(
     getDb(),
     event.repository,
     event.item,
   );
-  return Response.json({ status: "synced", projects: results.length });
+  return Response.json({ status: "synced", projects });
 }

@@ -57,6 +57,8 @@ export const proposalSource = pgEnum("proposal_source", [
   "manual",
   // The slip check proposes a new outcome target when open work makes the current one unlikely.
   "reschedule",
+  // The feedback agent proposes the outcome a piece of customer feedback asks for.
+  "feedback_match",
 ]);
 export const proposalStatus = pgEnum("proposal_status", [
   "pending",
@@ -194,6 +196,47 @@ export const workItems = pgTable(
   (t) => [unique().on(t.projectId, t.source, t.externalId)],
 );
 
+// Customer feedback, such as a GitHub issue labelled `feedback`. Not a work item: it is what
+// customers asked for, not work done, so it links to outcomes rather than requirements.
+export const feedback = pgTable(
+  "feedback",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    source: workItemSource("source").notNull(),
+    externalId: text("external_id").notNull(),
+    title: text("title").notNull(),
+    url: text("url").notNull(),
+    bodyExcerpt: text("body_excerpt").notNull().default(""),
+    // A short name for what is asked, from the feedback agent, so similar feedback groups together.
+    // A label on the feedback only: it changes nothing in the roadmap.
+    theme: text("theme"),
+    // The source no longer counts it as feedback (the label was removed). Kept, with its links,
+    // so the events that linked it still point at something; it is left out of every count.
+    withdrawn: boolean("withdrawn").notNull().default(false),
+    sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [unique().on(t.projectId, t.source, t.externalId)],
+);
+
+// Which outcome a piece of feedback asks for. Changed only through link_feedback and unlink_feedback.
+export const feedbackLinks = pgTable(
+  "feedback_links",
+  {
+    feedbackId: uuid("feedback_id")
+      .notNull()
+      .references(() => feedback.id, { onDelete: "cascade" }),
+    outcomeId: uuid("outcome_id")
+      .notNull()
+      .references(() => outcomes.id, { onDelete: "cascade" }),
+    ...timestamps,
+  },
+  (t) => [primaryKey({ columns: [t.feedbackId, t.outcomeId] })],
+);
+
 export const links = pgTable(
   "links",
   {
@@ -227,6 +270,10 @@ export const proposals = pgTable("proposals", {
   ),
   // The requirement a reconcile proposal is about. A newer one supersedes older pending ones.
   requirementId: uuid("requirement_id").references(() => requirements.id, {
+    onDelete: "set null",
+  }),
+  // The feedback a feedback_match proposal is about.
+  triggerFeedbackId: uuid("trigger_feedback_id").references(() => feedback.id, {
     onDelete: "set null",
   }),
   decidedBy: text("decided_by"),

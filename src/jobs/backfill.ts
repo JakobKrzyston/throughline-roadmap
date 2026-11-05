@@ -2,7 +2,7 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
 import type { SourceAdapter } from "@/adapters/source";
-import { syncWorkItem } from "@/core/work-items";
+import { syncFeedback, syncWorkItem } from "@/core/work-items";
 import type { Database } from "@/db/client";
 import { jobs, repositories } from "@/db/schema";
 
@@ -26,7 +26,8 @@ export type BackfillStatus =
  * the page that failed. Each item goes through syncWorkItem, so repeating a page creates no
  * duplicates. Explicit references are linked, but no reconciliation is queued: work that finished
  * before the repository was connected is history, not news, and reconciling all of it at once
- * would flood the review queue.
+ * would flood the review queue. Open feedback is imported and matched to outcomes, since what
+ * customers are still asking for is news.
  *
  * Args:
  *   db: Database to write to.
@@ -59,7 +60,11 @@ export async function runBackfill(
     payload.cursor ?? null,
   );
   for (const item of items) {
-    await syncWorkItem(db, repository.projectId, item, { reconcile: false });
+    if (item.kind === "feedback") {
+      await syncFeedback(db, repository.projectId, item);
+    } else {
+      await syncWorkItem(db, repository.projectId, item, { reconcile: false });
+    }
   }
   if (!nextCursor) return undefined;
   return { repositoryId: repository.id, mergedSince, cursor: nextCursor };

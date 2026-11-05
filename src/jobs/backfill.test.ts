@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SourceAdapter, SourceWorkItem } from "@/adapters/source";
 import { applyProposal } from "@/core/proposals";
 import {
+  feedback,
   jobs,
   links,
   projects,
@@ -87,6 +88,34 @@ describe("runBackfill", () => {
     );
     expect(await db.select().from(workItems)).toHaveLength(1);
     expect(next).toBeUndefined();
+  });
+
+  it("stores feedback and queues its match, but queues nothing for finished work", async () => {
+    adapter.listBackfillPage.mockResolvedValueOnce({
+      items: [
+        {
+          source: "github",
+          kind: "feedback",
+          externalId: "4242#8",
+          title: "Please add dark mode",
+          body: "",
+          url: "https://github.com/acme/analytics/issues/8",
+          updatedAt: new Date("2026-11-01"),
+        },
+        issue,
+      ],
+      nextCursor: null,
+    });
+
+    await runBackfill(db, adapter, { repositoryId });
+
+    expect(await db.select().from(feedback)).toMatchObject([
+      { title: "Please add dark mode" },
+    ]);
+    expect(await db.select().from(workItems)).toHaveLength(1);
+    expect((await db.select().from(jobs)).map((job) => job.type)).toEqual([
+      "feedback_match",
+    ]);
   });
 
   it("returns the next page's job, keeping the first page's cut-off date", async () => {

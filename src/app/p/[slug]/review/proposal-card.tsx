@@ -56,6 +56,8 @@ const EDITABLE: Record<GraphOperation["type"], string[]> = {
   set_status: ["status", "product_note"],
   link_work_item: ["relation"],
   unlink_work_item: [],
+  link_feedback: [],
+  unlink_feedback: [],
 };
 const CHILD_FIELDS = [
   "title",

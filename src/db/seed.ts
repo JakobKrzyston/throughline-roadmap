@@ -6,7 +6,13 @@ import { outcomeTargetOperations } from "@/core/planning";
 import { applyProposal } from "@/core/proposals";
 
 import type { Database } from "./client";
-import { projects, proposals, requirements, workItems } from "./schema";
+import {
+  feedback,
+  projects,
+  proposals,
+  requirements,
+  workItems,
+} from "./schema";
 
 export const DEMO_SLUG = "acme-analytics";
 const REPO = "acme/analytics";
@@ -53,6 +59,29 @@ const WORK_ITEMS: WorkItemSeed[] = [
   // Merged with explicit references or none at all; the pending proposals below are about these.
   { number: 124, kind: "pull_request", state: "merged", title: "Fix flaky CSV export test", people: ["sam-okafor"] },
   { number: 125, kind: "pull_request", state: "merged", title: "Excel export: multiple sheets and formatting", implements: "TL-4", people: ["sam-okafor"] },
+];
+
+type FeedbackSeed = {
+  number: number;
+  title: string;
+  theme: string;
+  /** The outcome it is linked to, or, with `pending`, the outcome a match waiting for review names. */
+  outcome?: string;
+  pending?: boolean;
+};
+
+// Issues labelled `feedback` in the demo repository. The last three ask for things no outcome covers.
+// prettier-ignore
+const FEEDBACK: FeedbackSeed[] = [
+  { number: 126, title: "Finance needs our reports in Excel, not CSV", theme: "Export reports to Excel", outcome: "OUT-1" },
+  { number: 127, title: "Excel export would save me an hour every Monday", theme: "Export reports to Excel", outcome: "OUT-1" },
+  { number: 128, title: "We can only buy if staff sign in with Okta", theme: "Sign in with the company account", outcome: "OUT-3" },
+  { number: 129, title: "Our main dashboard takes 20 seconds to open", theme: "Faster dashboards", outcome: "OUT-4" },
+  { number: 130, title: "Email my boss the weekly numbers automatically", theme: "Scheduled report emails", outcome: "OUT-2" },
+  { number: 131, title: "Can I send a dashboard to a client who has no account?", theme: "Share dashboards outside the company", outcome: "OUT-5", pending: true },
+  { number: 132, title: "Dark mode for the wall screen in our ops room", theme: "Dark mode" },
+  { number: 133, title: "The white background is hard on the eyes at night", theme: "Dark mode" },
+  { number: 134, title: "Let us check dashboards on a phone", theme: "Mobile app" },
 ];
 
 // prettier-ignore
@@ -246,11 +275,38 @@ export async function seedDemoProject(db: Database): Promise<string> {
   const workItemId = (number: number): string =>
     inserted.find((item) => item.externalId === `${REPO_ID}#${number}`)!.id;
 
+  const feedbackRows = await db
+    .insert(feedback)
+    .values(
+      FEEDBACK.map((item) => ({
+        projectId: project.id,
+        source: "github" as const,
+        externalId: `${REPO_ID}#${item.number}`,
+        title: item.title,
+        url: `https://github.com/${REPO}/issues/${item.number}`,
+        theme: item.theme,
+      })),
+    )
+    .returning({ id: feedback.id, externalId: feedback.externalId });
+  const feedbackId = (number: number): string =>
+    feedbackRows.find((item) => item.externalId === `${REPO_ID}#${number}`)!.id;
+
   async function propose(
-    source: "import" | "reconcile" | "link_suggest" | "manual" | "reschedule",
+    source:
+      | "import"
+      | "reconcile"
+      | "link_suggest"
+      | "manual"
+      | "reschedule"
+      | "feedback_match",
     summary: string,
     operations: GraphOperationInput[],
-    extra: { trigger?: number; rationale?: string; requirement?: string } = {},
+    extra: {
+      trigger?: number;
+      feedback?: number;
+      rationale?: string;
+      requirement?: string;
+    } = {},
   ): Promise<string> {
     const [requirement] = extra.requirement
       ? await db
@@ -272,6 +328,7 @@ export async function seedDemoProject(db: Database): Promise<string> {
         rationale: extra.rationale ?? "",
         operations,
         triggerWorkItemId: extra.trigger ? workItemId(extra.trigger) : null,
+        triggerFeedbackId: extra.feedback ? feedbackId(extra.feedback) : null,
         requirementId: requirement?.id ?? null,
       })
       .returning();
@@ -354,6 +411,21 @@ export async function seedDemoProject(db: Database): Promise<string> {
       "Single sign-on and exports come first.",
     ),
   );
+
+  for (const item of FEEDBACK.filter((f) => f.outcome && !f.pending)) {
+    await approve(
+      "feedback_match",
+      `Count feedback "${item.title}" towards ${item.outcome}`,
+      [
+        {
+          type: "link_feedback",
+          outcome_key: item.outcome!,
+          feedback_id: feedbackId(item.number),
+        },
+      ],
+      { feedback: item.number },
+    );
+  }
 
   // Left pending so the review queue has something in it.
   await propose(
@@ -438,6 +510,24 @@ export async function seedDemoProject(db: Database): Promise<string> {
     {
       rationale:
         "Imported from the Q2 planning notes, which list usage alerts as a top request from finance teams.",
+    },
+  );
+
+  const pendingFeedback = FEEDBACK.find((f) => f.pending)!;
+  await propose(
+    "feedback_match",
+    `Count feedback "${pendingFeedback.title}" towards ${pendingFeedback.outcome}`,
+    [
+      {
+        type: "link_feedback",
+        outcome_key: pendingFeedback.outcome!,
+        feedback_id: feedbackId(pendingFeedback.number),
+      },
+    ],
+    {
+      feedback: pendingFeedback.number,
+      rationale:
+        "The customer wants to show a dashboard to someone without an account, which is what read-only share links deliver.",
     },
   );
 

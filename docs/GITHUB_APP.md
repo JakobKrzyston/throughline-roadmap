@@ -65,6 +65,8 @@ On Vercel, also set `CRON_SECRET` to a random string. Vercel's cron then sends i
 
 Throughline then imports the repository's open issues and the pull requests merged in the last 90 days. From then on, webhooks keep work items up to date.
 
+An issue labelled `feedback` (in any case) is customer feedback rather than work: it shows on `/p/<project-slug>/feedback` and is never linked to a requirement. Removing the label turns it back into an ordinary issue. Create the label in the repository if it does not exist; nothing else needs setting up, since label changes arrive as `issues` events.
+
 A pull request or issue whose title or description says `Implements TL-12` or `Part of TL-12` is linked to requirement `TL-12` automatically. Several references are fine (`Part of TL-3, TL-4 and TL-5`), keys are not case-sensitive, and keys that do not exist in the project are ignored.
 
 ## Receiving webhooks locally

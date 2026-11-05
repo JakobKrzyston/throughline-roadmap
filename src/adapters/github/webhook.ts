@@ -3,20 +3,20 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { z } from "zod";
 
-import type { SourceRepository, SourceWorkItem } from "@/adapters/source";
+import type { SourceItem, SourceRepository } from "@/adapters/source";
 
 import {
   githubIssueSchema,
   githubPullSchema,
-  issueToWorkItem,
+  issueToItem,
   pullToWorkItem,
 } from "./work-items";
 
-/** A delivery that changes a work item in a repository. */
+/** A delivery that changes a work item or a piece of feedback in a repository. */
 export type WebhookEvent = {
   /** The repository as the delivery reports it, so a rename shows up in its `fullName`. */
   repository: SourceRepository;
-  item: SourceWorkItem;
+  item: SourceItem;
 };
 
 const repository = z.object({ id: z.number().int(), full_name: z.string() });
@@ -59,14 +59,14 @@ export function verifyWebhookSignature(
 }
 
 /**
- * Turn an `issues` or `pull_request` delivery into the work item it describes.
+ * Turn an `issues` or `pull_request` delivery into the work item or feedback it describes.
  *
  * Args:
  *   eventName: The `X-GitHub-Event` header.
  *   payload: The parsed JSON body.
  *
  * Returns:
- *   The repository and work item, or null for events Throughline does not track (pings,
+ *   The repository and item, or null for events Throughline does not track (pings,
  *   installation changes, deleted or transferred issues).
  *
  * Raises:
@@ -85,7 +85,7 @@ export function parseWebhookEvent(
     const repository = toRepository(event.repository);
     return {
       repository,
-      item: issueToWorkItem(repository.externalId, event.issue),
+      item: issueToItem(repository.externalId, event.issue),
     };
   }
   if (eventName === "pull_request") {

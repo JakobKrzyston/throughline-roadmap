@@ -125,6 +125,18 @@ describe("GitHubAdapter.listBackfillPage", () => {
     expect(page.nextCursor).toBe("pulls:1");
   });
 
+  it("returns issues labelled feedback as feedback", async () => {
+    const { app } = fakeApp({
+      issuePages: [[issue(7, { labels: ["feedback"] }), issue(9)]],
+    });
+    const page = await new GitHubAdapter(app).listBackfillPage(
+      repository,
+      since,
+      null,
+    );
+    expect(page.items.map((item) => item.kind)).toEqual(["feedback", "issue"]);
+  });
+
   it("moves to the next page of issues after a full one", async () => {
     const full = Array.from({ length: 100 }, (_, i) => issue(i + 1));
     const { app } = fakeApp({ issuePages: [full, [issue(101)]] });

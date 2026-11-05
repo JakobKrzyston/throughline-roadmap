@@ -4,6 +4,8 @@ import { and, eq } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import {
   events,
+  feedback,
+  feedbackLinks,
   links,
   outcomes,
   proposals,
@@ -316,6 +318,62 @@ async function applyOperation(
       }
       return event(op, "requirement", requirement.id, null);
     }
+
+    case "link_feedback": {
+      const outcome = await findOutcome(tx, projectId, op.outcome_key);
+      // Feedback only counts towards live outcomes, so a link to an archived one would be hidden.
+      if (outcome.archived) {
+        throw new ProposalError(`Outcome ${op.outcome_key} is archived`);
+      }
+      const [found] = await tx
+        .select({ id: feedback.id, withdrawn: feedback.withdrawn })
+        .from(feedback)
+        .where(
+          and(
+            eq(feedback.projectId, projectId),
+            eq(feedback.id, op.feedback_id),
+          ),
+        );
+      if (!found)
+        throw new ProposalError(`Feedback ${op.feedback_id} not found`);
+      if (found.withdrawn) {
+        throw new ProposalError(
+          `Feedback ${op.feedback_id} is no longer labelled as feedback`,
+        );
+      }
+      const linked = await tx
+        .insert(feedbackLinks)
+        .values({ feedbackId: op.feedback_id, outcomeId: outcome.id })
+        .onConflictDoNothing()
+        .returning();
+      if (linked.length === 0) {
+        throw new ProposalError(
+          `${op.outcome_key} is already linked to feedback ${op.feedback_id}`,
+        );
+      }
+      // Like work item links, the event belongs to the outcome. No product note: feedback is not
+      // a change to the plan, so it stays out of the change feed.
+      return event(op, "outcome", outcome.id, null);
+    }
+
+    case "unlink_feedback": {
+      const outcome = await findOutcome(tx, projectId, op.outcome_key);
+      const removed = await tx
+        .delete(feedbackLinks)
+        .where(
+          and(
+            eq(feedbackLinks.outcomeId, outcome.id),
+            eq(feedbackLinks.feedbackId, op.feedback_id),
+          ),
+        )
+        .returning();
+      if (removed.length === 0) {
+        throw new ProposalError(
+          `${op.outcome_key} is not linked to feedback ${op.feedback_id}`,
+        );
+      }
+      return event(op, "outcome", outcome.id, null);
+    }
   }
 }
 
@@ -341,6 +399,9 @@ function targetOf(op: GraphOperation): unknown[] {
       return [op.type, op.requirement_key, op.work_item_id, op.confidence];
     case "unlink_work_item":
       return [op.type, op.requirement_key, op.work_item_id];
+    case "link_feedback":
+    case "unlink_feedback":
+      return [op.type, op.outcome_key, op.feedback_id];
   }
 }
 

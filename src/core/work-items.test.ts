@@ -1,10 +1,11 @@
-/** Tests for syncWorkItem and syncRepositoryItem against an in-memory database. */
+/** Tests for syncWorkItem, syncFeedback and syncRepositoryItem against an in-memory database. */
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import type { SourceWorkItem } from "@/adapters/source";
+import type { SourceFeedback, SourceWorkItem } from "@/adapters/source";
 import {
   events,
+  feedback,
   jobs,
   links,
   projects,
@@ -16,7 +17,12 @@ import {
 import { createTestDb } from "@/db/test-db";
 
 import { applyProposal } from "./proposals";
-import { SYNC_ACTOR, syncRepositoryItem, syncWorkItem } from "./work-items";
+import {
+  SYNC_ACTOR,
+  syncFeedback,
+  syncRepositoryItem,
+  syncWorkItem,
+} from "./work-items";
 
 type TestDb = Awaited<ReturnType<typeof createTestDb>>;
 
@@ -489,6 +495,124 @@ describe("syncWorkItem link suggestions", () => {
   });
 });
 
+function feedbackItem(overrides: Partial<SourceFeedback> = {}): SourceFeedback {
+  return {
+    source: "github",
+    kind: "feedback",
+    externalId: "4242#50",
+    title: "Please add Excel export",
+    body: "Finance can't open CSV files.",
+    url: "https://github.com/acme/analytics/issues/50",
+    updatedAt: new Date("2026-11-01T09:00:00Z"),
+    ...overrides,
+  };
+}
+
+const sameIssue = (overrides: Partial<SourceWorkItem> = {}): SourceWorkItem =>
+  pr({
+    externalId: "4242#50",
+    kind: "issue",
+    title: "Please add Excel export",
+    body: "",
+    url: "https://github.com/acme/analytics/issues/50",
+    ...overrides,
+  });
+
+describe("syncFeedback", () => {
+  it("stores new feedback and queues one match, however often it is delivered", async () => {
+    const first = await syncFeedback(db, projectId, feedbackItem());
+    const again = await syncFeedback(db, projectId, feedbackItem());
+
+    expect(first.matchJob).toBe(true);
+    expect(again).toEqual({ feedbackId: first.feedbackId, matchJob: false });
+    expect(await db.select().from(feedback)).toMatchObject([
+      {
+        title: "Please add Excel export",
+        bodyExcerpt: "Finance can't open CSV files.",
+        withdrawn: false,
+      },
+    ]);
+    expect(await db.select().from(jobs)).toMatchObject([
+      { type: "feedback_match", payload: { feedbackId: first.feedbackId } },
+    ]);
+    // Feedback is not work, so nothing becomes a work item.
+    expect(await db.$count(workItems)).toBe(0);
+  });
+
+  it("ignores a delivery older than the stored copy", async () => {
+    await syncFeedback(db, projectId, feedbackItem());
+    await syncFeedback(
+      db,
+      projectId,
+      feedbackItem({
+        title: "Old title",
+        updatedAt: new Date("2026-10-01T09:00:00Z"),
+      }),
+    );
+
+    const [stored] = await db.select().from(feedback);
+    expect(stored.title).toBe("Please add Excel export");
+  });
+
+  it("withdraws feedback whose label was removed, and counts it again when relabelled", async () => {
+    const { feedbackId } = await syncFeedback(db, projectId, feedbackItem());
+    const [match] = await db
+      .insert(proposals)
+      .values({
+        projectId,
+        source: "feedback_match",
+        summary: "Count it towards OUT-1",
+        operations: [
+          {
+            type: "link_feedback",
+            outcome_key: "OUT-1",
+            feedback_id: feedbackId,
+          },
+        ],
+        triggerFeedbackId: feedbackId,
+      })
+      .returning();
+
+    await syncWorkItem(
+      db,
+      projectId,
+      sameIssue({ updatedAt: new Date("2026-11-02T09:00:00Z") }),
+    );
+    const [withdrawn] = await db.select().from(feedback);
+    expect(withdrawn.withdrawn).toBe(true);
+    const [superseded] = await db
+      .select()
+      .from(proposals)
+      .where(eq(proposals.id, match.id));
+    expect(superseded).toMatchObject({
+      status: "superseded",
+      decidedBy: SYNC_ACTOR,
+    });
+
+    await syncFeedback(
+      db,
+      projectId,
+      feedbackItem({ updatedAt: new Date("2026-11-03T09:00:00Z") }),
+    );
+    const [back] = await db.select().from(feedback);
+    expect(back.withdrawn).toBe(false);
+    // Its match was superseded, so it is sorted again.
+    expect(await db.$count(jobs, eq(jobs.type, "feedback_match"))).toBe(2);
+  });
+
+  it("does not withdraw feedback for an issue delivery older than the feedback", async () => {
+    await syncFeedback(db, projectId, feedbackItem());
+    await syncWorkItem(
+      db,
+      projectId,
+      sameIssue({ updatedAt: new Date("2026-10-01T09:00:00Z") }),
+    );
+
+    const [stored] = await db.select().from(feedback);
+    expect(stored.withdrawn).toBe(false);
+  });
+});
+
 describe("syncRepositoryItem", () => {
   const repository = { externalId: "4242", fullName: "acme/analytics" };
 
@@ -499,8 +623,7 @@ describe("syncRepositoryItem", () => {
       externalId: "4242",
       fullName: "acme/analytics",
     });
-    const results = await syncRepositoryItem(db, repository, pr());
-    expect(results).toHaveLength(1);
+    expect(await syncRepositoryItem(db, repository, pr())).toBe(1);
     expect(await db.select().from(workItems)).toHaveLength(1);
   });
 
@@ -525,10 +648,43 @@ describe("syncRepositoryItem", () => {
     ]);
   });
 
+  it("syncs feedback as feedback, not as a work item", async () => {
+    await db.insert(repositories).values({
+      projectId,
+      source: "github",
+      externalId: "4242",
+      fullName: "acme/analytics",
+    });
+
+    expect(await syncRepositoryItem(db, repository, feedbackItem())).toBe(1);
+    expect(await db.$count(feedback)).toBe(1);
+    expect(await db.$count(workItems)).toBe(0);
+  });
+
+  it("skips an issue delivery from before the issue was labelled as feedback", async () => {
+    await db.insert(repositories).values({
+      projectId,
+      source: "github",
+      externalId: "4242",
+      fullName: "acme/analytics",
+    });
+    // The labelled delivery arrives first; the earlier unlabelled one arrives after it.
+    await syncRepositoryItem(db, repository, feedbackItem());
+    await syncRepositoryItem(
+      db,
+      repository,
+      sameIssue({ body: "TL-1", updatedAt: new Date("2026-10-01T09:00:00Z") }),
+    );
+
+    expect(await db.$count(workItems)).toBe(0);
+    const [stored] = await db.select().from(feedback);
+    expect(stored.withdrawn).toBe(false);
+  });
+
   it("does nothing for a repository that is not connected", async () => {
     expect(
       await syncRepositoryItem(db, { ...repository, externalId: "9999" }, pr()),
-    ).toEqual([]);
+    ).toBe(0);
     expect(await db.select().from(workItems)).toEqual([]);
   });
 });

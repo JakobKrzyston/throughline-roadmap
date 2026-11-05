@@ -134,6 +134,14 @@ Mirrors of GitHub issues and pull requests.
 
 People come from the source, never from Throughline: a requirement's people are everyone on the work items linked to it, and Throughline never assigns work. An issue's author only reported it, so only its assignees count. Work items stored before `people` existed have none until GitHub next sends a change for them; queueing a `backfill` job for a repository again refreshes its open issues and recently merged PRs.
 
+### `feedback`
+
+What customers ask for, mirrored from a source: for GitHub, issues labelled `feedback`. Feedback is not a work item, since it is a request rather than work done, so it links to outcomes instead of requirements. Fields: `project_id`, `source`, `external_id` (the same form as a work item's), `title`, `url`, `body_excerpt`, `theme` (a short name for what is asked, from the feedback agent), `withdrawn` (the label was removed; kept so the events that linked it still point at something, and left out of every count), `source_updated_at`.
+
+### `feedback_links`
+
+Many-to-many between feedback and outcomes. Fields: `feedback_id`, `outcome_id`; the pair is the primary key. Changed only by the `link_feedback` and `unlink_feedback` operations.
+
 ### `links`
 
 Many-to-many between requirements and work items. Fields: `requirement_id`, `work_item_id`, `relation` (`implements` or `part_of`), `confidence` (`explicit` from a PR reference, or `suggested` from the agent and approved). The pair `(requirement_id, work_item_id)` is the primary key; links have no id of their own.
@@ -142,18 +150,19 @@ Many-to-many between requirements and work items. Fields: `requirement_id`, `wor
 
 The review queue.
 
-| Field                      | Notes                                                                                          |
-| -------------------------- | ---------------------------------------------------------------------------------------------- |
-| `id`                       |                                                                                                |
-| `project_id`               |                                                                                                |
-| `source`                   | `import`, `reconcile`, `link_suggest`, `explicit_link`, `work_started`, `manual`, `reschedule` |
-| `status`                   | `pending`, `approved`, `rejected`, `superseded`                                                |
-| `summary`                  | One plain-language line for the queue                                                          |
-| `rationale`                | Why the agent suggests this                                                                    |
-| `operations`               | JSON array of typed graph operations (see below)                                               |
-| `trigger_work_item_id`     | The PR or issue that caused it, if any                                                         |
-| `requirement_id`           | The requirement a `reconcile` proposal is about                                                |
-| `decided_by`, `decided_at` |                                                                                                |
+| Field                      | Notes                                                                                                            |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `id`                       |                                                                                                                  |
+| `project_id`               |                                                                                                                  |
+| `source`                   | `import`, `reconcile`, `link_suggest`, `explicit_link`, `work_started`, `manual`, `reschedule`, `feedback_match` |
+| `status`                   | `pending`, `approved`, `rejected`, `superseded`                                                                  |
+| `summary`                  | One plain-language line for the queue                                                                            |
+| `rationale`                | Why the agent suggests this                                                                                      |
+| `operations`               | JSON array of typed graph operations (see below)                                                                 |
+| `trigger_work_item_id`     | The PR or issue that caused it, if any                                                                           |
+| `requirement_id`           | The requirement a `reconcile` proposal is about                                                                  |
+| `trigger_feedback_id`      | The feedback a `feedback_match` (or manual feedback link) proposal is about                                      |
+| `decided_by`, `decided_at` |                                                                                                                  |
 
 ### `events`
 
@@ -161,13 +170,13 @@ Append-only audit log. Fields: `id`, `seq`, `project_id`, `type`, `entity_type`,
 
 `seq` is an identity column that records insertion order. Every event from one approved proposal shares `created_at`, so anything that needs "latest" or "newest first" orders by `seq`.
 
-`type` is the operation type and `payload` is the operation itself. `entity_type` is `outcome` or `requirement`; link and unlink events belong to the requirement.
+`type` is the operation type and `payload` is the operation itself. `entity_type` is `outcome` or `requirement`; work item link and unlink events belong to the requirement, and feedback link and unlink events to the outcome.
 
 ### `jobs`
 
 A minimal job queue for agent runs. Fields: `id`, `type`, `payload`, `status` (`queued`, `running`, `done`, `failed`), `attempts`, `last_error`, `run_after`.
 
-Job types are `backfill` (`{ repositoryId, mergedSince?, cursor? }`), `reconcile` (`{ workItemId, requirementId }`), `link_suggest` (`{ workItemId }`) and `slip_check` (`{ outcomeId }`). `enqueue()`, `enqueueReconcile()`, `enqueueSlipCheck()` and `runJobs()` live in `src/jobs/queue.ts`. `enqueueSlipCheck` adds nothing when a check for the same outcome is already queued, since the check reads the outcome as it is when it runs. `enqueueReconcile` folds a reconciliation into a `queued` job for the same requirement instead of adding another, pointing that job at the newest work item: the agent judges the requirement as a whole and sees every work item linked to it, so when several pull requests merge before the first job runs, one run covers them all. A job that is already `running` is left alone, and the new job's proposal supersedes its proposal. A runner claims one job at a time with `FOR UPDATE SKIP LOCKED`, so concurrent runners never share a job. A failed job is retried after a delay, up to three attempts, then marked `failed`. A job left `running` for 15 minutes (for example, cut off by a serverless timeout) is claimed again. Job types without a handler stay `queued`. A handler may return the payload of a follow-up job of the same type; it is queued in the same transaction that marks the job done, so a job cut off before that point never queues its follow-up twice.
+Job types are `backfill` (`{ repositoryId, mergedSince?, cursor? }`), `reconcile` (`{ workItemId, requirementId }`), `link_suggest` (`{ workItemId }`), `slip_check` (`{ outcomeId }`) and `feedback_match` (`{ feedbackId }`). `enqueue()`, `enqueueReconcile()`, `enqueueSlipCheck()` and `runJobs()` live in `src/jobs/queue.ts`. `enqueueSlipCheck` adds nothing when a check for the same outcome is already queued, since the check reads the outcome as it is when it runs. `enqueueReconcile` folds a reconciliation into a `queued` job for the same requirement instead of adding another, pointing that job at the newest work item: the agent judges the requirement as a whole and sees every work item linked to it, so when several pull requests merge before the first job runs, one run covers them all. A job that is already `running` is left alone, and the new job's proposal supersedes its proposal. A runner claims one job at a time with `FOR UPDATE SKIP LOCKED`, so concurrent runners never share a job. A failed job is retried after a delay, up to three attempts, then marked `failed`. A job left `running` for 15 minutes (for example, cut off by a serverless timeout) is claimed again. Job types without a handler stay `queued`. A handler may return the payload of a follow-up job of the same type; it is queued in the same transaction that marks the job done, so a job cut off before that point never queues its follow-up twice.
 
 ## Graph operations
 
@@ -183,8 +192,10 @@ Proposals carry a list of typed operations. Applying a proposal runs them in one
 | `set_status`         | Set a leaf's status                                                                                                           |
 | `link_work_item`     | Link a work item to a requirement                                                                                             |
 | `unlink_work_item`   | Remove a link                                                                                                                 |
+| `link_feedback`      | Count a piece of feedback towards a live outcome; refused for withdrawn feedback                                              |
+| `unlink_feedback`    | Remove a feedback link                                                                                                        |
 
-Operations name outcomes and requirements by `key` (`OUT-3`, `TL-12`), not by id, so one proposal can create an outcome and then add requirements under it. Work items are referenced by id because proposals never create them. Only leaves can be split or given a status. Each operation's optional `product_note` becomes the event's product note (and, for requirement create/update, the requirement's own note). Outcomes have no note of their own. When an `update_outcome` changes the target, `applyProposal` writes the move ("Moved from Q1 2027 to Q2 2027.", from `describeTargetMove`) from the target the outcome has at that moment, followed by the operation's note as the reason. A proposal made against an older plan, or edited by a reviewer, therefore cannot put a move that did not happen in the change feed.
+Operations name outcomes and requirements by `key` (`OUT-3`, `TL-12`), not by id, so one proposal can create an outcome and then add requirements under it. Work items and feedback are referenced by id because proposals never create them. Feedback links carry no product note: feedback is not a change to the plan, so it stays out of the change feed and the digest. Only leaves can be split or given a status. Each operation's optional `product_note` becomes the event's product note (and, for requirement create/update, the requirement's own note). Outcomes have no note of their own. When an `update_outcome` changes the target, `applyProposal` writes the move ("Moved from Q1 2027 to Q2 2027.", from `describeTargetMove`) from the target the outcome has at that moment, followed by the operation's note as the reason. A proposal made against an older plan, or edited by a reviewer, therefore cannot put a move that did not happen in the change feed.
 
 `applyProposal(db, proposalId, actor)` in `src/core/proposals.ts` is the only code that changes the graph. It locks the proposal, validates its operations with Zod, applies them in order in one transaction, writes one event per operation and marks the proposal `approved`. If any operation fails, nothing changes. `rejectProposal` marks a proposal `rejected` and touches nothing else.
 
@@ -263,9 +274,21 @@ Trade-off: the check runs when reconciled work changes the plan, not when time p
 
 `src/agents/link-suggest.ts`. Runs as a `link_suggest` job when a PR merges with no link at all (not during a backfill). The model sees the PR's title, description and changed files, and the leaf requirements that are not dropped, with their outcomes. Finished requirements stay in, since a fix to finished work belongs with it. A project with more than `MAX_CANDIDATES` (40) leaves is narrowed first by `rankCandidates`: requirements are scored by how many of their words appear in the PR's title, description and changed files, ties go to unfinished work, and the prompt says how many were left out so the model knows to answer null when the right one is missing. This keeps the prompt bounded on large roadmaps; a retrieval index is the next step if word overlap proves too crude. The answer must be one of those keys, or null when nothing fits well. A match becomes a pending `link_suggest` proposal with a `suggested` link; no match proposes nothing. A PR that has been linked since, or already has a pending suggestion, is skipped. If the PR later gains an explicit reference, the sync marks its pending suggestion `superseded`.
 
+### Feedback agent
+
+`src/agents/feedback-match.ts`. Runs as a `feedback_match` job the first time a piece of feedback arrives, from a webhook or a backfill. It skips feedback that has been withdrawn, linked by hand since, or already has a pending match, and checks again under the feedback's row lock before saving, since the label can be removed or a person can link it while the model answers (withdrawal and manual links take the same lock). The model sees the project's live outcomes, the themes already in use (up to `MAX_THEMES`, 50, the most common first) and the feedback inside `<feedback>` tags it is told to treat as data. It answers with two things:
+
+- **A theme**: two to six plain words for what the customer is asking for ("Dark mode"), reusing an existing theme when the ask is the same. Offering the existing themes is what clusters the feedback: each new piece joins a group or starts one, without a separate clustering pass. A theme that matches an existing one apart from case takes the existing spelling.
+- **An outcome key**, one of the live outcomes, or null when delivering none of them would answer the feedback. The prompt says that being in the same area is not enough, since a wrong match hides a gap.
+
+The theme is saved on the feedback straight away. It is a grouping label, not part of the roadmap: it changes neither view, and turning a gap into an outcome is still an import or a planning change that a person makes. A match becomes a pending `feedback_match` proposal with one `link_feedback` operation, so a person decides whether the feedback counts towards that outcome. No match proposes nothing, and the feedback shows as a gap.
+
+Trade-off: feedback is matched once, against the outcomes that exist when it arrives. When a gap later gets its own outcome, its feedback is linked by hand from the feedback page rather than matched again.
+
 ## GitHub integration
 
 - A **GitHub App** with read access to issues, pull requests, contents and metadata, subscribed to `issues` and `pull_request` events. Setup steps are in `docs/GITHUB_APP.md`.
+- An issue labelled `feedback` (in any case) is customer feedback, not a work item. `issueToItem` in the GitHub adapter makes that call, so the core only sees a `SourceFeedback` (`kind: "feedback"`) beside `SourceWorkItem`s; a support or CRM source would deliver nothing but feedback. `syncRepositoryItem` and the backfill hand feedback to `syncFeedback`, which stores it, ignores deliveries older than the stored copy like `syncWorkItem` does, and queues a `feedback_match` job the first time it arrives. The backfill imports open feedback issues and matches them, unlike finished work, since what customers are still asking for is news. When the label is removed, the next delivery is an ordinary issue: `syncWorkItem` marks the feedback `withdrawn` and supersedes its pending match, and putting the label back counts it again and queues a new match. GitHub does not deliver in order, so an issue delivery older than the issue's stored feedback (from before the label was added) is skipped rather than stored as a work item. Closing a feedback issue does not withdraw it, since the ask was still made. A copy of the issue stored as a work item before it was labelled is left as it is.
 - `SourceAdapter` (`src/adapters/source.ts`) is the interface a source implements: look up a repository, list the items to backfill a page at a time, and list a PR's changed files for the agents. `GitHubAdapter` (`src/adapters/github/`) implements it with Octokit, authenticated as the app installation on each repository. Webhook signature checks and payload parsing also live there, and both webhook payloads and REST responses are validated with the same Zod schemas.
 - Repositories are connected on `/p/[slug]/settings`. Connecting checks that the repository's owner is in `GITHUB_ALLOWED_OWNERS` (v1 has no sign-in, so this stands in for permissions until #11) and that the app is installed on it, stores it, and enqueues a **backfill**: open issues plus PRs merged in the last 90 days. The backfill links explicit references but queues no reconciliation, since that work finished before Throughline was watching. It runs one page (up to 100 items) per job: each job syncs its page and returns the next page's job, carrying the source's cursor and the cut-off date the first page chose. A run therefore does a bounded amount of work, and a retry repeats only the page that failed. The settings page shows each repository's import as in progress, retrying (with the error), or failed (with the error), from its newest backfill job.
 - `POST /api/github/webhook` verifies the `X-Hub-Signature-256` header against the raw body (401 if it does not match), then hands the work item to `syncWorkItem` (`src/core/work-items.ts`) for every project the repository is connected to.
@@ -327,6 +350,16 @@ For people who do not open Throughline: every Monday a plain-language summary go
 - **Sending** is `GET /api/digests/send`, which a Vercel cron calls at 08:00 UTC on Mondays. Like `/api/demo/reset`, it requires `CRON_SECRET` and refuses every request when it is unset. `sendDueDigests` sends to each project with a webhook and no digest in the last six days (six, not seven, so a cron that fires early still sends). It claims each project by setting `digest_sent_at` before posting, so a cron that fires twice sends once; a failed post puts the old value back, logs the error and moves on to the next project.
 - Slack sits behind `src/adapters/slack.ts` (`postToSlack`, plain `fetch`). It escapes `&`, `<` and `>`, so a note cannot ping the channel or add a link. Email would be a second function of the same shape, `DigestPoster` in `src/core/digest.ts`.
 
+### Feedback (`/p/[slug]/feedback`)
+
+For the PM, to see customer pull and gaps. Built by `loadFeedbackBoard` and the pure `groupFeedback` in `src/core/feedback.ts`, from feedback that is not withdrawn.
+
+- **Asked for, by outcome**: every live outcome with the feedback linked to it, the most asked-for first (ties in priority order). Each piece of feedback shows its theme and can be unlinked.
+- **Waiting for review**: unlinked feedback with a pending match, and the outcome it names.
+- **Not on the roadmap**: the rest, grouped by theme, largest group first, with feedback the agent has not sorted yet last. Each piece can be linked to an outcome from a picker.
+
+Linking and unlinking by hand go through `saveFeedbackLink`: a `manual` proposal approved at once, like a planning change, so each has an event. Linking supersedes the feedback's pending match. v1 has no sign-in, so the actor is `planner`. The product view does not show feedback.
+
 ### Review queue (`/p/[slug]/review`)
 
 For the PM.
@@ -340,13 +373,13 @@ For the PM.
 
 A seeded project called "Acme Analytics" lets anyone explore Throughline without signing in or providing an API key. Demo proposals are pre-generated fixtures. "Open demo" on the home page goes straight to it.
 
-`pnpm db:seed` (`src/db/seed.ts`) builds the demo graph by approving proposals, so it has the same event history a real project would, including a planning change that moves one outcome back a quarter and dates for some requirements, then leaves four proposals pending for the review queue, one of them a `reschedule` proposal for an outcome whose bounce-handling work is planned after its target. Running it again replaces the demo project. `/api/demo/reset` does the same inside one transaction, so visitors see the old demo until the new one is complete; a Vercel cron calls it nightly, guarded by `CRON_SECRET`, and refused outright when the secret is unset.
+`pnpm db:seed` (`src/db/seed.ts`) builds the demo graph by approving proposals, so it has the same event history a real project would, including a planning change that moves one outcome back a quarter and dates for some requirements, then leaves five proposals pending for the review queue, one of them a `reschedule` proposal for an outcome whose bounce-handling work is planned after its target and one a `feedback_match`. It also adds nine pieces of feedback: five linked to outcomes, one waiting for review and three gaps in two themes. Running it again replaces the demo project. `/api/demo/reset` does the same inside one transaction, so visitors see the old demo until the new one is complete; a Vercel cron calls it nightly, guarded by `CRON_SECRET`, and refused outright when the secret is unset.
 
 ### Public deployment
 
 v1 has no sign-in, so a public site sets `PUBLIC_DEPLOYMENT=true` (`src/lib/public-deployment.ts`). Then:
 
-- Only projects with `is_demo` accept changes. For any other project the import, review, plan and connect server actions refuse with "view-only", and the pages hide their forms.
+- Only projects with `is_demo` accept changes. For any other project the import, review, plan, feedback and connect server actions refuse with "view-only", and the pages hide their forms.
 - Proposals can be approved or rejected but not edited first: the review action refuses edited operations and the Edit button is hidden, so visitors cannot put their own wording on the public demo. For the same reason the plan page takes reorders and new targets on the demo but no free-text reason. The owner changes their own projects from a local copy of the app pointed at the production database (see `docs/DEPLOY.md`).
 - Agents for demo projects use `getDemoLLMProvider`: a free model through OpenRouter when `OPENROUTER_API_KEY` is set, with sample results as the fallback, and sample results alone otherwise. They never use the Anthropic key, so visitors cannot spend it. Queued jobs for demo projects do the same, and skip GitHub, with or without the variable: a job a visitor queued may run on the owner's machine, and the demo's repository is made up.
 - No repository can be connected and no digest set up from the site. The owner does both from a local copy; a digest saved that way links to the local copy in its first message only, since the weekly cron links to the domain it called.
@@ -360,4 +393,4 @@ The public version is built so a private fork can harden it without a rewrite:
 - Swap the job table for a real queue (e.g. Inngest, SQS) behind the same `enqueue` function.
 - Add organisations, roles and SSO around the existing `projects` table.
 - Add `SourceAdapter` implementations for Linear or Jira.
-- Add the feedback and research agents listed under "Future work" in `PLAN.md`; they produce proposals like every other agent.
+- Add support and CRM feedback sources, and the research agent listed under "Future work" in `PLAN.md`; they produce proposals like every other agent.

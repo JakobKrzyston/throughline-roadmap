@@ -7,6 +7,8 @@ import { productStatus, type RequirementNode } from "@/core/rollup";
 
 import {
   events,
+  feedback,
+  feedbackLinks,
   links,
   outcomes,
   projects,
@@ -51,6 +53,8 @@ describe("seedDemoProject", () => {
     ]);
     expect(await db.$count(workItems)).toBe(25);
     expect(await db.$count(links)).toBe(24);
+    expect(await db.$count(feedback)).toBe(9);
+    expect(await db.$count(feedbackLinks)).toBe(5);
     expect(await db.$count(events)).toBeGreaterThan(0);
   });
 
@@ -80,7 +84,7 @@ describe("seedDemoProject", () => {
       .select()
       .from(proposals)
       .where(eq(proposals.status, "pending"));
-    expect(pending).toHaveLength(4);
+    expect(pending).toHaveLength(5);
 
     for (const proposal of pending) {
       await applyProposal(db, proposal.id, "pm");

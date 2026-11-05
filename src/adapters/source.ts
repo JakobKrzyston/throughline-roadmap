@@ -1,4 +1,4 @@
-/** The SourceAdapter interface that brings issues and PRs into Throughline. Exports SourceAdapter, SourceWorkItem, SourceRepository, SourceChangedFile. */
+/** The SourceAdapter interface that brings issues, PRs and customer feedback into Throughline. Exports SourceAdapter, SourceItem, SourceWorkItem, SourceFeedback, SourceRepository, SourceChangedFile. */
 
 /** An issue or pull request as a source reports it, before it is stored as a work item. */
 export type SourceWorkItem = {
@@ -19,6 +19,23 @@ export type SourceWorkItem = {
   /** When the source last changed the item. Used to ignore deliveries that arrive out of order. */
   updatedAt: Date;
 };
+
+/** Customer feedback as a source reports it, such as a GitHub issue labelled `feedback`. */
+export type SourceFeedback = {
+  source: "github";
+  kind: "feedback";
+  /** Stable id within the source, in the same form as SourceWorkItem.externalId. */
+  externalId: string;
+  title: string;
+  /** Full text. Only an excerpt is stored. */
+  body: string;
+  url: string;
+  /** When the source last changed it. Used to ignore deliveries that arrive out of order. */
+  updatedAt: Date;
+};
+
+/** Anything a source delivers: a work item, or feedback. `kind` tells them apart. */
+export type SourceItem = SourceWorkItem | SourceFeedback;
 
 /** A repository the source can read. */
 export type SourceRepository = {
@@ -66,13 +83,14 @@ export interface SourceAdapter {
    *
    * Returns:
    *   The page's items and the cursor for the next page, or null after the last page. Across all
-   *   pages: every open issue, plus pull requests merged on or after mergedSince.
+   *   pages: every open issue (as feedback when the source counts it as feedback), plus pull
+   *   requests merged on or after mergedSince.
    */
   listBackfillPage(
     repository: SourceRepository,
     mergedSince: Date,
     cursor: string | null,
-  ): Promise<{ items: SourceWorkItem[]; nextCursor: string | null }>;
+  ): Promise<{ items: SourceItem[]; nextCursor: string | null }>;
 
   /**
    * List the files a pull request changed.

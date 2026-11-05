@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { type ReactElement, Suspense } from "react";
 
+import type { BadgeTone } from "@/components/badge";
 import { filterOptions } from "@/core/breakdown";
 import {
   type OutcomeTree,
@@ -13,7 +14,7 @@ import {
 } from "@/core/roadmap";
 import { requirementProgress } from "@/core/rollup";
 import { formatTarget } from "@/core/product-text";
-import { scheduleWarnings } from "@/core/schedule";
+import { scheduleWarnings, upcomingQuarters } from "@/core/schedule";
 import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
 import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
@@ -25,11 +26,15 @@ import { PlanBoard, type PlanOutcome } from "./plan-board";
 // A target change can start a slip check after the response; allow it time to finish.
 export const maxDuration = 300;
 
-const STATUS_LABELS: Record<NonNullable<RequirementTree["status"]>, string> = {
-  planned: "planned",
-  in_progress: "in progress",
-  done: "done",
-  dropped: "dropped",
+// The same labels and colours as the technical view.
+const LEAF_STATUS: Record<
+  NonNullable<RequirementTree["status"]>,
+  { label: string; tone: BadgeTone }
+> = {
+  planned: { label: "Planned", tone: "neutral" },
+  in_progress: { label: "In progress", tone: "amber" },
+  done: { label: "Done", tone: "green" },
+  dropped: { label: "Dropped", tone: "neutral" },
 };
 
 /**
@@ -102,6 +107,8 @@ async function PlanView({
           slug={slug}
           outcomes={roadmap.map((outcome) => toPlanOutcome(outcome, today))}
           teams={filterOptions(roadmap).teams}
+          // Two years of quarters to pick from; any other quarter or a date can still be typed.
+          quarters={upcomingQuarters(today, 8)}
           editable={!viewOnly}
           // Visitors' wording would show on the public demo until the nightly reset.
           allowFreeText={!isPublicDeployment()}
@@ -139,8 +146,11 @@ function toPlanOutcome(outcome: OutcomeTree, today: string): PlanOutcome {
         inheritedTeam: node.teamInherited ? node.team : null,
         depth,
         status: node.status
-          ? STATUS_LABELS[node.status]
-          : `${Math.round(requirementProgress(node) * 100)}% done`,
+          ? LEAF_STATUS[node.status]
+          : {
+              label: `${Math.round(requirementProgress(node) * 100)}% done`,
+              tone: "blue",
+            },
       },
       ...flatten(node.children, depth + 1),
     ]);

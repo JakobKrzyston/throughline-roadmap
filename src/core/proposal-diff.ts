@@ -11,7 +11,7 @@ export type DiffChange = {
 /** One operation, as a heading and the fields it sets. */
 export type DiffEntry = { heading: string; changes: DiffChange[] };
 
-/** The parts of the current graph the diff needs, looked up by key (outcomes, requirements) or id (work items). */
+/** The parts of the current graph the diff needs, looked up by key (outcomes, requirements) or id (work items, feedback). */
 export type GraphSnapshot = {
   outcomes: Map<
     string,
@@ -34,6 +34,7 @@ export type GraphSnapshot = {
     }
   >;
   workItems: Map<string, { title: string; kind: "issue" | "pull_request" }>;
+  feedback: Map<string, { title: string }>;
 };
 
 const STATUS_LABELS: Record<LeafStatus, string> = {
@@ -178,6 +179,20 @@ export function describeOperations(
               heading: `Unlink ${itemName} from ${named(op.requirement_key, requirement)}`,
               changes: [],
             };
+      }
+
+      case "link_feedback":
+      case "unlink_feedback": {
+        const outcome = graph.outcomes.get(op.outcome_key);
+        const item = graph.feedback.get(op.feedback_id);
+        const itemName = item ? `feedback "${item.title}"` : "feedback";
+        return {
+          heading:
+            op.type === "link_feedback"
+              ? `Link ${itemName} to outcome ${named(op.outcome_key, outcome)}`
+              : `Unlink ${itemName} from outcome ${named(op.outcome_key, outcome)}`,
+          changes: [],
+        };
       }
     }
   });

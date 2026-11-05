@@ -165,7 +165,7 @@ Ship it publicly and prove it works on itself.
 
 Designed for, not built in v1. Each has a `future` issue.
 
-- **Feedback ingestion**: GitHub issues labelled `feedback` first, then support and CRM sources. Feedback is clustered and linked to outcomes so you can see customer pull per outcome, and unmatched feedback flags gaps.
+- **Feedback ingestion**: GitHub issues labelled `feedback` first, then support and CRM sources. Feedback is clustered and linked to outcomes so you can see customer pull per outcome, and unmatched feedback flags gaps. GitHub is built (see "Feedback" in `ARCHITECTURE.md`); support and CRM sources are still to come.
 - **Research agent**: a scheduled agent that checks planned technical approaches against current libraries and best practice, and watches the product landscape. Findings appear as comments on graph nodes.
 - **More sources**: Linear and Jira `SourceAdapter` implementations.
 - **Teams and permissions**: organisations, roles (viewer, PM, admin) and SSO.

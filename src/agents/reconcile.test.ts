@@ -353,6 +353,7 @@ describe("superseding", () => {
       .from(proposals)
       .where(eq(proposals.status, "pending"));
     expect(pendingAfter.map((p) => p.source).sort()).toEqual([
+      "feedback_match",
       "import",
       "link_suggest",
       "reconcile",

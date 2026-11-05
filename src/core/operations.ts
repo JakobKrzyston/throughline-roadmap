@@ -116,6 +116,19 @@ const unlinkWorkItem = z.object({
   work_item_id: z.uuid(),
 });
 
+// Feedback, like work items, is referenced by id: proposals never create it.
+const linkFeedback = z.object({
+  type: z.literal("link_feedback"),
+  outcome_key: key,
+  feedback_id: z.uuid(),
+});
+
+const unlinkFeedback = z.object({
+  type: z.literal("unlink_feedback"),
+  outcome_key: key,
+  feedback_id: z.uuid(),
+});
+
 /** One graph change. The `type` field selects the shape. */
 export const graphOperationSchema = z.discriminatedUnion("type", [
   createOutcome,
@@ -126,6 +139,8 @@ export const graphOperationSchema = z.discriminatedUnion("type", [
   setStatus,
   linkWorkItem,
   unlinkWorkItem,
+  linkFeedback,
+  unlinkFeedback,
 ]);
 
 /** The `operations` list stored on a proposal. */

@@ -71,12 +71,12 @@ describe("/api/demo/reset", () => {
       .from(proposals)
       .where(eq(proposals.status, "pending"));
     await rejectProposal(db, first.id, "reviewer");
-    expect(await pendingCount()).toBe(3);
+    expect(await pendingCount()).toBe(4);
 
     const response = await reset(`Bearer ${SECRET}`);
 
     expect(response.status).toBe(200);
-    expect(await pendingCount()).toBe(4);
+    expect(await pendingCount()).toBe(5);
     const [project] = await db.select().from(projects);
     expect(await response.json()).toEqual({ projectId: project.id });
   });

@@ -5,6 +5,7 @@ import { operationListSchema } from "./operations";
 import { describeOperations, type GraphSnapshot } from "./proposal-diff";
 
 const PULL_ID = "6f1c1e0e-4c7d-4a43-9b0e-6f2a1c9d5e11";
+const FEEDBACK_ID = "7f0c1a52-1b0e-4c1e-9c39-2f0f6f0d2a11";
 
 const graph: GraphSnapshot = {
   outcomes: new Map([
@@ -31,6 +32,7 @@ const graph: GraphSnapshot = {
       },
     ],
   ]),
+  feedback: new Map([[FEEDBACK_ID, { title: "Please add dark mode" }]]),
   workItems: new Map([
     [PULL_ID, { title: "Excel export writer", kind: "pull_request" }],
   ]),
@@ -157,6 +159,17 @@ describe("describeOperations", () => {
       heading: 'Link pull request "Excel export writer" to TL-4: Excel export',
       changes: [{ field: "Relation", after: "Part of it" }],
     });
+  });
+
+  it("names the feedback and outcome in a feedback link", () => {
+    const entries = describe_([
+      { type: "link_feedback", outcome_key: "OUT-1", feedback_id: FEEDBACK_ID },
+      { type: "unlink_feedback", outcome_key: "OUT-9", feedback_id: PULL_ID },
+    ]);
+    expect(entries.map((entry) => entry.heading)).toEqual([
+      `Link feedback "Please add dark mode" to outcome OUT-1: ${graph.outcomes.get("OUT-1")!.title}`,
+      "Unlink feedback from outcome OUT-9",
+    ]);
   });
 
   it("falls back to keys for things the same proposal creates", () => {

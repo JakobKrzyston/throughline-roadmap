@@ -8,6 +8,7 @@ import { operationListSchema } from "@/core/operations";
 import { describeOperations, type GraphSnapshot } from "@/core/proposal-diff";
 import { getDb } from "@/db/client";
 import {
+  feedback,
   outcomes,
   projects,
   proposals,
@@ -31,6 +32,7 @@ const SOURCE_LABELS: Record<typeof proposals.$inferSelect.source, string> = {
   work_started: "Work started",
   manual: "Planning change",
   reschedule: "Target at risk",
+  feedback_match: "Customer feedback",
 };
 
 /**
@@ -98,14 +100,19 @@ async function PendingProposals({
         : []),
     ];
   });
-  const graph = await loadSnapshot(project.id, workItemIds);
+  const feedbackIds = pending.flatMap((proposal) =>
+    proposal.triggerFeedbackId ? [proposal.triggerFeedbackId] : [],
+  );
+  const graph = await loadSnapshot(project.id, workItemIds, feedbackIds);
 
   const viewOnly = isViewOnly(project);
   const views = pending.map((proposal, i): ProposalView => {
     const parsed = parsedOperations[i];
     const trigger = proposal.triggerWorkItemId
       ? graph.workItems.get(proposal.triggerWorkItemId)
-      : undefined;
+      : proposal.triggerFeedbackId
+        ? graph.feedback.get(proposal.triggerFeedbackId)
+        : undefined;
     return {
       id: proposal.id,
       summary: proposal.summary,
@@ -146,37 +153,54 @@ async function PendingProposals({
   );
 }
 
-/** The current graph values the diffs compare against, plus the given work items (ids must be valid uuids). */
+/** The current graph values the diffs compare against, plus the given work items and feedback (ids must be valid uuids). */
 async function loadSnapshot(
   projectId: string,
   workItemIds: string[],
+  feedbackIds: string[],
 ): Promise<
-  Omit<GraphSnapshot, "workItems"> & {
+  Omit<GraphSnapshot, "workItems" | "feedback"> & {
     workItems: Map<
       string,
       { title: string; kind: "issue" | "pull_request"; url: string }
     >;
+    feedback: Map<string, { title: string; url: string }>;
   }
 > {
   const db = getDb();
-  const [outcomeRows, requirementRows, workItemRows] = await Promise.all([
-    db.select().from(outcomes).where(eq(outcomes.projectId, projectId)),
-    db.select().from(requirements).where(eq(requirements.projectId, projectId)),
-    workItemIds.length === 0
-      ? []
-      : db
-          .select({
-            id: workItems.id,
-            title: workItems.title,
-            kind: workItems.kind,
-            url: workItems.url,
-          })
-          .from(workItems)
-          .where(inArray(workItems.id, workItemIds)),
-  ]);
+  const [outcomeRows, requirementRows, workItemRows, feedbackRows] =
+    await Promise.all([
+      db.select().from(outcomes).where(eq(outcomes.projectId, projectId)),
+      db
+        .select()
+        .from(requirements)
+        .where(eq(requirements.projectId, projectId)),
+      workItemIds.length === 0
+        ? []
+        : db
+            .select({
+              id: workItems.id,
+              title: workItems.title,
+              kind: workItems.kind,
+              url: workItems.url,
+            })
+            .from(workItems)
+            .where(inArray(workItems.id, workItemIds)),
+      feedbackIds.length === 0
+        ? []
+        : db
+            .select({
+              id: feedback.id,
+              title: feedback.title,
+              url: feedback.url,
+            })
+            .from(feedback)
+            .where(inArray(feedback.id, feedbackIds)),
+    ]);
   return {
     outcomes: new Map(outcomeRows.map((row) => [row.key, row])),
     requirements: new Map(requirementRows.map((row) => [row.key, row])),
     workItems: new Map(workItemRows.map((row) => [row.id, row])),
+    feedback: new Map(feedbackRows.map((row) => [row.id, row])),
   };
 }

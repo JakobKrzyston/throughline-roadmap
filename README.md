@@ -34,7 +34,8 @@ The **review queue** is where a person approves, edits or rejects what the agent
 3. **Reconcile when work ships.** When linked work merges, the reconciliation agent reads the pull request and the plan and proposes what changed: done, partly done, split into new pieces, or scope added. A merged pull request with no reference gets a suggested link instead.
 4. **Approve.** Every proposal waits in the review queue. Approving it changes the graph and writes an event with a plain-language note, which feeds the product view's "what changed this week".
 5. **Read the roadmaps.** Status rolls up from finished work to requirements to outcomes, so both views always agree.
-6. **Send a weekly digest.** Every Monday a plain-language summary of what changed and where each outcome stands can go to a Slack channel, for people who never open Throughline. Set it up on a project's settings page.
+6. **Hear from customers.** An issue labelled `feedback` is customer feedback, not work. The feedback agent names what it asks for and proposes the outcome that would deliver it, so the feedback page shows how much each outcome is asked for, and feedback no outcome covers, grouped by theme, shows what the roadmap is missing.
+7. **Send a weekly digest.** Every Monday a plain-language summary of what changed and where each outcome stands can go to a Slack channel, for people who never open Throughline. Set it up on a project's settings page.
 
 The full design, data model and trade-offs are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -107,13 +108,13 @@ Throughline is built to track its own build: its seven-stage plan, [`docs/PLAN.m
 
 ## Built with Claude
 
-Throughline was built with [Claude Code](https://claude.com/claude-code), one stage of [`docs/PLAN.md`](docs/PLAN.md) per pull request. [`CLAUDE.md`](CLAUDE.md) gives every session the design rules and conventions above, and each pull request was reviewed before it merged. Inside the app, the import, reconciliation and link suggestion agents call Claude through the Anthropic TypeScript SDK, or any OpenRouter model through a second provider that the public demo uses with a free model.
+Throughline was built with [Claude Code](https://claude.com/claude-code), one stage of [`docs/PLAN.md`](docs/PLAN.md) per pull request. [`CLAUDE.md`](CLAUDE.md) gives every session the design rules and conventions above, and each pull request was reviewed before it merged. Inside the app, the import, reconciliation, link suggestion and feedback agents call Claude through the Anthropic TypeScript SDK, or any OpenRouter model through a second provider that the public demo uses with a free model.
 
 ## Future work
 
 Designed for but not built in v1; each has an issue:
 
-- [Feedback ingestion](../../issues/8): link customer feedback to outcomes to show demand and gaps.
+- [Feedback ingestion](../../issues/8): GitHub issues labelled `feedback` are built; support and CRM sources are still to come.
 - [Research agent](../../issues/9): check planned approaches against current libraries and the market.
 - [More sources](../../issues/10): Linear and Jira alongside GitHub.
 - [Teams and permissions](../../issues/11): organisations, roles and SSO, replacing the public site's view-only rule.

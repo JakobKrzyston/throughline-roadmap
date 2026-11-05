@@ -1,7 +1,14 @@
-/** Zod schemas for the GitHub issue and pull request fields Throughline reads, and their mapping to SourceWorkItem. Exports githubIssueSchema, githubPullSchema, githubPullFileSchema, issueToWorkItem, pullToWorkItem, pullFileToChangedFile. */
+/** Zod schemas for the GitHub issue and pull request fields Throughline reads, and their mapping to source items. Exports githubIssueSchema, githubPullSchema, githubPullFileSchema, issueToItem, issueToWorkItem, pullToWorkItem, pullFileToChangedFile, FEEDBACK_LABEL. */
 import { z } from "zod";
 
-import type { SourceChangedFile, SourceWorkItem } from "@/adapters/source";
+import type {
+  SourceChangedFile,
+  SourceFeedback,
+  SourceWorkItem,
+} from "@/adapters/source";
+
+/** Issues with this label (in any case) are customer feedback rather than work. */
+export const FEEDBACK_LABEL = "feedback";
 
 // Webhook payloads and REST responses share these shapes, so both paths validate with the same schemas.
 const common = {
@@ -20,6 +27,10 @@ export const githubIssueSchema = z.object({
   state_reason: z.string().nullish(),
   // Present when the "issue" is really a pull request; the issues API lists both.
   pull_request: z.object({}).optional(),
+  // The REST types allow a bare name as well as a label object.
+  labels: z
+    .array(z.union([z.string(), z.object({ name: z.string() })]))
+    .default([]),
 });
 
 export const githubPullSchema = z.object({
@@ -40,6 +51,33 @@ export const githubPullFileSchema = z.object({
 
 type GitHubIssue = z.output<typeof githubIssueSchema>;
 type GitHubPull = z.output<typeof githubPullSchema>;
+
+/**
+ * Convert a GitHub issue into feedback when it carries the FEEDBACK_LABEL, else into a work item.
+ *
+ * Args:
+ *   repositoryId: GitHub's numeric id of the issue's repository, which survives renames.
+ *   issue: The validated issue.
+ *
+ * Returns:
+ *   The feedback or work item.
+ */
+export function issueToItem(
+  repositoryId: string,
+  issue: GitHubIssue,
+): SourceFeedback | SourceWorkItem {
+  const isFeedback = issue.labels.some(
+    (label) =>
+      (typeof label === "string" ? label : label.name).toLowerCase() ===
+      FEEDBACK_LABEL,
+  );
+  if (!isFeedback) return issueToWorkItem(repositoryId, issue);
+  const { source, externalId, title, body, url, updatedAt } = shared(
+    repositoryId,
+    issue,
+  );
+  return { source, kind: "feedback", externalId, title, body, url, updatedAt };
+}
 
 /**
  * Convert a GitHub issue into a work item.

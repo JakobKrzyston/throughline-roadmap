@@ -70,8 +70,10 @@ describe("parseWebhookEvent", () => {
         "closed",
       ),
     );
-    expect(event?.item.state).toBe("merged");
-    expect(event?.item.mergedAt).toEqual(new Date("2026-11-01T10:00:00Z"));
+    expect(event?.item).toMatchObject({
+      state: "merged",
+      mergedAt: new Date("2026-11-01T10:00:00Z"),
+    });
   });
 
   it("keeps a pull request closed without merging as closed", () => {
@@ -82,8 +84,7 @@ describe("parseWebhookEvent", () => {
         "closed",
       ),
     );
-    expect(event?.item.state).toBe("closed");
-    expect(event?.item.mergedAt).toBeNull();
+    expect(event?.item).toMatchObject({ state: "closed", mergedAt: null });
   });
 
   it("reads an issue and treats a null body as empty", () => {
@@ -96,12 +97,41 @@ describe("parseWebhookEvent", () => {
     });
   });
 
+  it("reads an issue labelled feedback, in any case, as feedback", () => {
+    const event = parseWebhookEvent(
+      "issues",
+      issuePayload(
+        { labels: [{ name: "bug" }, { name: "Feedback" }] },
+        "labeled",
+      ),
+    );
+    expect(event?.item).toEqual({
+      source: "github",
+      kind: "feedback",
+      externalId: "4242#7",
+      title: "Excel export is slow",
+      body: "",
+      url: "https://github.com/acme/analytics/issues/7",
+      updatedAt: new Date("2026-11-01T09:00:00Z"),
+    });
+  });
+
+  it("reads an issue with other labels as a work item", () => {
+    const event = parseWebhookEvent(
+      "issues",
+      issuePayload({ labels: [{ name: "bug" }] }, "unlabeled"),
+    );
+    expect(event?.item.kind).toBe("issue");
+  });
+
   it("tells an issue closed as done from one closed as not planned or duplicate", () => {
-    const closed = (state_reason: string | null) =>
-      parseWebhookEvent(
+    const closed = (state_reason: string | null) => {
+      const item = parseWebhookEvent(
         "issues",
         issuePayload({ state: "closed", state_reason }, "closed"),
-      )?.item.state;
+      )?.item;
+      return item?.kind === "issue" ? item.state : undefined;
+    };
     expect(closed("completed")).toBe("closed");
     expect(closed(null)).toBe("closed");
     expect(closed("not_planned")).toBe("not_planned");

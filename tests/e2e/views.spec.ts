@@ -1,4 +1,4 @@
-/** Smoke test: the product and technical views load for the Acme Analytics demo project. */
+/** Smoke test: the product, technical, plan and feedback pages load for the Acme Analytics demo project. */
 import { expect, test } from "@playwright/test";
 
 // Requirement and outcome keys, and issue or pull request numbers.
@@ -94,6 +94,34 @@ test("plan page reorders outcomes and moves targets into the change feed", async
   ).toBeVisible();
 });
 
+test("feedback page shows what customers ask for and links a gap to an outcome", async ({
+  page,
+}) => {
+  await page.goto("/p/acme-analytics/feedback");
+
+  const pull = page.getByRole("region", { name: "Asked for, by outcome" });
+  await expect(
+    pull.getByText("Customers can export reports to Excel and CSV"),
+  ).toBeVisible();
+  await expect(pull.getByText("2 pieces of feedback").first()).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Waiting for review" })
+      .getByText("Can I send a dashboard to a client who has no account?"),
+  ).toBeVisible();
+  const gaps = page.getByRole("region", { name: "Not on the roadmap" });
+  await expect(gaps.getByRole("heading", { name: /Dark mode/ })).toBeVisible();
+
+  const phone = "Let us check dashboards on a phone";
+  await gaps
+    .getByRole("combobox", { name: `Outcome for “${phone}”` })
+    .selectOption({ label: "Dashboards load in under two seconds" });
+  await gaps.getByRole("button", { name: `Link “${phone}”` }).click();
+  await expect(gaps.getByText(phone)).toHaveCount(0);
+  await pull.getByText("Dashboards load in under two seconds").click();
+  await expect(pull.getByRole("link", { name: phone })).toBeVisible();
+});
+
 test("an unknown project gets a plain-language, unindexed page", async ({
   page,
 }) => {
@@ -120,6 +148,7 @@ test("every project page links to the others", async ({ page }) => {
     ["Settings", "Settings"],
     ["Technical view", "Technical roadmap"],
     ["Plan", "Plan"],
+    ["Feedback", "Customer feedback"],
     ["Review queue", "Review queue"],
     ["Product view", "Product roadmap"],
   ]) {

@@ -1,9 +1,10 @@
-/** Canned agent inputs and model outputs, used by tests and by demo mode when no API key is set. Exports SAMPLE_ROADMAP, SAMPLE_IMPORT_OUTPUT, SAMPLE_PULL_FILES, SAMPLE_RECONCILE_OUTPUTS, DEMO_LLM_FIXTURES. */
+/** Canned agent inputs and model outputs, used by tests and by demo mode when no API key is set. Exports SAMPLE_ROADMAP, SAMPLE_IMPORT_OUTPUT, SAMPLE_PULL_FILES, SAMPLE_RECONCILE_OUTPUTS, DEMO_LLM_FIXTURES (including the feedback agent's). */
 import type { z } from "zod";
 
 import type { FakeFixtures } from "@/adapters/llm/fake";
 import type { SourceChangedFile } from "@/adapters/source";
 
+import { FEEDBACK_MATCH_TASK } from "./feedback-match";
 import { IMPORT_TASK, type importOutputSchema } from "./import";
 import { LINK_SUGGEST_TASK } from "./link-suggest";
 import { RECONCILE_TASK, type reconcileOutputSchema } from "./reconcile";
@@ -221,6 +222,15 @@ export const DEMO_LLM_FIXTURES: FakeFixtures = {
       rationale:
         "Demo mode: no AI key is set up, so the target is not judged and stays as it is.",
       reason: "The plan is unchanged.",
+    },
+  ],
+  // A sample outcome could be one the project does not have, so demo mode matches none, and every
+  // piece of feedback lands in one group that says why it is not sorted.
+  [FEEDBACK_MATCH_TASK]: [
+    {
+      outcome_key: null,
+      theme: "Not sorted: no AI key is set up",
+      rationale: "Demo mode: no AI key is set up, so feedback is not matched.",
     },
   ],
 };

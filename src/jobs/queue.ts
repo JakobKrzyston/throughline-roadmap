@@ -18,6 +18,8 @@ export type JobPayloads = {
   link_suggest: { workItemId: string };
   /** Check whether an outcome's open work makes its target unlikely. */
   slip_check: { outcomeId: string };
+  /** Find the outcome a piece of feedback asks for, and name its theme. */
+  feedback_match: { feedbackId: string };
 };
 
 export type JobType = keyof JobPayloads;

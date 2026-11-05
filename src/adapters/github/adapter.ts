@@ -4,15 +4,15 @@ import { type App, type Octokit, RequestError } from "octokit";
 import type {
   SourceAdapter,
   SourceChangedFile,
+  SourceItem,
   SourceRepository,
-  SourceWorkItem,
 } from "@/adapters/source";
 
 import {
   githubIssueSchema,
   githubPullFileSchema,
   githubPullSchema,
-  issueToWorkItem,
+  issueToItem,
   pullFileToChangedFile,
   pullToWorkItem,
 } from "./work-items";
@@ -55,7 +55,8 @@ export class GitHubAdapter implements SourceAdapter {
   }
 
   /**
-   * List one page of open issues, then pull requests merged on or after mergedSince.
+   * List one page of open issues, then pull requests merged on or after mergedSince. Issues
+   * labelled `feedback` come back as feedback.
    *
    * The cursor is `issues:<page>` or `pulls:<page>`, GitHub's page numbers for each listing.
    *
@@ -65,13 +66,13 @@ export class GitHubAdapter implements SourceAdapter {
    *   cursor: The previous page's nextCursor, or null to start with the first page of issues.
    *
    * Returns:
-   *   The page's work items and the next cursor, or null after the last page.
+   *   The page's items and the next cursor, or null after the last page.
    */
   async listBackfillPage(
     repository: SourceRepository,
     mergedSince: Date,
     cursor: string | null,
-  ): Promise<{ items: SourceWorkItem[]; nextCursor: string | null }> {
+  ): Promise<{ items: SourceItem[]; nextCursor: string | null }> {
     const [owner, repo] = repository.fullName.split("/");
     const octokit = await this.installationOctokit(owner, repo);
     const [listing, pageText] = (cursor ?? "issues:1").split(":");
@@ -88,7 +89,7 @@ export class GitHubAdapter implements SourceAdapter {
       const items = data
         .map((issue) => githubIssueSchema.parse(issue))
         .filter((issue) => !issue.pull_request)
-        .map((issue) => issueToWorkItem(repository.externalId, issue));
+        .map((issue) => issueToItem(repository.externalId, issue));
       const nextCursor =
         data.length === PAGE_SIZE ? `issues:${page + 1}` : "pulls:1";
       return { items, nextCursor };

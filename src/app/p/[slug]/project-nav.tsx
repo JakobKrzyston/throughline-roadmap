@@ -6,6 +6,7 @@ const VIEWS = [
   { path: "", label: "Product view" },
   { path: "/tech", label: "Technical view" },
   { path: "/plan", label: "Plan" },
+  { path: "/feedback", label: "Feedback" },
   { path: "/review", label: "Review queue" },
   { path: "/import", label: "Import" },
   { path: "/settings", label: "Settings" },

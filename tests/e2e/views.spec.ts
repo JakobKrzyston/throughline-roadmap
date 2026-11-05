@@ -23,6 +23,9 @@ test("product view explains the product in plain language", async ({
     page.getByRole("heading", { name: "What changed this week" }),
   ).toBeVisible();
   await expect(page.locator("main")).not.toContainText(TICKET_NUMBER);
+  // Who works on what and which team owns it are technical detail.
+  await expect(page.locator("main")).not.toContainText("maya-chen");
+  await expect(page.locator("main")).not.toContainText("Platform");
 
   await page.getByRole("link", { name: "Show technical detail" }).click();
   await expect(exportCard.getByText("TL-3")).toBeVisible();
@@ -49,6 +52,35 @@ test("technical view shows the requirement tree and split history", async ({
   await expect(
     page.getByRole("heading", { name: "Split history" }),
   ).toBeVisible();
+});
+
+test("technical view filters requirements by person and sums them up by team", async ({
+  page,
+}) => {
+  await page.goto("/p/acme-analytics/tech");
+  const exportOutcome = page
+    .getByRole("listitem")
+    .filter({ hasText: "Customers can export reports to Excel and CSV" })
+    .first();
+  await expect(
+    exportOutcome.getByText("Data: 2 of 3 done · Web: 0 of 1 done"),
+  ).toBeVisible();
+
+  await page.getByLabel("Person").selectOption("leo-martins");
+  await page.getByRole("button", { name: "Filter" }).click();
+  await expect(page).toHaveURL(/person=leo-martins/);
+  await expect(
+    page.getByText("Export button in report toolbar", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Background job queue", { exact: true }),
+  ).toBeHidden();
+
+  await page.getByRole("link", { name: "Show everything" }).click();
+  await expect(
+    page.getByText("Background job queue", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Person")).toHaveValue("");
 });
 
 test("plan page reorders outcomes and moves targets into the change feed", async ({

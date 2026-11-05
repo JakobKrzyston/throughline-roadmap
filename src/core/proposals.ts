@@ -194,6 +194,8 @@ async function applyOperation(
           userVisible: op.user_visible,
           productNote: op.product_note,
           target: op.target,
+          workType: op.work_type,
+          team: op.team,
         })
         .onConflictDoNothing()
         .returning();
@@ -221,6 +223,7 @@ async function applyOperation(
             description: child.description,
             status: child.status,
             userVisible: child.user_visible,
+            workType: child.work_type,
           })),
         )
         .onConflictDoNothing()
@@ -251,6 +254,8 @@ async function applyOperation(
           userVisible: op.user_visible,
           productNote: op.product_note,
           target: op.target,
+          workType: op.work_type,
+          team: op.team,
         })
         .where(eq(requirements.id, requirement.id));
       return event(op, "requirement", requirement.id, op.product_note);

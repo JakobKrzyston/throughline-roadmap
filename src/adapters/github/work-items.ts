@@ -10,8 +10,13 @@ import type {
 /** Issues with this label (in any case) are customer feedback rather than work. */
 export const FEEDBACK_LABEL = "feedback";
 
+// A deleted account can show up as null.
+const githubUser = z.object({ login: z.string(), type: z.string() }).nullish();
+
 // Webhook payloads and REST responses share these shapes, so both paths validate with the same schemas.
 const common = {
+  user: githubUser,
+  assignees: z.array(githubUser).nullish(),
   number: z.number().int(),
   title: z.string(),
   body: z.string().nullable(),
@@ -103,6 +108,8 @@ export function issueToWorkItem(
         issue.state_reason === "duplicate")
         ? "not_planned"
         : issue.state,
+    // Whoever opened an issue reported it; only its assignees are working on it.
+    people: people([], issue.assignees),
     mergedAt: null,
   };
 }
@@ -125,6 +132,7 @@ export function pullToWorkItem(
     ...shared(repositoryId, pull),
     kind: "pull_request",
     state: pull.merged_at ? "merged" : pull.state,
+    people: people([pull.user], pull.assignees),
     mergedAt: pull.merged_at ? new Date(pull.merged_at) : null,
   };
 }
@@ -155,6 +163,16 @@ export function pullFileToChangedFile(
     deletions: file.deletions,
     patch: file.patch ?? null,
   };
+}
+
+/** Unique logins of the given users, leaving out bots such as Dependabot, which nobody can ask. */
+function people(
+  ...groups: (GitHubIssue["user"][] | null | undefined)[]
+): string[] {
+  const logins = groups
+    .flat()
+    .flatMap((user) => (user && user.type !== "Bot" ? [user.login] : []));
+  return [...new Set(logins)];
 }
 
 function shared(repositoryId: string, item: GitHubIssue | GitHubPull) {

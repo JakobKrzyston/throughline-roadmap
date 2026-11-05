@@ -78,8 +78,8 @@ Open http://localhost:3000 and click **Open demo**. Data is stored in an embedde
 What to try:
 
 - **Product view** (`/p/acme-analytics`): what customers can use today and what changed this week. **Show technical detail** adds requirement keys.
-- **Technical view** (`/p/acme-analytics/tech`): the requirement tree, linked work and split history.
-- **Plan** (`/p/acme-analytics/plan`): drag outcomes into a new priority order and change targets in place; each move shows up in the product view's change feed. Work due after its outcome's target is flagged.
+- **Technical view** (`/p/acme-analytics/tech`): the requirement tree, linked work and split history, filterable by kind of work, team and person, with progress by team.
+- **Plan** (`/p/acme-analytics/plan`): drag outcomes into a new priority order, change targets in place, and set each requirement's kind of work and team; each move shows up in the product view's change feed. Work due after its outcome's target is flagged.
 - **Review queue** (`/p/acme-analytics/review`): approve, edit or reject the pending proposals, then watch the product view change.
 - **Import** (`/p/acme-analytics/import`): paste a roadmap. Without a model key you get a sample proposal; set `ANTHROPIC_API_KEY` in `.env.local` to use Claude, or `OPENROUTER_API_KEY` to use a free model through OpenRouter.
 - **Settings** (`/p/acme-analytics/settings`): connect a real repository once you have set up a GitHub App as described in [`docs/GITHUB_APP.md`](docs/GITHUB_APP.md).
@@ -118,7 +118,6 @@ Designed for but not built in v1; each has an issue:
 - [Research agent](../../issues/9): check planned approaches against current libraries and the market.
 - [More sources](../../issues/10): Linear and Jira alongside GitHub.
 - [Teams and permissions](../../issues/11): organisations, roles and SSO, replacing the public site's view-only rule.
-- [Work breakdown](../../issues/23): group technical work by type, team and person.
 
 ## Learn more
 

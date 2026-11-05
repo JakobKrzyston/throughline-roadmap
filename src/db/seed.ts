@@ -27,36 +27,38 @@ type WorkItemSeed = {
   title: string;
   /** Requirement this work item implements, if it is linked. */
   implements?: string;
+  /** Logins of the people working on it. */
+  people?: string[];
 };
 
 // prettier-ignore
 const WORK_ITEMS: WorkItemSeed[] = [
-  { number: 101, kind: "issue", state: "closed", title: "Export reports to CSV and Excel", implements: "TL-1" },
-  { number: 102, kind: "pull_request", state: "merged", title: "Add background job queue", implements: "TL-2" },
-  { number: 103, kind: "pull_request", state: "merged", title: "Retry failed jobs with backoff", implements: "TL-2" },
-  { number: 104, kind: "pull_request", state: "merged", title: "CSV export endpoint", implements: "TL-3" },
+  { number: 101, kind: "issue", state: "closed", title: "Export reports to CSV and Excel", implements: "TL-1", people: ["maya-chen"] },
+  { number: 102, kind: "pull_request", state: "merged", title: "Add background job queue", implements: "TL-2", people: ["maya-chen"] },
+  { number: 103, kind: "pull_request", state: "merged", title: "Retry failed jobs with backoff", implements: "TL-2", people: ["maya-chen", "sam-okafor"] },
+  { number: 104, kind: "pull_request", state: "merged", title: "CSV export endpoint", implements: "TL-3", people: ["sam-okafor"] },
   { number: 105, kind: "issue", state: "open", title: "Excel export", implements: "TL-4" },
-  { number: 106, kind: "pull_request", state: "open", title: "Excel export with xlsx writer", implements: "TL-4" },
-  { number: 107, kind: "issue", state: "open", title: "Export button in the report toolbar", implements: "TL-5" },
+  { number: 106, kind: "pull_request", state: "open", title: "Excel export with xlsx writer", implements: "TL-4", people: ["sam-okafor"] },
+  { number: 107, kind: "issue", state: "open", title: "Export button in the report toolbar", implements: "TL-5", people: ["leo-martins"] },
   { number: 108, kind: "issue", state: "closed", title: "Audit log for exports", implements: "TL-6" },
-  { number: 109, kind: "pull_request", state: "open", title: "Schedule builder: frequency picker", implements: "TL-7" },
-  { number: 110, kind: "issue", state: "open", title: "Schedule builder UI", implements: "TL-7" },
-  { number: 111, kind: "pull_request", state: "merged", title: "Integrate transactional email provider", implements: "TL-9" },
-  { number: 112, kind: "issue", state: "open", title: "Handle bounced and failed report emails", implements: "TL-10" },
+  { number: 109, kind: "pull_request", state: "open", title: "Schedule builder: frequency picker", implements: "TL-7", people: ["leo-martins"] },
+  { number: 110, kind: "issue", state: "open", title: "Schedule builder UI", implements: "TL-7", people: ["leo-martins"] },
+  { number: 111, kind: "pull_request", state: "merged", title: "Integrate transactional email provider", implements: "TL-9", people: ["priya-nair"] },
+  { number: 112, kind: "issue", state: "open", title: "Handle bounced and failed report emails", implements: "TL-10", people: ["priya-nair"] },
   { number: 113, kind: "issue", state: "open", title: "Send scheduled reports in the customer's timezone", implements: "TL-11" },
-  { number: 114, kind: "pull_request", state: "merged", title: "SAML login", implements: "TL-12" },
-  { number: 115, kind: "pull_request", state: "merged", title: "SAML: support Okta and Azure AD metadata", implements: "TL-12" },
-  { number: 116, kind: "pull_request", state: "merged", title: "SCIM user provisioning endpoints", implements: "TL-13" },
-  { number: 117, kind: "pull_request", state: "merged", title: "SSO settings page for admins", implements: "TL-14" },
+  { number: 114, kind: "pull_request", state: "merged", title: "SAML login", implements: "TL-12", people: ["ana-ruiz"] },
+  { number: 115, kind: "pull_request", state: "merged", title: "SAML: support Okta and Azure AD metadata", implements: "TL-12", people: ["ana-ruiz"] },
+  { number: 116, kind: "pull_request", state: "merged", title: "SCIM user provisioning endpoints", implements: "TL-13", people: ["ana-ruiz", "priya-nair"] },
+  { number: 117, kind: "pull_request", state: "merged", title: "SSO settings page for admins", implements: "TL-14", people: ["leo-martins"] },
   { number: 118, kind: "issue", state: "open", title: "Dashboards are slow on large accounts", implements: "TL-15" },
-  { number: 119, kind: "pull_request", state: "merged", title: "Redis client for query results", implements: "TL-17" },
-  { number: 120, kind: "pull_request", state: "open", title: "Invalidate cached queries when data refreshes", implements: "TL-18" },
+  { number: 119, kind: "pull_request", state: "merged", title: "Redis client for query results", implements: "TL-17", people: ["maya-chen"] },
+  { number: 120, kind: "pull_request", state: "open", title: "Invalidate cached queries when data refreshes", implements: "TL-18", people: ["maya-chen"] },
   { number: 121, kind: "issue", state: "open", title: "Cache hit-rate metrics", implements: "TL-19" },
-  { number: 122, kind: "issue", state: "open", title: "Lazy-load widgets below the fold", implements: "TL-20" },
+  { number: 122, kind: "issue", state: "open", title: "Lazy-load widgets below the fold", implements: "TL-20", people: ["leo-martins"] },
   { number: 123, kind: "issue", state: "open", title: "Public share links for dashboards", implements: "TL-21" },
   // Merged with explicit references or none at all; the pending proposals below are about these.
-  { number: 124, kind: "pull_request", state: "merged", title: "Fix flaky CSV export test" },
-  { number: 125, kind: "pull_request", state: "merged", title: "Excel export: multiple sheets and formatting", implements: "TL-4" },
+  { number: 124, kind: "pull_request", state: "merged", title: "Fix flaky CSV export test", people: ["sam-okafor"] },
+  { number: 125, kind: "pull_request", state: "merged", title: "Excel export: multiple sheets and formatting", implements: "TL-4", people: ["sam-okafor"] },
 ];
 
 type FeedbackSeed = {
@@ -85,26 +87,26 @@ const FEEDBACK: FeedbackSeed[] = [
 // prettier-ignore
 const ROADMAP: GraphOperationInput[] = [
   { type: "create_outcome", key: "OUT-1", title: "Customers can export reports to Excel and CSV", description: "Download any report as a spreadsheet to share or analyse further.", target: "2026-Q4", priority: 1 },
-  { type: "create_requirement", key: "TL-1", outcome_key: "OUT-1", title: "Async export service", user_visible: true, product_note: "Exports run in the background so large reports don't time out." },
-  { type: "create_requirement", key: "TL-6", outcome_key: "OUT-1", title: "Export audit log" },
+  { type: "create_requirement", key: "TL-1", outcome_key: "OUT-1", title: "Async export service", user_visible: true, product_note: "Exports run in the background so large reports don't time out.", work_type: "feature" },
+  { type: "create_requirement", key: "TL-6", outcome_key: "OUT-1", title: "Export audit log", work_type: "security" },
 
   { type: "create_outcome", key: "OUT-2", title: "Customers can schedule reports by email", description: "Send a report to a list of people every day, week or month.", target: "2027-Q1", priority: 2 },
-  { type: "create_requirement", key: "TL-7", outcome_key: "OUT-2", title: "Schedule builder UI", user_visible: true },
-  { type: "create_requirement", key: "TL-8", outcome_key: "OUT-2", title: "Email delivery service" },
-  { type: "create_requirement", key: "TL-11", outcome_key: "OUT-2", title: "Timezone-aware scheduling", user_visible: true },
+  { type: "create_requirement", key: "TL-7", outcome_key: "OUT-2", title: "Schedule builder UI", user_visible: true, work_type: "feature" },
+  { type: "create_requirement", key: "TL-8", outcome_key: "OUT-2", title: "Email delivery service", work_type: "infrastructure" },
+  { type: "create_requirement", key: "TL-11", outcome_key: "OUT-2", title: "Timezone-aware scheduling", user_visible: true, work_type: "feature" },
 
   { type: "create_outcome", key: "OUT-3", title: "Enterprise customers can sign in with single sign-on", description: "Staff sign in with their company account, and IT controls who has access.", target: "2026-Q3", priority: 1 },
-  { type: "create_requirement", key: "TL-12", outcome_key: "OUT-3", title: "SAML login", user_visible: true },
-  { type: "create_requirement", key: "TL-13", outcome_key: "OUT-3", title: "SCIM user provisioning", user_visible: true },
-  { type: "create_requirement", key: "TL-14", outcome_key: "OUT-3", title: "SSO admin settings page", user_visible: true },
+  { type: "create_requirement", key: "TL-12", outcome_key: "OUT-3", title: "SAML login", user_visible: true, work_type: "security" },
+  { type: "create_requirement", key: "TL-13", outcome_key: "OUT-3", title: "SCIM user provisioning", user_visible: true, work_type: "security" },
+  { type: "create_requirement", key: "TL-14", outcome_key: "OUT-3", title: "SSO admin settings page", user_visible: true, work_type: "feature" },
 
   { type: "create_outcome", key: "OUT-4", title: "Dashboards load in under two seconds", description: "Large accounts see their dashboards without waiting.", target: "2027-Q1", priority: 3 },
-  { type: "create_requirement", key: "TL-15", outcome_key: "OUT-4", title: "Query result cache" },
-  { type: "create_requirement", key: "TL-20", outcome_key: "OUT-4", title: "Lazy-load dashboard widgets", user_visible: true },
+  { type: "create_requirement", key: "TL-15", outcome_key: "OUT-4", title: "Query result cache", work_type: "infrastructure" },
+  { type: "create_requirement", key: "TL-20", outcome_key: "OUT-4", title: "Lazy-load dashboard widgets", user_visible: true, work_type: "feature" },
 
   { type: "create_outcome", key: "OUT-5", title: "Customers can share a dashboard with a link", description: "Send a read-only dashboard to someone without an Acme account.", target: "2027-Q1", priority: 4 },
-  { type: "create_requirement", key: "TL-21", outcome_key: "OUT-5", title: "Public link tokens" },
-  { type: "create_requirement", key: "TL-22", outcome_key: "OUT-5", title: "Share dialog", user_visible: true },
+  { type: "create_requirement", key: "TL-21", outcome_key: "OUT-5", title: "Public link tokens", work_type: "security" },
+  { type: "create_requirement", key: "TL-22", outcome_key: "OUT-5", title: "Share dialog", user_visible: true, work_type: "feature" },
 ];
 
 const SPLITS: {
@@ -124,13 +126,28 @@ const SPLITS: {
         product_note:
           "Export took longer because it needed background-job infrastructure, which also unblocks scheduled reports.",
         children: [
-          { key: "TL-2", title: "Background job queue" },
-          { key: "TL-3", title: "CSV export", user_visible: true },
-          { key: "TL-4", title: "Excel export", user_visible: true },
+          {
+            key: "TL-2",
+            title: "Background job queue",
+            work_type: "infrastructure",
+          },
+          {
+            key: "TL-3",
+            title: "CSV export",
+            user_visible: true,
+            work_type: "feature",
+          },
+          {
+            key: "TL-4",
+            title: "Excel export",
+            user_visible: true,
+            work_type: "feature",
+          },
           {
             key: "TL-5",
             title: "Export button in report toolbar",
             user_visible: true,
+            work_type: "feature",
           },
         ],
       },
@@ -148,8 +165,16 @@ const SPLITS: {
         product_note:
           "Reports can be emailed; handling bounced emails is planned next.",
         children: [
-          { key: "TL-9", title: "Email provider integration" },
-          { key: "TL-10", title: "Retry and bounce handling" },
+          {
+            key: "TL-9",
+            title: "Email provider integration",
+            work_type: "infrastructure",
+          },
+          {
+            key: "TL-10",
+            title: "Retry and bounce handling",
+            work_type: "infrastructure",
+          },
         ],
       },
     ],
@@ -165,8 +190,8 @@ const SPLITS: {
         product_note:
           "Faster dashboards need a cache plus a way to measure how well it works.",
         children: [
-          { key: "TL-16", title: "Cache layer" },
-          { key: "TL-19", title: "Cache hit metrics" },
+          { key: "TL-16", title: "Cache layer", work_type: "infrastructure" },
+          { key: "TL-19", title: "Cache hit metrics", work_type: "tech_debt" },
         ],
       },
       {
@@ -177,8 +202,16 @@ const SPLITS: {
         product_note:
           "Dashboards must never show old numbers, so clearing the cache on refresh got its own step.",
         children: [
-          { key: "TL-17", title: "Redis cache client" },
-          { key: "TL-18", title: "Cache invalidation on data refresh" },
+          {
+            key: "TL-17",
+            title: "Redis cache client",
+            work_type: "infrastructure",
+          },
+          {
+            key: "TL-18",
+            title: "Cache invalidation on data refresh",
+            work_type: "infrastructure",
+          },
         ],
       },
     ],
@@ -233,6 +266,7 @@ export async function seedDemoProject(db: Database): Promise<string> {
         title: item.title,
         url: `https://github.com/${REPO}/${item.kind === "issue" ? "issues" : "pull"}/${item.number}`,
         state: item.state,
+        people: item.people ?? [],
         mergedAt: item.state === "merged" ? new Date() : null,
         closedAt: item.state === "open" ? null : new Date(),
       })),
@@ -319,6 +353,34 @@ export async function seedDemoProject(db: Database): Promise<string> {
       requirement_key: item.implements!,
       work_item_id: workItemId(item.number),
       confidence: "explicit",
+    })),
+  );
+
+  // Teams are set on root requirements, and their pieces inherit them. The export button is the
+  // web team's, unlike the rest of export.
+  await approve(
+    "manual",
+    "Assign teams",
+    (
+      [
+        ["TL-1", "Data"],
+        ["TL-5", "Web"],
+        ["TL-6", "Data"],
+        ["TL-7", "Web"],
+        ["TL-8", "Platform"],
+        ["TL-11", "Platform"],
+        ["TL-12", "Identity"],
+        ["TL-13", "Identity"],
+        ["TL-14", "Web"],
+        ["TL-15", "Platform"],
+        ["TL-20", "Web"],
+        ["TL-21", "Platform"],
+        ["TL-22", "Web"],
+      ] as const
+    ).map(([key, team]) => ({
+      type: "update_requirement",
+      requirement_key: key,
+      team,
     })),
   );
 
@@ -434,6 +496,7 @@ export async function seedDemoProject(db: Database): Promise<string> {
         outcome_key: "OUT-6",
         title: "Usage threshold rules",
         user_visible: true,
+        work_type: "feature",
       },
       {
         type: "create_requirement",
@@ -441,6 +504,7 @@ export async function seedDemoProject(db: Database): Promise<string> {
         outcome_key: "OUT-6",
         title: "Alert email and in-app notification",
         user_visible: true,
+        work_type: "feature",
       },
     ],
     {

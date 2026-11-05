@@ -1,9 +1,16 @@
-/** Builds the size-limited work item context agents send to the model. Exports summariseChanges, describeChanges, dataBlock and the size limits. */
+/** Builds the size-limited work item context agents send to the model, and output fields agents share. Exports summariseChanges, describeChanges, dataBlock, workTypeOutput and the size limits. */
 import { and, eq } from "drizzle-orm";
+
+import { workTypeSchema } from "@/core/operations";
 
 import type { SourceAdapter, SourceChangedFile } from "@/adapters/source";
 import type { Database } from "@/db/client";
 import { repositories, type workItems } from "@/db/schema";
+
+/** The kind of work a requirement is, as the import and reconciliation agents propose it. */
+export const workTypeOutput = workTypeSchema.describe(
+  "The kind of work. feature: something customers or other teams will use. infrastructure: platform, data or tooling work other work depends on. security: protecting accounts, data or access. tech_debt: refactoring, upgrades or cleanup of existing code. research: an investigation or prototype to decide what to build.",
+);
 
 /** Most files listed one by one; the rest are counted in one line. */
 export const MAX_LISTED_FILES = 100;

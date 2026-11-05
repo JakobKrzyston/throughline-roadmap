@@ -4,7 +4,7 @@ import { and, desc, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import { events, links, outcomes, requirements, workItems } from "@/db/schema";
 
-import type { GraphOperation } from "./operations";
+import type { GraphOperation, WorkType } from "./operations";
 import type { ScheduledRequirement } from "./schedule";
 
 type WorkItemRow = typeof workItems.$inferSelect;
@@ -32,6 +32,13 @@ export interface RequirementTree extends ScheduledRequirement {
   splitReason: string | null;
   /** The product note written when this leaf was marked done, if any. */
   doneNote: string | null;
+  workType: WorkType | null;
+  /** The owning team: its own, else the nearest ancestor's. Null when none is set. */
+  team: string | null;
+  /** True when `team` comes from an ancestor rather than this requirement. */
+  teamInherited: boolean;
+  /** Everyone on the work items linked to this requirement, sorted. */
+  people: string[];
   children: RequirementTree[];
   workItems: LinkedWorkItem[];
 }
@@ -194,30 +201,44 @@ export async function loadRoadmap(
   const childrenOf = Map.groupBy(requirementRows, (row) => row.parentId);
   const linksOf = Map.groupBy(linkRows, ({ link }) => link.requirementId);
 
-  const toTree = (row: RequirementRow): RequirementTree => ({
-    id: row.id,
-    key: row.key,
-    title: row.title,
-    description: row.description,
-    status: row.status,
-    userVisible: row.userVisible,
-    productNote: row.productNote,
-    splitReason: row.splitReason,
-    target: row.target,
-    doneNote: row.status === "done" ? (doneNotes.get(row.id) ?? null) : null,
-    children: (childrenOf.get(row.id) ?? []).sort(byKey).map(toTree),
-    workItems: (linksOf.get(row.id) ?? [])
-      .map(({ link, item }) => ({
-        id: item.id,
-        kind: item.kind,
-        number: item.externalId.split("#")[1],
-        title: item.title,
-        url: item.url,
-        state: item.state,
-        confidence: link.confidence,
-      }))
-      .sort((a, b) => Number(a.number) - Number(b.number)),
-  });
+  // Children inherit their parent's team unless they set their own.
+  const toTree = (
+    row: RequirementRow,
+    parentTeam: string | null = null,
+  ): RequirementTree => {
+    const team = row.team ?? parentTeam;
+    const linked = linksOf.get(row.id) ?? [];
+    return {
+      id: row.id,
+      key: row.key,
+      title: row.title,
+      description: row.description,
+      status: row.status,
+      userVisible: row.userVisible,
+      productNote: row.productNote,
+      splitReason: row.splitReason,
+      target: row.target,
+      doneNote: row.status === "done" ? (doneNotes.get(row.id) ?? null) : null,
+      workType: row.workType,
+      team,
+      teamInherited: row.team === null && team !== null,
+      people: [...new Set(linked.flatMap(({ item }) => item.people))].sort(),
+      children: (childrenOf.get(row.id) ?? [])
+        .sort(byKey)
+        .map((child) => toTree(child, team)),
+      workItems: linked
+        .map(({ link, item }) => ({
+          id: item.id,
+          kind: item.kind,
+          number: item.externalId.split("#")[1],
+          title: item.title,
+          url: item.url,
+          state: item.state,
+          confidence: link.confidence,
+        }))
+        .sort((a, b) => Number(a.number) - Number(b.number)),
+    };
+  };
 
   return outcomeRows.sort(byPriority).map((outcome) => ({
     id: outcome.id,
@@ -229,7 +250,7 @@ export async function loadRoadmap(
     requirements: requirementRows
       .filter((row) => row.outcomeId === outcome.id)
       .sort(byKey)
-      .map(toTree),
+      .map((row) => toTree(row)),
   }));
 }
 

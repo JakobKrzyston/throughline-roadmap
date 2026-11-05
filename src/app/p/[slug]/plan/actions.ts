@@ -1,11 +1,11 @@
 "use server";
-/** Server actions behind the plan page: reorder outcomes and change targets. Exports moveOutcome, saveTarget and their state type. */
+/** Server actions behind the plan page: reorder outcomes, change targets, and set a requirement's kind of work and team. Exports moveOutcome, saveTarget, saveOwnership and their state type. */
 import { and, eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { after } from "next/server";
 import { z, ZodError } from "zod";
 
-import type { GraphOperationInput } from "@/core/operations";
+import { type GraphOperationInput, workTypeSchema } from "@/core/operations";
 import {
   moveOperations,
   outcomeTargetOperations,
@@ -41,6 +41,14 @@ const targetFormSchema = z.object({
     .transform((value) => value || null)
     .pipe(targetSchema.nullable()),
   reason: z.string().trim().max(500).optional(),
+});
+
+// Empty values clear the field: no kind of work, or the parent's team.
+const emptyToNull = (value: string): string | null => value.trim() || null;
+const ownershipFormSchema = z.object({
+  key: z.string().min(1),
+  work_type: z.string().transform(emptyToNull).pipe(workTypeSchema.nullable()),
+  team: z.string().transform(emptyToNull).pipe(z.string().max(60).nullable()),
 });
 
 /**
@@ -139,6 +147,56 @@ export async function saveTarget(
     `Move “${outcome.title}” to ${shown}`,
     outcomeTargetOperations(outcome, target, reason),
   );
+}
+
+/**
+ * Set a requirement's kind of work and its team.
+ *
+ * Args:
+ *   slug: The project's slug, bound by the page.
+ *   _previous: The form's previous state (unused; required by useActionState).
+ *   formData: `key`, `work_type` (empty for none) and `team` (empty to use the parent's).
+ *
+ * Returns:
+ *   The idle state once saved, or an error message to show.
+ */
+export async function saveOwnership(
+  slug: string,
+  _previous: PlanState,
+  formData: FormData,
+): Promise<PlanState> {
+  const input = ownershipFormSchema.safeParse(Object.fromEntries(formData));
+  if (!input.success) {
+    return fail(
+      input.error.issues.some((i) => i.path[0] === "team")
+        ? "Keep the team name to 60 characters."
+        : "That request was not understood.",
+    );
+  }
+  const { key, work_type, team } = input.data;
+  const project = await editableProject(slug);
+  if ("status" in project) return project;
+
+  const [requirement] = await getDb()
+    .select({ workType: requirements.workType, team: requirements.team })
+    .from(requirements)
+    .where(
+      and(eq(requirements.projectId, project.id), eq(requirements.key, key)),
+    );
+  if (!requirement) return fail(`Requirement ${key} not found.`);
+  // Only what changed, since an update must change something and each field gets its own row in the history.
+  const changes = {
+    ...(requirement.workType !== work_type ? { work_type } : {}),
+    ...(requirement.team !== team ? { team } : {}),
+  };
+  if (Object.keys(changes).length === 0) return { status: "idle" };
+  // Visitors' team names would show in the public demo's technical view until the nightly reset.
+  if ("team" in changes && isPublicDeployment()) {
+    return fail("Team names are turned off on this server.");
+  }
+  return save(project.id, `Set ${key}'s kind of work and team`, [
+    { type: "update_requirement", requirement_key: key, ...changes },
+  ]);
 }
 
 function fail(message: string): PlanState {

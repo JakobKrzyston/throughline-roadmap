@@ -24,6 +24,13 @@ export const requirementStatus = pgEnum("requirement_status", [
   "done",
   "dropped",
 ]);
+export const workType = pgEnum("work_type", [
+  "feature",
+  "infrastructure",
+  "security",
+  "tech_debt",
+  "research",
+]);
 export const workItemSource = pgEnum("work_item_source", ["github"]);
 export const workItemKind = pgEnum("work_item_kind", ["issue", "pull_request"]);
 export const workItemState = pgEnum("work_item_state", [
@@ -146,6 +153,10 @@ export const requirements = pgTable(
     splitReason: text("split_reason"),
     // Optional quarter or date, compared with the outcome's target to show work due after it.
     target: text("target"),
+    // The kind of work. Null until an agent or a person sets it.
+    workType: workType("work_type"),
+    // The team that owns it. Null inherits the parent's team; see loadRoadmap in src/core/roadmap.ts.
+    team: text("team"),
     ...timestamps,
   },
   (t) => [
@@ -175,6 +186,11 @@ export const workItems = pgTable(
     closedAt: timestamp("closed_at", { withTimezone: true }),
     // When the source last changed the item. Null for items stored before this was recorded.
     sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }),
+    // Logins of the people working on it, as the source reports them. Throughline never assigns work.
+    people: text("people")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     ...timestamps,
   },
   (t) => [unique().on(t.projectId, t.source, t.externalId)],

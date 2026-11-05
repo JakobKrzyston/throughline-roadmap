@@ -14,7 +14,7 @@ import {
   workItems,
 } from "@/db/schema";
 
-import { dataBlock, describeChanges } from "./context";
+import { dataBlock, describeChanges, workTypeOutput } from "./context";
 import { lastKeyNumbers } from "./keys";
 
 export const RECONCILE_TASK = "reconcile_work";
@@ -40,6 +40,7 @@ const childSchema = z.object({
     .describe(
       "True if this work item delivered this piece; false if it still has to be built.",
     ),
+  work_type: workTypeOutput,
 });
 
 /** What the model returns. Requirement keys for new pieces are assigned by the agent, not the model. */
@@ -99,6 +100,7 @@ export type ReconcileContext = {
     status: string;
     userVisible: boolean;
     productNote: string | null;
+    workType: string | null;
   };
   outcome: { title: string; description: string };
   /** The requirements this one was split from, outermost first. */
@@ -156,7 +158,7 @@ export function buildReconcilePrompt(
         `Split from ${ancestor.key} ${ancestor.title}${ancestor.splitReason ? ` (reason: ${ancestor.splitReason})` : ""}`,
     ),
     `Requirement ${requirement.key}: ${requirement.title}`,
-    `Status: ${requirement.status}. Visible to customers: ${requirement.userVisible ? "yes" : "no"}.`,
+    `Status: ${requirement.status}. Visible to customers: ${requirement.userVisible ? "yes" : "no"}. Kind of work: ${requirement.workType ?? "not set"}.`,
     `Description: ${requirement.description || "(none)"}`,
     ...(requirement.productNote
       ? [`Current product note: ${requirement.productNote}`]
@@ -290,6 +292,7 @@ export async function loadReconcileContext(
       status: requirement.status,
       userVisible: requirement.userVisible,
       productNote: requirement.productNote,
+      workType: requirement.workType,
     },
     outcome: { title: outcome.title, description: outcome.description },
     ancestors: ancestors.map((a) => ({
@@ -367,6 +370,7 @@ export function toReconcileOperations(
             description: piece.description,
             user_visible: piece.user_visible,
             status: piece.shipped ? "done" : "planned",
+            work_type: piece.work_type,
           })),
         },
       ];

@@ -137,22 +137,14 @@ describe("runSlipCheck", () => {
   });
 
   // The feed already starts the note with "Moved from … to …", so a reason that repeats it would
-  // say the dates twice.
+  // say the dates twice. The model is asked again rather than having its sentence cut.
   it.each([
-    [
-      "Moved from Q1 2027 to Q2 2027 because handling bounced emails turned out to be its own piece of work.",
-    ],
-    [
-      "Moved from Q1 2027 to Q2 2027. Handling bounced emails turned out to be its own piece of work.",
-    ],
-    [
-      "moved from 2027-Q1 to 2027-Q2, as handling bounced emails turned out to be its own piece of work.",
-    ],
-    [
-      "Moved from Q1 2027 to June 30, 2027 because handling bounced emails turned out to be its own piece of work.",
-    ],
-  ])("drops a repeated move from the reason: %s", async (reason) => {
-    const llm = fakeLLM({ ...move("2027-Q2"), reason });
+    ["Moved from Q1 2027 to Q2 2027 so that bounce handling can ship with it."],
+    ["Moved from Q1 2027 to Q2 2027—bounce handling is its own piece of work."],
+    ["moved to 2027-Q2, as bounce handling is its own piece of work."],
+    ["Moved from Q1 2027 to Q2 2027."],
+  ])("asks again when the reason repeats the move: %s", async (reason) => {
+    const llm = fakeLLM({ ...move("2027-Q2"), reason }, move("2027-Q2"));
 
     const proposalId = await runSlipCheck(
       db,
@@ -161,6 +153,7 @@ describe("runSlipCheck", () => {
       TODAY,
     );
 
+    expect(llm.prompts).toHaveLength(2);
     const [proposal] = await db
       .select()
       .from(proposals)
@@ -176,11 +169,10 @@ describe("runSlipCheck", () => {
     ]);
   });
 
-  it("leaves out the note when the reason only repeats the move", async () => {
-    const llm = fakeLLM({
-      ...move("2027-Q2"),
-      reason: "Moved from Q1 2027 to Q2 2027.",
-    });
+  it("keeps a reason as written, including its first letter", async () => {
+    const reason =
+      "iOS exports moved from the shared queue and need retesting.";
+    const llm = fakeLLM({ ...move("2027-Q2"), reason });
 
     const proposalId = await runSlipCheck(
       db,
@@ -193,9 +185,16 @@ describe("runSlipCheck", () => {
       .select()
       .from(proposals)
       .where(eq(proposals.id, proposalId!));
-    expect(proposal.operations).toEqual([
-      { type: "update_outcome", outcome_key: "OUT-2", target: "2027-Q2" },
-    ]);
+    expect(proposal.operations).toMatchObject([{ product_note: reason }]);
+  });
+
+  it("does not judge the reason when the model keeps the target", async () => {
+    const llm = fakeLLM({ ...move(null), reason: "Moved from nowhere." });
+
+    expect(
+      await runSlipCheck(db, llm, await outcomeId("OUT-2"), TODAY),
+    ).toBeNull();
+    expect(llm.prompts).toHaveLength(1);
   });
 
   it("tells the model not to repeat the dates in the reason", async () => {

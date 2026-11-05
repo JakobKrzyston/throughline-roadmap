@@ -19,7 +19,7 @@ vi.mock("next/cache", () => ({ refresh: vi.fn() }));
 const after = vi.hoisted(() => vi.fn());
 vi.mock("next/server", () => ({ after }));
 
-const { moveOutcome, saveTarget } = await import("./actions");
+const { moveOutcome, saveOwnership, saveTarget } = await import("./actions");
 
 let db: TestDb;
 let projectId: string;
@@ -171,5 +171,101 @@ describe("saveTarget", () => {
       .from(outcomes)
       .where(and(eq(outcomes.projectId, projectId), eq(outcomes.key, "OUT-4")));
     expect(outcome.target).toBe("2027-Q1");
+  });
+});
+
+describe("saveOwnership", () => {
+  const save = (fields: Record<string, string>) =>
+    saveOwnership(DEMO_SLUG, { status: "idle" }, form(fields));
+  const requirement = async (key: string) => {
+    const [row] = await db
+      .select()
+      .from(requirements)
+      .where(
+        and(eq(requirements.projectId, projectId), eq(requirements.key, key)),
+      );
+    return row;
+  };
+
+  it("sets a piece's own team, then clears it so the parent's applies again", async () => {
+    // TL-3 is a piece of TL-1, which the Data team owns.
+    expect(
+      await save({ key: "TL-3", work_type: "tech_debt", team: " Web " }),
+    ).toEqual({ status: "idle" });
+    expect(await requirement("TL-3")).toMatchObject({
+      workType: "tech_debt",
+      team: "Web",
+    });
+
+    await save({ key: "TL-3", work_type: "tech_debt", team: "" });
+    expect(await requirement("TL-3")).toMatchObject({ team: null });
+    const roadmap = await loadRoadmap(db, projectId);
+    expect(roadmap[0].requirements[0].children[1]).toMatchObject({
+      key: "TL-3",
+      team: "Data",
+      teamInherited: true,
+    });
+
+    // Only the field that changed is in the second proposal, and neither reaches the change feed.
+    const saved = await db
+      .select({ operations: proposals.operations })
+      .from(proposals)
+      .where(eq(proposals.summary, "Set TL-3's kind of work and team"));
+    expect(saved.map((row) => row.operations)).toEqual([
+      [
+        {
+          type: "update_requirement",
+          requirement_key: "TL-3",
+          work_type: "tech_debt",
+          team: "Web",
+        },
+      ],
+      [{ type: "update_requirement", requirement_key: "TL-3", team: null }],
+    ]);
+    const [latest] = await loadRecentChanges(db, projectId, roadmap);
+    expect(latest.entityKey).not.toBe("TL-3");
+  });
+
+  it("records nothing when saved unchanged, and refuses bad input", async () => {
+    const before = await db.$count(proposals);
+    expect(
+      await save({ key: "TL-2", work_type: "infrastructure", team: "" }),
+    ).toEqual({ status: "idle" });
+    expect(await db.$count(proposals)).toBe(before);
+
+    expect(
+      await save({ key: "TL-2", work_type: "chores", team: "" }),
+    ).toMatchObject({ status: "error" });
+    expect(
+      await save({ key: "TL-2", work_type: "", team: "x".repeat(61) }),
+    ).toEqual({
+      status: "error",
+      message: "Keep the team name to 60 characters.",
+    });
+    expect(
+      await save({ key: "TL-404", work_type: "feature", team: "" }),
+    ).toEqual({ status: "error", message: "Requirement TL-404 not found." });
+    expect(await db.$count(proposals)).toBe(before);
+  });
+
+  it("changes the kind of work but not team names on a public deployment", async () => {
+    vi.stubEnv("PUBLIC_DEPLOYMENT", "true");
+    try {
+      expect(
+        await save({ key: "TL-3", work_type: "feature", team: "Anything" }),
+      ).toEqual({
+        status: "error",
+        message: "Team names are turned off on this server.",
+      });
+      expect(
+        await save({ key: "TL-3", work_type: "tech_debt", team: "" }),
+      ).toEqual({ status: "idle" });
+      expect(await requirement("TL-3")).toMatchObject({
+        workType: "tech_debt",
+        team: null,
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

@@ -51,11 +51,50 @@ describe("parseWebhookEvent", () => {
         body: "Implements TL-3",
         url: "https://github.com/acme/analytics/pull/41",
         state: "open",
+        people: ["maya-chen"],
         mergedAt: null,
         closedAt: null,
         updatedAt: new Date("2026-11-01T09:00:00Z"),
       },
     });
+  });
+
+  it("reads a pull request's author and assignees once each, leaving out bots", () => {
+    const event = parseWebhookEvent(
+      "pull_request",
+      pullRequestPayload({
+        assignees: [
+          { login: "sam-okafor", type: "User" },
+          { login: "maya-chen", type: "User" },
+          { login: "dependabot[bot]", type: "Bot" },
+        ],
+      }),
+    );
+    expect(event?.item).toMatchObject({ people: ["maya-chen", "sam-okafor"] });
+  });
+
+  it("counts an issue's assignees as its people, not whoever opened it", () => {
+    const opened = parseWebhookEvent("issues", issuePayload());
+    const assigned = parseWebhookEvent(
+      "issues",
+      issuePayload(
+        {
+          user: { login: "a-customer", type: "User" },
+          assignees: [{ login: "priya-nair", type: "User" }],
+        },
+        "assigned",
+      ),
+    );
+    expect(opened?.item).toMatchObject({ people: [] });
+    expect(assigned?.item).toMatchObject({ people: ["priya-nair"] });
+  });
+
+  it("reads a pull request whose author account was deleted", () => {
+    const event = parseWebhookEvent(
+      "pull_request",
+      pullRequestPayload({ user: null, assignees: null }),
+    );
+    expect(event?.item).toMatchObject({ people: [] });
   });
 
   it("marks a closed pull request with a merge date as merged", () => {

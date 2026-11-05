@@ -14,7 +14,7 @@ import {
   loadRoadmap,
   loadSplitHistory,
 } from "./roadmap";
-import { productStatus } from "./rollup";
+import { productStatus, teamProgress } from "./rollup";
 
 describe("roadmap loaders", () => {
   let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -66,6 +66,30 @@ describe("roadmap loaders", () => {
     expect(queue.workItems).toMatchObject([
       { number: "102", kind: "pull_request", state: "merged" },
       { number: "103", kind: "pull_request", state: "merged" },
+    ]);
+  });
+
+  it("passes a team down to pieces without their own, and gathers people from linked work", async () => {
+    const roadmap = await loadRoadmap(db, projectId);
+    const exportService = roadmap[0].requirements[0];
+    const [queue, , , button] = exportService.children;
+
+    expect(exportService).toMatchObject({
+      workType: "feature",
+      team: "Data",
+      teamInherited: false,
+    });
+    expect(queue).toMatchObject({
+      workType: "infrastructure",
+      team: "Data",
+      teamInherited: true,
+      people: ["maya-chen", "sam-okafor"],
+    });
+    expect(button).toMatchObject({ team: "Web", teamInherited: false });
+    // The dropped audit log is not counted.
+    expect(teamProgress(roadmap[0].requirements)).toEqual([
+      { team: "Data", done: 2, total: 3 },
+      { team: "Web", done: 0, total: 1 },
     ]);
   });
 

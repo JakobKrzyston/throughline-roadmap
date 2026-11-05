@@ -29,6 +29,8 @@ const graph: GraphSnapshot = {
         userVisible: true,
         productNote: null,
         target: "2026-Q4",
+        workType: "feature",
+        team: null,
       },
     ],
   ]),
@@ -101,7 +103,12 @@ describe("describeOperations", () => {
         product_note: "Formatting comes next.",
         children: [
           { key: "TL-25", title: "Workbook export", status: "done" },
-          { key: "TL-26", title: "Formatting", user_visible: true },
+          {
+            key: "TL-26",
+            title: "Formatting",
+            user_visible: true,
+            work_type: "feature",
+          },
         ],
       },
     ]);
@@ -117,7 +124,7 @@ describe("describeOperations", () => {
       { field: "New piece TL-25", after: "Workbook export (Done)" },
       {
         field: "New piece TL-26",
-        after: "Formatting (Planned, visible to customers)",
+        after: "Formatting (Planned, Feature, visible to customers)",
       },
     ]);
   });
@@ -142,6 +149,21 @@ describe("describeOperations", () => {
         before: null,
         after: "Large reports no longer time out.",
       },
+    ]);
+  });
+
+  it("shows a change of kind of work and team with readable names", () => {
+    const [entry] = describe_([
+      {
+        type: "update_requirement",
+        requirement_key: "TL-4",
+        work_type: "tech_debt",
+        team: "Platform",
+      },
+    ]);
+    expect(entry.changes).toEqual([
+      { field: "Kind of work", before: "Feature", after: "Tech debt" },
+      { field: "Team", before: null, after: "Platform" },
     ]);
   });
 

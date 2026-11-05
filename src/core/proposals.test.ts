@@ -460,6 +460,83 @@ describe("targets", () => {
   });
 });
 
+describe("kind of work and team", () => {
+  it("sets them on new requirements and pieces, changes them, and clears a team", async () => {
+    await approve([
+      { type: "create_outcome", key: "OUT-1", title: "Export" },
+      {
+        type: "create_requirement",
+        key: "TL-1",
+        outcome_key: "OUT-1",
+        title: "Async export service",
+        work_type: "feature",
+        team: "Data",
+      },
+    ]);
+    await approve([
+      {
+        type: "split_requirement",
+        requirement_key: "TL-1",
+        split_reason: "Needs a queue first.",
+        product_note: "Export needs background jobs.",
+        children: [
+          { key: "TL-2", title: "Job queue", work_type: "infrastructure" },
+          { key: "TL-3", title: "CSV export" },
+        ],
+      },
+    ]);
+    await approve([
+      {
+        type: "update_requirement",
+        requirement_key: "TL-3",
+        work_type: "feature",
+        team: "Web",
+      },
+    ]);
+    expect(await requirementByKey("TL-2")).toMatchObject({
+      workType: "infrastructure",
+      team: null,
+    });
+    expect(await requirementByKey("TL-3")).toMatchObject({
+      workType: "feature",
+      team: "Web",
+    });
+
+    await approve([
+      { type: "update_requirement", requirement_key: "TL-3", team: null },
+    ]);
+    expect(await requirementByKey("TL-3")).toMatchObject({
+      workType: "feature",
+      team: null,
+    });
+    const changes = await db
+      .select({ payload: events.payload, note: events.productNote })
+      .from(events)
+      .where(eq(events.type, "update_requirement"))
+      .orderBy(events.seq);
+    expect(changes).toEqual([
+      {
+        payload: expect.objectContaining({ work_type: "feature", team: "Web" }),
+        note: null,
+      },
+      { payload: expect.objectContaining({ team: null }), note: null },
+    ]);
+  });
+
+  it("refuses a kind of work outside the fixed set", async () => {
+    await approve(exportOutcome);
+    const proposalId = await propose([
+      {
+        type: "update_requirement",
+        requirement_key: "TL-1",
+        // @ts-expect-error: not one of the kinds of work.
+        work_type: "chores",
+      },
+    ]);
+    await expect(applyProposal(db, proposalId, "pm")).rejects.toThrow();
+  });
+});
+
 describe("rejectProposal", () => {
   it("marks the proposal rejected and changes nothing else", async () => {
     await approve(exportOutcome);

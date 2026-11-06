@@ -44,7 +44,7 @@ const mapping: ImportMapping = {
   left_out: [],
 };
 
-function resolve(decisions: unknown) {
+function resolve(decisions: unknown): ReturnType<typeof resolveImportMapping> {
   return resolveImportMapping(
     operations,
     mapping,

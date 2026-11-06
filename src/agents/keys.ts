@@ -1,5 +1,5 @@
 /** Numbers new outcome and requirement keys so agent proposals never clash with existing or pending ones. Exports lastKeyNumbers. */
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import type { Database } from "@/db/client";
 import { outcomes, projects, proposals, requirements } from "@/db/schema";
@@ -33,7 +33,10 @@ export async function lastKeyNumbers(
   const pending = await tx
     .select({
       operations: proposals.operations,
-      importMapping: proposals.importMapping,
+      // Only the held keys, not the whole mapping with both roadmaps' text.
+      unplacedKeys: sql<
+        string[] | null
+      >`jsonb_path_query_array(${proposals.importMapping}, '$.unplaced[*].requirement.key')`,
     })
     .from(proposals)
     .where(
@@ -47,7 +50,7 @@ export async function lastKeyNumbers(
     .select({ key: requirements.key })
     .from(requirements)
     .where(eq(requirements.projectId, projectId));
-  const proposed = pending.flatMap(({ operations, importMapping }) => [
+  const proposed = pending.flatMap(({ operations, unplacedKeys }) => [
     ...operations.flatMap((op) => {
       if (op.type === "create_outcome" || op.type === "create_requirement") {
         return [op.key];
@@ -58,7 +61,7 @@ export async function lastKeyNumbers(
       return [];
     }),
     // An unplaced import item keeps its key in case the reviewer places it.
-    ...(importMapping?.unplaced.map((item) => item.requirement.key) ?? []),
+    ...(unplacedKeys ?? []),
   ]);
   const taken = [...outcomeRows, ...requirementRows]
     .map((row) => row.key)

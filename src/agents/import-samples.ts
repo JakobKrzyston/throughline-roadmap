@@ -607,12 +607,22 @@ export function isPairedSample(product: string, technical: string): boolean {
 }
 
 /**
- * The demo fixtures for a paired import. Only the sample has output written for it: the output
- * cites the sample's records, so for any other roadmaps it fails the reference checks.
+ * The demo fixtures for a paired import. Only the sample has output written for it: that output
+ * cites the sample's own records, so for any other roadmaps there is no paired fixture, and a demo
+ * whose model fails reports a plain failure instead of reference errors about rows nobody wrote.
+ *
+ * Args:
+ *   product: The product roadmap's text.
+ *   technical: The technical roadmap's text.
  *
  * Returns:
- *   DEMO_LLM_FIXTURES with the paired sample's output for the paired import task.
+ *   DEMO_LLM_FIXTURES, with the paired sample's output when the roadmaps are the sample.
  */
-export function pairedImportFixturesFor(): FakeFixtures {
-  return { ...DEMO_LLM_FIXTURES, [PAIRED_IMPORT_TASK]: [PAIRED_SAMPLE.output] };
+export function pairedImportFixturesFor(
+  product: string,
+  technical: string,
+): FakeFixtures {
+  return isPairedSample(product, technical)
+    ? { ...DEMO_LLM_FIXTURES, [PAIRED_IMPORT_TASK]: [PAIRED_SAMPLE.output] }
+    : DEMO_LLM_FIXTURES;
 }

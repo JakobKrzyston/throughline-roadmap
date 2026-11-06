@@ -78,6 +78,18 @@ export function MappingReview({
       (option) => option.key === key,
     )?.title ?? key;
   // The proposal's outcomes, then any project outcome a requirement was moved to.
+  // A CSV's first row that no item cites was read as its column names, so it was not imported.
+  const cited = new Set(
+    [
+      ...mapping.outcomes,
+      ...mapping.requirements,
+      ...mapping.unplaced,
+      ...mapping.left_out,
+    ].flatMap((item) => item.records),
+  );
+  const headers = Object.keys(mapping.records).filter(
+    (ref) => /^[A-Z]0$/.test(ref) && !cited.has(ref),
+  );
   const groups = [
     ...options.created.map((option) => option.key),
     ...mapping.projectOutcomes
@@ -225,10 +237,23 @@ export function MappingReview({
         </section>
       )}
 
-      {mapping.left_out.length > 0 && (
+      {(mapping.left_out.length > 0 || headers.length > 0) && (
         <section className="flex flex-col gap-3">
           <h3 className="text-sm font-medium">Left out</h3>
           <ul className="flex flex-col gap-3">
+            {headers.map((ref) => (
+              <li key={ref} className="flex flex-col gap-1 text-sm break-words">
+                <p>
+                  First row{" "}
+                  <span className="text-muted-foreground">
+                    (read as column names)
+                  </span>
+                </p>
+                <pre className="overflow-x-auto rounded bg-background p-2 font-mono text-xs whitespace-pre-wrap">
+                  {mapping.records[ref]}
+                </pre>
+              </li>
+            ))}
             {mapping.left_out.map((entry) => (
               <li
                 key={entry.records.join()}
@@ -322,11 +347,12 @@ function SourceRows({
           key={letter}
           className="mt-2 overflow-x-auto rounded bg-background p-2 font-mono text-xs whitespace-pre-wrap"
         >
-          {mapping.records[`${letter}0`] !== undefined && (
-            <span className="block text-muted-foreground">
-              {mapping.records[`${letter}0`]}
-            </span>
-          )}
+          {mapping.records[`${letter}0`] !== undefined &&
+            !records.includes(`${letter}0`) && (
+              <span className="block text-muted-foreground">
+                {mapping.records[`${letter}0`]}
+              </span>
+            )}
           {records
             .filter((ref) => ref[0] === letter)
             .map((ref) => (

@@ -1,5 +1,5 @@
 /** Approve or reject proposals. applyProposal is the only code path that changes the graph. Exports applyProposal, rejectProposal, ProposalError. */
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import type { Database } from "@/db/client";
 import {
@@ -81,12 +81,33 @@ export async function applyProposal(
     // Moving a requirement or placing an unplaced one changes what the proposal touches, so it
     // goes through the mapping, which checks every choice, rather than through an edit.
     if (proposal.importMapping !== null) {
+      const decisions = mappingDecisionsSchema.parse(mappingDecisions ?? {});
       const resolved = resolveImportMapping(
         operations,
         importMappingSchema.parse(proposal.importMapping),
-        mappingDecisionsSchema.parse(mappingDecisions ?? {}),
+        decisions,
       );
       if (!resolved.ok) throw new ProposalError(resolved.message);
+      // The form offers only live outcomes, but a crafted or stale request could name another.
+      const chosen = [
+        ...Object.values(decisions.moves),
+        ...Object.values(decisions.placements),
+      ].filter((key) => key !== null);
+      if (chosen.length > 0) {
+        const [archived] = await tx
+          .select({ key: outcomes.key })
+          .from(outcomes)
+          .where(
+            and(
+              eq(outcomes.projectId, proposal.projectId),
+              inArray(outcomes.key, chosen),
+              eq(outcomes.archived, true),
+            ),
+          );
+        if (archived) {
+          throw new ProposalError(`Outcome ${archived.key} is archived`);
+        }
+      }
       operations = operationListSchema.parse(resolved.operations);
     } else if (mappingDecisions !== undefined) {
       throw new ProposalError("This proposal has no import mapping to change");

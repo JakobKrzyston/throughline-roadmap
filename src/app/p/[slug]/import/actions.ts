@@ -161,12 +161,13 @@ export async function generatePairedImportProposal(
       "Without an AI model, only the sample roadmaps can be imported together. Load the sample, or import one roadmap at a time.",
     );
   }
+  const demoFixtures = pairedImportFixturesFor(input.product, input.technical);
   try {
     const { proposalId, summary } = await runPairedImport(
       db,
       isPublicDeployment()
-        ? getDemoLLMProvider(pairedImportFixturesFor())
-        : getLLMProvider(pairedImportFixturesFor()),
+        ? getDemoLLMProvider(demoFixtures)
+        : getLLMProvider(demoFixtures),
       project.id,
       input.product,
       input.technical,

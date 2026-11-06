@@ -157,6 +157,22 @@ export function ProposalCard({
   const undecided =
     mapping?.unplaced.filter((item) => !(item.requirement.key in placements))
       .length ?? 0;
+  const mappingReview = mapping && proposal.operations && (
+    <MappingReview
+      operations={proposal.operations}
+      mapping={mapping}
+      moves={moves}
+      placements={placements}
+      onMove={(key, outcomeKey) => setMoves({ ...moves, [key]: outcomeKey })}
+      onPlace={(key, outcomeKey) => {
+        const next = { ...placements };
+        if (outcomeKey === undefined) delete next[key];
+        else next[key] = outcomeKey;
+        setPlacements(next);
+      }}
+      disabled={pending || viewOnly}
+    />
+  );
   const shown = proposal.entries.slice(0, SHOWN_CHANGES);
   const folded = proposal.entries.slice(SHOWN_CHANGES);
 
@@ -209,33 +225,22 @@ export function ProposalCard({
             only be rejected.
           </p>
         ) : editing ? (
-          draft.map((op, i) => (
-            <OperationEditor
-              key={i}
-              heading={proposal.entries[i].heading}
-              op={op}
-              onChange={(next) =>
-                setDraft(draft.map((old, j) => (j === i ? next : old)))
-              }
-            />
-          ))
-        ) : mapping ? (
-          <MappingReview
-            operations={proposal.operations}
-            mapping={mapping}
-            moves={moves}
-            placements={placements}
-            onMove={(key, outcomeKey) =>
-              setMoves({ ...moves, [key]: outcomeKey })
-            }
-            onPlace={(key, outcomeKey) => {
-              const next = { ...placements };
-              if (outcomeKey === undefined) delete next[key];
-              else next[key] = outcomeKey;
-              setPlacements(next);
-            }}
-            disabled={pending || viewOnly}
-          />
+          <>
+            {draft.map((op, i) => (
+              <OperationEditor
+                key={i}
+                heading={proposal.entries[i].heading}
+                op={op}
+                onChange={(next) =>
+                  setDraft(draft.map((old, j) => (j === i ? next : old)))
+                }
+              />
+            ))}
+            {/* Where items go is chosen here, not in the editors, so it stays in view. */}
+            {mappingReview}
+          </>
+        ) : mappingReview ? (
+          mappingReview
         ) : (
           <>
             {shown.map((entry, i) => (

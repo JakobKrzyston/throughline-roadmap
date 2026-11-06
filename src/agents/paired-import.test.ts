@@ -56,7 +56,9 @@ async function importSample(
   );
 }
 
-async function loadProposal(proposalId: string) {
+async function loadProposal(
+  proposalId: string,
+): Promise<typeof proposals.$inferSelect> {
   const [proposal] = await db
     .select()
     .from(proposals)
@@ -73,7 +75,9 @@ function sampleWith(change: (output: Output) => void): Output {
 
 describe("runPairedImport", () => {
   it("turns the paired sample into its fixture proposal with no model key", async () => {
-    const llm = new FakeLLMProvider(pairedImportFixturesFor());
+    const llm = new FakeLLMProvider(
+      pairedImportFixturesFor(PAIRED_SAMPLE.product, PAIRED_SAMPLE.technical),
+    );
 
     const { proposalId, summary } = await importSample(llm);
 
@@ -86,9 +90,12 @@ describe("runPairedImport", () => {
     const prompt = llm.prompts[0].user;
     expect(prompt).toContain('<roadmap name="product">');
     expect(prompt).toContain(
-      "P0 (header, never cited): Product item,Status,Target,Priority,Notes",
+      "P0 (first row, usually the header): Product item,Status,Target,Priority,Notes",
     );
-    expect(prompt).toContain("T2: PLAT-202,Email delivery worker");
+    // A cell's later lines are indented, so they cannot read as records of their own.
+    expect(prompt).toContain(
+      'T2: PLAT-202,Email delivery worker,Story,Done,Scheduled email reports,"Queue-backed worker that sends scheduled emails through SES.\n    Retries bounces with backoff.\n    Records every delivery for support."\nT3: ',
+    );
 
     const proposal = await loadProposal(proposalId);
     const operations = operationListSchema.parse(proposal.operations);
@@ -181,13 +188,6 @@ describe("runPairedImport", () => {
       /Not cited: T4/,
     ],
     [
-      "cites the header row",
-      sampleWith((output) => {
-        output.outcomes[0].records = ["P0", "P1"];
-      }),
-      /cites P0, the header row/,
-    ],
-    [
       "puts a technical record on an outcome",
       sampleWith((output) => {
         output.outcomes[2].records = ["P3", "T11"];
@@ -226,6 +226,94 @@ describe("runPairedImport", () => {
       expect(await db.select().from(proposals)).toHaveLength(0);
     },
   );
+
+  it("accepts a first row that is an item, for comma-separated text with no header", async () => {
+    const llm = fakeLLM({
+      rationale: "Two product items, one piece of work.",
+      outcomes: [
+        {
+          records: ["P0"],
+          title: "Scheduled reports",
+          description: "",
+          target: "2027-Q1",
+          priority: 1,
+        },
+        {
+          records: ["P1"],
+          title: "Snowflake connector",
+          description: "",
+          target: "2027-Q2",
+          priority: 2,
+        },
+      ],
+      requirements: [
+        {
+          records: ["T1"],
+          outcome: "P0",
+          confidence: "high",
+          reason: "Same name.",
+          title: "Report scheduler",
+          description: "",
+          user_visible: true,
+          work_type: "feature",
+          product_note: null,
+          status: "planned",
+        },
+      ],
+      unplaced: [],
+      left_out: [],
+    });
+
+    const { summary } = await runPairedImport(
+      db,
+      llm,
+      projectId,
+      "Scheduled reports, Q1\nSnowflake connector, Q2",
+      "Key,Summary\nPLAT-1,Report scheduler",
+    );
+
+    expect(summary).toBe(
+      "Import 2 outcomes and 1 requirement from a product and a technical roadmap",
+    );
+  });
+
+  it("explains, and saves nothing, when every product item is left out", async () => {
+    const llm = fakeLLM({
+      rationale: "Everything has shipped.",
+      outcomes: [],
+      requirements: [],
+      unplaced: [],
+      left_out: [
+        {
+          records: ["P1", "T1"],
+          title: "Usage page",
+          reason: "already_shipped",
+        },
+      ],
+    });
+
+    const attempt = runPairedImport(
+      db,
+      llm,
+      projectId,
+      "Item,Status\nUsage page,Shipped",
+      "Key,Summary\nPLAT-1,Usage page UI",
+    );
+
+    await expect(attempt).rejects.toThrow(
+      'Every product item was left out: "Usage page" (already shipped), so there is no outcome',
+    );
+    expect(llm.prompts).toHaveLength(1);
+    expect(await db.select().from(proposals)).toHaveLength(0);
+  });
+
+  it("has no demo output for roadmaps other than the sample", () => {
+    expect(
+      pairedImportFixturesFor("Item\nMine", PAIRED_SAMPLE.technical)[
+        PAIRED_IMPORT_TASK
+      ],
+    ).toBeUndefined();
+  });
 
   it("holds the unplaced items' keys, so a later import cannot take them", async () => {
     await importSample();
@@ -277,6 +365,26 @@ describe("approving a paired import", () => {
     ).rejects.toThrow(ProposalError);
     expect(await db.select().from(outcomes)).toHaveLength(0);
     expect((await loadProposal(proposalId)).status).toBe("pending");
+  });
+
+  it("refuses to move or place work under an archived outcome", async () => {
+    await db
+      .insert(outcomes)
+      .values({ projectId, key: "OUT-9", title: "Old", archived: true });
+    const { proposalId } = await importSample();
+
+    for (const decisions of [
+      {
+        moves: { "TL-1": "OUT-9" },
+        placements: { "TL-7": null, "TL-8": null },
+      },
+      { placements: { "TL-7": "OUT-9", "TL-8": null } },
+    ]) {
+      await expect(
+        applyProposal(db, proposalId, "pm", undefined, decisions),
+      ).rejects.toThrow("Outcome OUT-9 is archived");
+    }
+    expect(await db.select().from(requirements)).toHaveLength(0);
   });
 
   it("refuses choices about items the proposal does not have", async () => {

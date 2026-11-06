@@ -1,7 +1,11 @@
 /** Paired roadmap import agent: a product roadmap and a technical roadmap in, one pending proposal out, with each technical item linked to the outcome it delivers and every record accounted for. Exports runPairedImport, savePairedImportProposal, buildPairedImportPrompt, pairedOutputSchema, pairedOutputSchemaFor, PairedOutput, PAIRED_IMPORT_TASK. */
 import { z } from "zod";
 
-import type { LLMProvider, StructuredPrompt } from "@/adapters/llm/provider";
+import {
+  type LLMProvider,
+  LLMOutputError,
+  type StructuredPrompt,
+} from "@/adapters/llm/provider";
 import {
   type ImportMappingInput,
   LEFT_OUT_REASONS,
@@ -79,7 +83,9 @@ export const pairedOutputSchema = z.object({
           ),
       }),
     )
-    .min(1),
+    .describe(
+      "One per product item that is not left out. Empty only when every product item is left out.",
+    ),
   requirements: z.array(
     z.object({
       records: technicalRecords,
@@ -184,8 +190,16 @@ function citationProblems(
   product: RoadmapRecords,
   technical: RoadmapRecords,
 ): string[] {
-  const productRefs = new Set(product.records.map((record) => record.ref));
-  const technicalRefs = new Set(technical.records.map((record) => record.ref));
+  // A header may be cited, for text whose first row is an item rather than column names, but it
+  // need not be: the review shows an uncited header as read as column names.
+  const citable = (roadmap: RoadmapRecords): Set<string> =>
+    new Set(
+      [...(roadmap.header ? [roadmap.header] : []), ...roadmap.records].map(
+        (record) => record.ref,
+      ),
+    );
+  const productRefs = citable(product);
+  const technicalRefs = citable(technical);
   const headers = new Set(
     [product.header?.ref, technical.header?.ref].filter(Boolean),
   );
@@ -200,11 +214,7 @@ function citationProblems(
   ): void {
     for (const ref of refs) {
       times.set(ref, (times.get(ref) ?? 0) + 1);
-      if (headers.has(ref)) {
-        problems.push(
-          `${what} cites ${ref}, the header row, which is never cited.`,
-        );
-      } else if (!allowed.has(ref)) {
+      if (!allowed.has(ref)) {
         problems.push(
           `${what} cites ${ref}, which is not a record of the ${roadmap}.`,
         );
@@ -233,7 +243,9 @@ function citationProblems(
       `Cited more than once: ${twice.join(", ")}. Cite each record exactly once.`,
     );
   }
-  const uncited = [...anyRefs].filter((ref) => !times.has(ref));
+  const uncited = [...anyRefs].filter(
+    (ref) => !times.has(ref) && !headers.has(ref),
+  );
   if (uncited.length > 0) {
     problems.push(
       `Not cited: ${uncited.join(", ")}. Cite every record exactly once, in an outcome, a requirement, an unplaced item or a left-out entry.`,
@@ -269,12 +281,12 @@ The product roadmap lists what customers will get. The technical roadmap lists w
 - Outcomes come from the product roadmap. Each product item becomes one outcome.
 - Requirements come from the technical roadmap. Each one delivers exactly one outcome.
 
-Every record of both roadmaps has a reference at the start of its line, such as P3 or T14. A CSV record is one row and may span several lines when a cell does. Cite records by these references, and cite every record exactly once: in an outcome, a requirement, an unplaced item or a left-out entry. A requirement may cite several records, such as an epic and the stories under it, but no record may be cited twice. The CSV header row (P0 or T0) explains the columns and is never cited.
+Every record of both roadmaps starts a line with its reference, such as P3 or T14. A CSV record is one row; when a cell spans several lines, the record continues on lines indented by four spaces, and only an unindented line starts a new record. Cite records by these references, and cite every record exactly once: in an outcome, a requirement, an unplaced item or a left-out entry. A requirement may cite several records, such as an epic and the stories under it, but no record may be cited twice. The first row of a CSV (P0 or T0) is usually its header, which names the columns: leave a header uncited. If that row is a roadmap item instead, because the text has no header, cite it like any other record.
 
 Rules:
 - Keep the team's own words for titles, minus issue keys, ticket numbers and ids. The team has already chosen its wording, so do not rewrite it into other language.
 - Link a technical item to an outcome when it delivers that outcome. Mark the link high confidence when the roadmaps themselves connect them, through a shared name, epic, parent, theme or link column, and low when you inferred it from what the work does. Give a one-line reason either way.
-- A product item with no technical work still becomes an outcome, with no requirements. That gap is useful for the team to see.
+- A product item with no technical work still becomes an outcome, with no requirements. That gap is useful for the team to see. If every product item is left out, return no outcomes.
 - A technical item that does not clearly deliver any outcome, such as upkeep, an upgrade or tooling, is not placed. List it as unplaced, with the outcome it most plausibly supports as a suggestion, or null when none fits. A person decides where it goes.
 - Take each technical item's status from its status column: done, in progress or planned. Done and in-progress work is imported with that status, so progress is right from the start.
 - Leave out records whose status is won't do, cancelled or duplicate, with that reason.
@@ -309,12 +321,16 @@ export function buildPairedImportPrompt(
 }
 
 function roadmapBlock(name: string, roadmap: RoadmapRecords): string {
-  const lines = roadmap.records.map(
-    (record) => `${record.ref}: ${escapeRoadmapTags(record.text)}`,
-  );
+  // Indenting a cell's later lines keeps a line such as "T3: see follow-up" inside its record.
+  const line = (record: { ref: string; text: string }, label: string): string =>
+    `${label}: ${escapeRoadmapTags(record.text).replace(/\n/g, "\n    ")}`;
+  const lines = roadmap.records.map((record) => line(record, record.ref));
   if (roadmap.header) {
     lines.unshift(
-      `${roadmap.header.ref} (header, never cited): ${escapeRoadmapTags(roadmap.header.text)}`,
+      line(
+        roadmap.header,
+        `${roadmap.header.ref} (first row, usually the header)`,
+      ),
     );
   }
   return `<roadmap name="${name}">\n${lines.join("\n")}\n</roadmap>`;
@@ -337,7 +353,8 @@ function roadmapBlock(name: string, roadmap: RoadmapRecords): string {
  *   The new proposal's id and its one-line summary.
  *
  * Raises:
- *   LLMOutputError: The model did not produce valid output after one retry.
+ *   LLMOutputError: The model did not produce valid output after one retry, or it left out every
+ *     product item.
  */
 export async function runPairedImport(
   db: Database,
@@ -352,6 +369,12 @@ export async function runPairedImport(
     pairedOutputSchemaFor(product, technical),
     buildPairedImportPrompt(product, technical),
   );
+  // A valid answer, but with no outcome there is nothing for the technical work to deliver.
+  if (output.outcomes.length === 0) {
+    throw new LLMOutputError(
+      `Every product item was left out${leftOutList(output)}, so there is no outcome to link the technical work to and nothing was saved.`,
+    );
+  }
   return savePairedImportProposal(db, projectId, output, product, technical);
 }
 
@@ -481,8 +504,14 @@ export async function savePairedImportProposal(
 /** The model's rationale followed by what was left out and why, written here so none is missed. */
 function withLeftOut(output: PairedOutput): string {
   if (output.left_out.length === 0) return output.rationale;
+  return `${output.rationale.trim()} Left out${leftOutList(output)}.`.trim();
+}
+
+/** ': "A" (already shipped); "B" (won't do)', or nothing when nothing was left out. */
+function leftOutList(output: PairedOutput): string {
+  if (output.left_out.length === 0) return "";
   const entries = output.left_out.map(
     (entry) => `"${entry.title}" (${LEFT_OUT_REASONS[entry.reason]})`,
   );
-  return `${output.rationale.trim()} Left out: ${entries.join("; ")}.`.trim();
+  return `: ${entries.join("; ")}`;
 }

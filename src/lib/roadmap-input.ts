@@ -1,4 +1,4 @@
-/** Reads and validates the roadmap submitted on the import page, pasted or as a file. Exports readRoadmapInput, RoadmapInput, ROADMAP_FILE_TYPES, MAX_ROADMAP_CHARS, MAX_FILE_BYTES, FILE_TOO_LARGE, FILE_EMPTY. */
+/** Reads and validates the roadmaps submitted on the import page, pasted or as files. Exports readRoadmapInput, readPairedRoadmapInput, their result types, ROADMAP_FILE_TYPES, MAX_ROADMAP_CHARS, MAX_FILE_BYTES, MAX_PAIRED_FILE_BYTES, FILE_TOO_LARGE, PAIRED_FILES_TOO_LARGE, FILE_EMPTY. */
 import { z } from "zod";
 
 /** File extensions the import page accepts. All are plain text, so no parser is needed. */
@@ -57,6 +57,15 @@ const fileTextSchema = z
     `That file has more than ${MAX_ROADMAP_CHARS.toLocaleString("en")} characters of text, too long to import at once. Export fewer rows or columns, or split it.`,
   );
 
+/**
+ * The most two files of a paired import may add up to. Next.js rejects a server action request
+ * over 1 MB before the action runs, so this leaves room for the rest of the form.
+ */
+export const MAX_PAIRED_FILE_BYTES = 900_000;
+
+/** The error for two files over MAX_PAIRED_FILE_BYTES together, shared with the form's own check. */
+export const PAIRED_FILES_TOO_LARGE = `Together the two files are over ${MAX_PAIRED_FILE_BYTES / 1000} KB. Export fewer rows or columns from one of them.`;
+
 export type RoadmapInput =
   | { ok: true; roadmap: string; source: string }
   | { ok: false; message: string };
@@ -66,15 +75,19 @@ export type RoadmapInput =
  *
  * Args:
  *   formData: Form fields; `file` holds an uploaded file and `roadmap` the pasted text.
+ *   prefix: Put before the field names with an underscore, as `product` reads `product_file` and
+ *     `product_roadmap`. Empty for the one-roadmap import.
  *
  * Returns:
  *   The roadmap text and a description of where it came from, or a message saying what is wrong.
  */
 export async function readRoadmapInput(
   formData: FormData,
+  prefix = "",
 ): Promise<RoadmapInput> {
-  const file = formData.get("file");
-  const pasted = formData.get("roadmap");
+  const field = (name: string): string => (prefix ? `${prefix}_${name}` : name);
+  const file = formData.get(field("file"));
+  const pasted = formData.get(field("roadmap"));
   // A blank file input still sends an empty file. The form itself reports a chosen 0-byte file.
   const hasFile = file instanceof File && file.size > 0;
 
@@ -103,6 +116,40 @@ export async function readRoadmapInput(
     return { ok: false, message: text.error.issues[0].message };
   // The file's name is not shown: on a shared demo, other visitors would read whatever it says.
   return { ok: true, roadmap: text.data, source: "an uploaded file" };
+}
+
+export type PairedRoadmapInput =
+  | { ok: true; product: string; technical: string }
+  | { ok: false; message: string };
+
+/**
+ * Read both roadmaps of a paired import, each pasted or uploaded and checked as readRoadmapInput
+ * checks one.
+ *
+ * Args:
+ *   formData: Form fields `product_file`, `product_roadmap`, `technical_file` and `technical_roadmap`.
+ *
+ * Returns:
+ *   Both roadmaps' text, or a message saying which one is wrong and how.
+ */
+export async function readPairedRoadmapInput(
+  formData: FormData,
+): Promise<PairedRoadmapInput> {
+  const fileBytes = ["product_file", "technical_file"]
+    .map((name) => formData.get(name))
+    .reduce((total, file) => total + (file instanceof File ? file.size : 0), 0);
+  if (fileBytes > MAX_PAIRED_FILE_BYTES) {
+    return { ok: false, message: PAIRED_FILES_TOO_LARGE };
+  }
+  const product = await readRoadmapInput(formData, "product");
+  if (!product.ok) {
+    return { ok: false, message: `Product roadmap: ${product.message}` };
+  }
+  const technical = await readRoadmapInput(formData, "technical");
+  if (!technical.ok) {
+    return { ok: false, message: `Technical roadmap: ${technical.message}` };
+  }
+  return { ok: true, product: product.roadmap, technical: technical.roadmap };
 }
 
 /**

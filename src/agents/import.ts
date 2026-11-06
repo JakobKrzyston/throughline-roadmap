@@ -1,4 +1,4 @@
-/** Roadmap import agent: pasted or uploaded roadmap text in, one pending proposal of create_outcome and create_requirement operations out. Exports runImport, saveImportProposal, ImportPlan, buildImportPrompt, importOutputSchema, IMPORT_TASK. */
+/** Roadmap import agent: pasted or uploaded roadmap text in, one pending proposal of create_outcome and create_requirement operations out. Exports runImport, saveImportProposal, ImportPlan, buildImportPrompt, escapeRoadmapTags, importOutputSchema, IMPORT_TASK. */
 import { z } from "zod";
 
 import type { LLMProvider, StructuredPrompt } from "@/adapters/llm/provider";
@@ -110,11 +110,19 @@ export function buildImportPrompt(roadmap: string): StructuredPrompt {
   };
 }
 
-// Escape the "<" of anything that reads as a roadmap tag, such as "</roadmap>", "< /roadmap >" or
-// "<roadmap id=x>", so the text cannot open or close the data block. Unlike removing the tags,
-// escaping cannot join the text around a tag into a new one ("<</roadmap>/roadmap>"), and the
-// lookahead keeps this linear on hostile input.
-function escapeRoadmapTags(roadmap: string): string {
+/**
+ * Escape the "<" of anything that reads as a roadmap tag, such as "</roadmap>", "< /roadmap >" or
+ * "<roadmap id=x>", so the text cannot open or close the data block. Unlike removing the tags,
+ * escaping cannot join the text around a tag into a new one ("<</roadmap>/roadmap>"), and the
+ * lookahead keeps this linear on hostile input.
+ *
+ * Args:
+ *   roadmap: Text to put inside a <roadmap> block.
+ *
+ * Returns:
+ *   The text with every roadmap tag's "<" escaped.
+ */
+export function escapeRoadmapTags(roadmap: string): string {
   return roadmap.replace(/<(?=\s*\/?\s*roadmap\b)/gi, "&lt;");
 }
 

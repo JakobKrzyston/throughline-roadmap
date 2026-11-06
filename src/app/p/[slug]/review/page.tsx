@@ -8,6 +8,7 @@ import { type ReactElement, Suspense } from "react";
 
 import { Badge, type BadgeTone } from "@/components/badge";
 import { CardsSkeleton } from "@/components/skeleton";
+import { importMappingSchema } from "@/core/import-mapping";
 import { operationListSchema } from "@/core/operations";
 import {
   describeOperations,
@@ -147,8 +148,19 @@ async function PendingProposals({
   const viewOnly = isViewOnly(project);
   // Visitors' edits would show on the public demo until the nightly reset.
   const canEdit = !isPublicDeployment();
+  // A paired import's requirements can move to any live outcome already in the project.
+  const projectOutcomes = [...graph.outcomes.values()]
+    .filter((outcome) => !outcome.archived)
+    .map(({ key, title }) => ({ key, title }));
   const views = pending.map((proposal, i): ProposalView => {
+    // A mapping that does not parse leaves the proposal reject-only, like invalid operations.
+    const mapping =
+      proposal.importMapping === null
+        ? null
+        : importMappingSchema.safeParse(proposal.importMapping);
     const parsed = parsedOperations[i];
+    const operations =
+      parsed.success && mapping?.success !== false ? parsed.data : null;
     const trigger = proposal.triggerWorkItemId
       ? graph.workItems.get(proposal.triggerWorkItemId)
       : proposal.triggerFeedbackId
@@ -167,8 +179,11 @@ async function PendingProposals({
         url: trigger.url,
         sample: project.isDemo,
       },
-      operations: parsed.success ? parsed.data : null,
-      entries: parsed.success ? describeOperations(parsed.data, graph) : [],
+      operations,
+      entries: operations ? describeOperations(operations, graph) : [],
+      mapping: mapping?.success
+        ? { ...mapping.data, projectOutcomes }
+        : undefined,
     };
   });
   const kinds = Object.entries(SOURCES).flatMap(([source, kind]) => {
@@ -301,7 +316,8 @@ async function loadSnapshot(
   workItemIds: string[],
   feedbackIds: string[],
 ): Promise<
-  Omit<GraphSnapshot, "workItems" | "feedback"> & {
+  Omit<GraphSnapshot, "outcomes" | "workItems" | "feedback"> & {
+    outcomes: Map<string, typeof outcomes.$inferSelect>;
     workItems: Map<
       string,
       { title: string; kind: "issue" | "pull_request"; url: string }

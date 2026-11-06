@@ -1,10 +1,11 @@
-/** Realistic roadmap exports from Jira, Productboard and Notion, each with the proposal demo mode returns for it. Exports IMPORT_SAMPLES, ImportSample, importFixturesFor. */
+/** Realistic roadmap exports from Jira, Productboard and Notion, each with the proposal demo mode returns for it, plus a paired product and technical roadmap. Exports IMPORT_SAMPLES, ImportSample, importFixturesFor, PAIRED_SAMPLE, isPairedSample, pairedImportFixturesFor. */
 import type { z } from "zod";
 
 import type { FakeFixtures } from "@/adapters/llm/fake";
 
 import { DEMO_LLM_FIXTURES, SAMPLE_IMPORT_OUTPUT } from "./fixtures";
 import { IMPORT_TASK, type importOutputSchema } from "./import";
+import { PAIRED_IMPORT_TASK, type pairedOutputSchema } from "./paired-import";
 
 /** A sample export the import page offers, and the model output demo mode serves for it. */
 export type ImportSample = {
@@ -409,4 +410,219 @@ export function importFixturesFor(roadmap: string): FakeFixtures {
     ...DEMO_LLM_FIXTURES,
     [IMPORT_TASK]: [sample?.output ?? SAMPLE_IMPORT_OUTPUT],
   };
+}
+
+// A spreadsheet of product items, one row each, as a product team might keep it.
+const PAIRED_PRODUCT_CSV = `Product item,Status,Target,Priority,Notes
+Scheduled email reports,In progress,2027-Q1,1,"Customers get a dashboard in their inbox daily, weekly or monthly."
+Snowflake connector,Planned,2027-Q2,2,Analyse warehouse data without exporting CSVs.
+Dashboard comments,Planned,2027-Q3,3,Teams discuss a chart right where they see it.
+Usage page for account owners,Shipped,2026-Q3,4,Account owners see seats and usage against their plan.
+`;
+
+// A Jira export of the engineering plan. One description spans several lines, as Jira exports do.
+const PAIRED_TECHNICAL_CSV = `Issue key,Summary,Issue Type,Status,Epic,Description
+PLAT-201,Schedule builder in the share menu,Story,In Progress,Scheduled email reports,"Pick frequency, time zone and recipients."
+PLAT-202,Email delivery worker,Story,Done,Scheduled email reports,"Queue-backed worker that sends scheduled emails through SES.
+Retries bounces with backoff.
+Records every delivery for support."
+PLAT-203,Dashboard PDF rendering,Story,To Do,Scheduled email reports,Headless Chromium renders the dashboard and attaches it to the email.
+PLAT-204,Slack delivery for scheduled reports,Story,Won't Do,Scheduled email reports,Dropped after discovery: customers asked for email.
+PLAT-210,Snowflake key-pair authentication,Story,To Do,Snowflake connector,Store the customer's key pair encrypted; never accept passwords.
+PLAT-211,Incremental Snowflake table sync,Story,To Do,Snowflake connector,Sync only changed rows using a watermark column.
+PLAT-212,Warehouse query result cache,Story,To Do,,Cache repeated warehouse queries so dashboards load faster.
+PLAT-220,Usage metering pipeline,Story,Done,Usage page,Count seats and events per account every hour.
+PLAT-221,Usage page UI,Story,Done,Usage page,Show seats and usage against plan limits.
+PLAT-230,Tune connection pool for sync workers,Task,To Do,,Sync workers exhaust the Postgres pool during large backfills.
+PLAT-231,Upgrade Postgres,Task,To Do,,Move the primary database to Postgres 17 before version 13 reaches end of life.
+`;
+
+const PAIRED_OUTPUT: z.input<typeof pairedOutputSchema> = {
+  rationale:
+    "Each product item became an outcome, and each Jira story went under the product item its epic names. The query result cache has no epic, so its link to the Snowflake connector is a guess. Dashboard comments has no engineering work planned yet.",
+  outcomes: [
+    {
+      records: ["P1"],
+      title: "Scheduled email reports",
+      description:
+        "Customers get a dashboard in their inbox daily, weekly or monthly.",
+      target: "2027-Q1",
+      priority: 1,
+    },
+    {
+      records: ["P2"],
+      title: "Snowflake connector",
+      description: "Analyse warehouse data without exporting CSVs.",
+      target: "2027-Q2",
+      priority: 2,
+    },
+    {
+      records: ["P3"],
+      title: "Dashboard comments",
+      description: "Teams discuss a chart right where they see it.",
+      target: "2027-Q3",
+      priority: 3,
+    },
+  ],
+  requirements: [
+    {
+      records: ["T1"],
+      outcome: "P1",
+      confidence: "high",
+      reason: "Its epic is Scheduled email reports.",
+      title: "Schedule builder in the share menu",
+      description: "Pick frequency, time zone and recipients.",
+      user_visible: true,
+      work_type: "feature",
+      product_note: null,
+      status: "in_progress",
+    },
+    {
+      records: ["T2"],
+      outcome: "P1",
+      confidence: "high",
+      reason: "Its epic is Scheduled email reports.",
+      title: "Email delivery worker",
+      description:
+        "Queue-backed worker that sends scheduled emails through SES, retries bounces with backoff and records every delivery for support.",
+      user_visible: false,
+      work_type: "infrastructure",
+      product_note: null,
+      status: "done",
+    },
+    {
+      records: ["T3"],
+      outcome: "P1",
+      confidence: "high",
+      reason: "Its epic is Scheduled email reports.",
+      title: "Dashboard PDF rendering",
+      description:
+        "Headless Chromium renders the dashboard and attaches it to the email.",
+      user_visible: true,
+      work_type: "feature",
+      product_note: "Scheduled emails include the dashboard as a PDF.",
+      status: "planned",
+    },
+    {
+      records: ["T5"],
+      outcome: "P2",
+      confidence: "high",
+      reason: "Its epic is Snowflake connector.",
+      title: "Snowflake key-pair authentication",
+      description:
+        "Store the customer's key pair encrypted; never accept passwords.",
+      user_visible: true,
+      work_type: "security",
+      product_note: null,
+      status: "planned",
+    },
+    {
+      records: ["T6"],
+      outcome: "P2",
+      confidence: "high",
+      reason: "Its epic is Snowflake connector.",
+      title: "Incremental Snowflake table sync",
+      description: "Sync only changed rows using a watermark column.",
+      user_visible: true,
+      work_type: "feature",
+      product_note: null,
+      status: "planned",
+    },
+    {
+      records: ["T7"],
+      outcome: "P2",
+      confidence: "low",
+      reason:
+        "It has no epic, but it speeds up dashboards built on warehouse data.",
+      title: "Warehouse query result cache",
+      description:
+        "Cache repeated warehouse queries so dashboards load faster.",
+      user_visible: false,
+      work_type: "infrastructure",
+      product_note: null,
+      status: "planned",
+    },
+  ],
+  unplaced: [
+    {
+      records: ["T10"],
+      title: "Tune connection pool for sync workers",
+      description:
+        "Sync workers exhaust the Postgres pool during large backfills.",
+      user_visible: false,
+      work_type: "infrastructure",
+      status: "planned",
+      suggested_outcome: "P2",
+      reason:
+        "It has no epic; it keeps warehouse syncs running, which the Snowflake connector relies on.",
+    },
+    {
+      records: ["T11"],
+      title: "Upgrade Postgres",
+      description:
+        "Move the primary database to Postgres 17 before version 13 reaches end of life.",
+      user_visible: false,
+      work_type: "tech_debt",
+      status: "planned",
+      suggested_outcome: null,
+      reason: "Upkeep that no product item depends on directly.",
+    },
+  ],
+  left_out: [
+    {
+      records: ["P4", "T8", "T9"],
+      title: "Usage page for account owners",
+      reason: "already_shipped",
+    },
+    {
+      records: ["T4"],
+      title: "Slack delivery for scheduled reports",
+      reason: "wont_do",
+    },
+  ],
+};
+
+/** The paired sample: an Acme Analytics product roadmap and technical roadmap, with the output demo mode serves for them. */
+export const PAIRED_SAMPLE = {
+  product: PAIRED_PRODUCT_CSV,
+  technical: PAIRED_TECHNICAL_CSV,
+  output: PAIRED_OUTPUT,
+};
+
+/**
+ * Whether two roadmaps are the paired sample unchanged.
+ *
+ * Args:
+ *   product: The product roadmap's text.
+ *   technical: The technical roadmap's text.
+ *
+ * Returns:
+ *   True when both match the sample, ignoring CRLF line breaks and surrounding space.
+ */
+export function isPairedSample(product: string, technical: string): boolean {
+  return (
+    normalise(product) === normalise(PAIRED_SAMPLE.product) &&
+    normalise(technical) === normalise(PAIRED_SAMPLE.technical)
+  );
+}
+
+/**
+ * The demo fixtures for a paired import. Only the sample has output written for it: that output
+ * cites the sample's own records, so for any other roadmaps there is no paired fixture, and a demo
+ * whose model fails reports a plain failure instead of reference errors about rows nobody wrote.
+ *
+ * Args:
+ *   product: The product roadmap's text.
+ *   technical: The technical roadmap's text.
+ *
+ * Returns:
+ *   DEMO_LLM_FIXTURES, with the paired sample's output when the roadmaps are the sample.
+ */
+export function pairedImportFixturesFor(
+  product: string,
+  technical: string,
+): FakeFixtures {
+  return isPairedSample(product, technical)
+    ? { ...DEMO_LLM_FIXTURES, [PAIRED_IMPORT_TASK]: [PAIRED_SAMPLE.output] }
+    : DEMO_LLM_FIXTURES;
 }

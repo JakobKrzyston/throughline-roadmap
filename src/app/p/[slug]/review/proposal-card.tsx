@@ -1,5 +1,5 @@
 "use client";
-/** One pending proposal in the review queue: summary, rationale, readable diff, and approve / edit / reject. Exports ProposalCard, ProposalView. */
+/** One pending proposal in the review queue: summary, rationale, readable diff or import mapping, and approve / edit / reject. Exports ProposalCard, ProposalView. */
 import { type MouseEvent, type ReactElement, useState } from "react";
 import { useFormStatus } from "react-dom";
 
@@ -8,6 +8,8 @@ import { SourceLink } from "@/components/source-link";
 import { Button } from "@/components/ui/button";
 import { type GraphOperation, WORK_TYPE_LABELS } from "@/core/operations";
 import type { DiffChange, DiffEntry } from "@/core/proposal-diff";
+
+import { MappingReview, type MappingView } from "./mapping-review";
 
 /** What the page passes for each proposal. */
 export type ProposalView = {
@@ -25,6 +27,8 @@ export type ProposalView = {
   /** Null when the stored operations are invalid; the proposal can then only be rejected. */
   operations: GraphOperation[] | null;
   entries: DiffEntry[];
+  /** Set for a paired roadmap import, whose review shows where every item came from. */
+  mapping?: MappingView;
 };
 
 type Draft = Record<string, unknown>;
@@ -48,6 +52,7 @@ const EDITABLE: Record<GraphOperation["type"], string[]> = {
     "target",
     "work_type",
     "team",
+    "status",
   ],
   split_requirement: ["split_reason", "product_note"],
   update_requirement: [
@@ -143,7 +148,31 @@ export function ProposalCard({
   canEdit: boolean;
 }): ReactElement {
   const [draft, setDraft] = useState<Draft[] | null>(null);
+  const [moves, setMoves] = useState<Record<string, string>>({});
+  const [placements, setPlacements] = useState<Record<string, string | null>>(
+    {},
+  );
   const editing = draft !== null;
+  const { mapping } = proposal;
+  const undecided =
+    mapping?.unplaced.filter((item) => !(item.requirement.key in placements))
+      .length ?? 0;
+  const mappingReview = mapping && proposal.operations && (
+    <MappingReview
+      operations={proposal.operations}
+      mapping={mapping}
+      moves={moves}
+      placements={placements}
+      onMove={(key, outcomeKey) => setMoves({ ...moves, [key]: outcomeKey })}
+      onPlace={(key, outcomeKey) => {
+        const next = { ...placements };
+        if (outcomeKey === undefined) delete next[key];
+        else next[key] = outcomeKey;
+        setPlacements(next);
+      }}
+      disabled={pending || viewOnly}
+    />
+  );
   const shown = proposal.entries.slice(0, SHOWN_CHANGES);
   const folded = proposal.entries.slice(SHOWN_CHANGES);
 
@@ -196,16 +225,22 @@ export function ProposalCard({
             only be rejected.
           </p>
         ) : editing ? (
-          draft.map((op, i) => (
-            <OperationEditor
-              key={i}
-              heading={proposal.entries[i].heading}
-              op={op}
-              onChange={(next) =>
-                setDraft(draft.map((old, j) => (j === i ? next : old)))
-              }
-            />
-          ))
+          <>
+            {draft.map((op, i) => (
+              <OperationEditor
+                key={i}
+                heading={proposal.entries[i].heading}
+                op={op}
+                onChange={(next) =>
+                  setDraft(draft.map((old, j) => (j === i ? next : old)))
+                }
+              />
+            ))}
+            {/* Where items go is chosen here, not in the editors, so it stays in view. */}
+            {mappingReview}
+          </>
+        ) : mappingReview ? (
+          mappingReview
         ) : (
           <>
             {shown.map((entry, i) => (
@@ -242,12 +277,20 @@ export function ProposalCard({
               value={JSON.stringify(draft)}
             />
           )}
+          {mapping && (
+            <input
+              type="hidden"
+              name="mapping"
+              value={JSON.stringify({ moves, placements })}
+            />
+          )}
           {proposal.operations !== null && (
             <Button
               type="submit"
               name="decision"
               value="approve"
-              disabled={pending}
+              // The server refuses too; this only saves a round trip.
+              disabled={pending || undecided > 0}
               onClick={ignoreRepeatClick}
             >
               {editing ? "Approve with edits" : "Approve"}
@@ -287,6 +330,13 @@ export function ProposalCard({
             </Button>
           )}
           <Saving />
+          {undecided > 0 && (
+            <p className="text-sm text-muted-foreground">
+              Place or leave out{" "}
+              {undecided === 1 ? "the item" : `all ${undecided} items`} under
+              Needs a home to approve.
+            </p>
+          )}
         </form>
       )}
       <div aria-live="polite">

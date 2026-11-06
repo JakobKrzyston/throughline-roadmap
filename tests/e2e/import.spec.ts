@@ -10,7 +10,9 @@ test("a sample export becomes a proposal in the review queue", async ({
   await page.goto(IMPORT_PAGE);
 
   await page.getByRole("button", { name: "Jira CSV" }).click();
-  await expect(page.getByLabel("Roadmap")).toHaveValue(/^Summary,Issue key/);
+  await expect(page.getByLabel("Roadmap", { exact: true })).toHaveValue(
+    /^Summary,Issue key/,
+  );
   await page.getByRole("button", { name: "Generate proposal" }).click();
 
   const summary = "Import 3 outcomes and 8 requirements from a pasted roadmap";
@@ -82,4 +84,46 @@ test("a Linear team from the sample workspace becomes a proposal", async ({
   const card = page.locator(`article#${cardId}`);
   await expect(card.getByText("Dashboards on the go")).toBeVisible();
   await expect(card.getByText("Dashboard comments")).toHaveCount(0);
+});
+
+test("a product and a technical roadmap import together, and every item is placed before approving", async ({
+  page,
+}) => {
+  await page.goto(IMPORT_PAGE);
+
+  await page.getByLabel("Product and technical roadmap").check();
+  await page
+    .getByRole("button", { name: "Acme product and Jira CSVs" })
+    .click();
+  await expect(page.getByLabel("Product roadmap", { exact: true })).toHaveValue(
+    /^Product item,Status/,
+  );
+  await expect(
+    page.getByLabel("Technical roadmap", { exact: true }),
+  ).toHaveValue(/^Issue key,Summary/);
+  await page.getByRole("button", { name: "Generate proposal" }).click();
+
+  const summary =
+    "Import 3 outcomes and 6 requirements from a product and a technical roadmap, with 2 items to place";
+  await expect(page.getByText(summary)).toBeVisible();
+  const link = page.getByRole("link", { name: "Review the proposal" });
+  const cardId = (await link.getAttribute("href"))!.split("#")[1];
+  await link.click();
+  const card = page.locator(`article#${cardId}`);
+
+  await expect(card.getByText("Low-confidence link")).toBeVisible();
+  await expect(
+    card.getByText("Usage page for account owners (already shipped)"),
+  ).toBeVisible();
+  const approve = card.getByRole("button", { name: "Approve" });
+  await card
+    .getByLabel("Where Tune connection pool for sync workers goes")
+    .selectOption({ label: "Snowflake connector" });
+  await expect(approve).toBeDisabled();
+  await card
+    .getByLabel("Where Upgrade Postgres goes")
+    .selectOption({ label: "Leave it out" });
+  await approve.click();
+
+  await expect(page.getByRole("status")).toContainText(`Approved: ${summary}.`);
 });

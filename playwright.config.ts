@@ -11,7 +11,8 @@ export default defineConfig({
   use: { baseURL: `http://localhost:${PORT}`, trace: "on-first-retry" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: `pnpm db:migrate && pnpm db:seed && pnpm build && pnpm start --port ${PORT}`,
+    // The import specs get a project of their own, so the demo's proposal counts stay as seeded.
+    command: `pnpm db:migrate && pnpm db:seed && pnpm exec tsx tests/e2e/seed-import-project.ts && pnpm build && pnpm start --port ${PORT}`,
     url: `http://localhost:${PORT}`,
     timeout: 300_000,
     reuseExistingServer: false,
@@ -20,6 +21,9 @@ export default defineConfig({
       DATABASE_URL: "",
       DATABASE_URL_UNPOOLED: "",
       PGLITE_DATA_DIR: ".pglite-e2e",
+      // Imports must use the demo fixtures, never a model key from .env.local.
+      ANTHROPIC_API_KEY: "",
+      OPENROUTER_API_KEY: "",
     },
   },
 });

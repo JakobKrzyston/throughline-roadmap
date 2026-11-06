@@ -1,10 +1,11 @@
-/** /p/[slug]/import: paste a roadmap and turn it into a proposal for the review queue. */
+/** /p/[slug]/import: paste or upload a roadmap and turn it into a proposal for the review queue. */
 import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { type ReactElement, Suspense } from "react";
 
 import { demoModels, isDemoLLM } from "@/adapters/llm";
+import { IMPORT_SAMPLES } from "@/agents/import-samples";
 import { FormSkeleton } from "@/components/skeleton";
 import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
@@ -19,7 +20,7 @@ export const maxDuration = 300;
 export const metadata = { title: "Import a roadmap" };
 
 /**
- * Import page: a static heading plus the paste form for the project in the URL.
+ * Import page: a static heading plus the import form for the project in the URL.
  *
  * Args:
  *   params: Route params holding the project slug.
@@ -37,9 +38,9 @@ export default function ImportPage({
           Import a roadmap
         </h1>
         <p className="text-muted-foreground">
-          Paste a roadmap and Throughline drafts its product outcomes and
-          technical requirements as a proposal. Nothing changes until you
-          approve it in the review queue.
+          Paste a roadmap or upload an export from the tool you plan in, and
+          Throughline drafts its product outcomes and technical requirements as
+          a proposal. Nothing changes until you approve it in the review queue.
         </p>
       </div>
       {/* The project lookup runs per request; the heading above is the static shell. */}
@@ -77,11 +78,17 @@ async function ProjectImport({
           ) : (
             (isDemoLLM() || isPublicDeployment()) && (
               <p className="rounded-md border border-border bg-muted p-3 text-sm">
-                Demo mode: you will get a sample proposal whatever you paste.
+                Demo mode: each sample export gets a proposal written for it,
+                and anything else you paste or upload gets the same sample
+                proposal.
               </p>
             )
           )}
-          <ImportForm slug={slug} />
+          <ImportForm
+            slug={slug}
+            // Only the buttons; a sample's text is fetched when its button is clicked.
+            samples={IMPORT_SAMPLES.map(({ id, label }) => ({ id, label }))}
+          />
         </>
       )}
     </>

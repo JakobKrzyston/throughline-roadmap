@@ -1,13 +1,13 @@
-/** Roadmap import agent: pasted or uploaded roadmap text in, one pending proposal of create_outcome and create_requirement operations out. Exports runImport, buildImportPrompt, importOutputSchema, IMPORT_TASK. */
+/** Roadmap import agent: pasted or uploaded roadmap text in, one pending proposal of create_outcome and create_requirement operations out. Exports runImport, saveImportProposal, ImportPlan, buildImportPrompt, importOutputSchema, IMPORT_TASK. */
 import { z } from "zod";
 
 import type { LLMProvider, StructuredPrompt } from "@/adapters/llm/provider";
-import type { GraphOperationInput } from "@/core/operations";
+import type { GraphOperationInput, WorkType } from "@/core/operations";
 import { targetSchema } from "@/core/schedule";
 import type { Database } from "@/db/client";
 import { proposals } from "@/db/schema";
 
-import { workTypeOutput } from "./context";
+import { count, workTypeOutput } from "./context";
 import { lastKeyNumbers } from "./keys";
 
 export const IMPORT_TASK = "roadmap_import";
@@ -71,8 +71,6 @@ export const importOutputSchema = z.object({
     )
     .min(1),
 });
-
-export type ImportOutput = z.output<typeof importOutputSchema>;
 
 const SYSTEM_PROMPT = `You turn a pasted product roadmap, planning notes or product brief into a traceability graph for Throughline.
 
@@ -150,23 +148,61 @@ export async function runImport(
     importOutputSchema,
     buildImportPrompt(roadmap),
   );
-  const requirementCount = output.outcomes.flatMap(
+  return saveImportProposal(db, projectId, output, source);
+}
+
+type ImportOutput = z.output<typeof importOutputSchema>;
+type OutputOutcome = ImportOutput["outcomes"][number];
+type OutputRequirement = OutputOutcome["requirements"][number];
+
+/**
+ * The outcomes and requirements an import proposes: the model's output, or the same shape read
+ * from a planning tool such as Linear. Derived from importOutputSchema so a new output field
+ * reaches here too. Beyond the model's output, a requirement may have no work type, and may carry
+ * a target and a team.
+ */
+export type ImportPlan = Omit<ImportOutput, "outcomes"> & {
+  outcomes: (Omit<OutputOutcome, "requirements"> & {
+    requirements: (Omit<OutputRequirement, "work_type"> & {
+      work_type: WorkType | null;
+      target?: string | null;
+      team?: string | null;
+    })[];
+  })[];
+};
+
+/**
+ * Save an import plan as one pending proposal, numbering its keys after those already in use.
+ *
+ * Args:
+ *   db: Database to write the proposal to.
+ *   projectId: Project the roadmap belongs to.
+ *   plan: The outcomes and requirements to propose.
+ *   source: Where the roadmap came from, for the proposal's summary.
+ *
+ * Returns:
+ *   The new proposal's id and its one-line summary.
+ */
+export async function saveImportProposal(
+  db: Database,
+  projectId: string,
+  plan: ImportPlan,
+  source: string,
+): Promise<{ proposalId: string; summary: string }> {
+  const requirementCount = plan.outcomes.flatMap(
     (outcome) => outcome.requirements,
   ).length;
-  const summary = `Import ${count(output.outcomes.length, "outcome")} and ${count(requirementCount, "requirement")} from ${source}`;
+  const summary = `Import ${count(plan.outcomes.length, "outcome")} and ${count(requirementCount, "requirement")} from ${source}`;
 
   return db.transaction(async (tx) => {
-    const operations = toOperations(
-      output,
-      await lastKeyNumbers(tx, projectId),
-    );
+    const operations = toOperations(plan, await lastKeyNumbers(tx, projectId));
     const [proposal] = await tx
       .insert(proposals)
       .values({
         projectId,
         source: "import",
         summary,
-        rationale: output.rationale,
+        rationale: plan.rationale,
         operations,
       })
       .returning({ id: proposals.id });
@@ -175,12 +211,12 @@ export async function runImport(
 }
 
 function toOperations(
-  output: ImportOutput,
+  plan: ImportPlan,
   last: { outcome: number; requirement: number },
 ): GraphOperationInput[] {
   let outcomeNumber = last.outcome;
   let requirementNumber = last.requirement;
-  return output.outcomes.flatMap((outcome) => {
+  return plan.outcomes.flatMap((outcome) => {
     const outcomeKey = `OUT-${++outcomeNumber}`;
     return [
       {
@@ -200,11 +236,9 @@ function toOperations(
         user_visible: requirement.user_visible,
         product_note: requirement.product_note,
         work_type: requirement.work_type,
+        target: requirement.target,
+        team: requirement.team,
       })),
     ];
   });
-}
-
-function count(n: number, noun: string): string {
-  return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }

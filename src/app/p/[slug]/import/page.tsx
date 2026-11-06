@@ -1,4 +1,4 @@
-/** /p/[slug]/import: paste or upload a roadmap and turn it into a proposal for the review queue. */
+/** /p/[slug]/import: paste, upload or read a roadmap from Linear, and turn it into a proposal for the review queue. */
 import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
@@ -13,6 +13,7 @@ import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
 
 import { ViewOnlyNotice } from "../view-only-notice";
 import { ImportForm } from "./import-form";
+import { LinearImport } from "./linear-import";
 
 // Up to two model calls run in this page's server action; allow them more than the platform default.
 export const maxDuration = 300;
@@ -38,9 +39,10 @@ export default function ImportPage({
           Import a roadmap
         </h1>
         <p className="text-muted-foreground">
-          Paste a roadmap or upload an export from the tool you plan in, and
-          Throughline drafts its product outcomes and technical requirements as
-          a proposal. Nothing changes until you approve it in the review queue.
+          Paste a roadmap, upload an export from the tool you plan in, or read
+          it straight from Linear, and Throughline drafts its product outcomes
+          and technical requirements as a proposal. Nothing changes until you
+          approve it in the review queue.
         </p>
       </div>
       {/* The project lookup runs per request; the heading above is the static shell. */}
@@ -89,6 +91,7 @@ async function ProjectImport({
             // Only the buttons; a sample's text is fetched when its button is clicked.
             samples={IMPORT_SAMPLES.map(({ id, label }) => ({ id, label }))}
           />
+          <LinearImport slug={slug} isDemo={project.isDemo} />
         </>
       )}
     </>

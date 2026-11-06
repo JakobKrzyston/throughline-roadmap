@@ -283,7 +283,7 @@ Designed for, not built in v1. Each has a `future` issue.
 
 - **Feedback ingestion**: GitHub issues labelled `feedback` first, then support and CRM sources. Feedback is clustered and linked to outcomes so you can see customer pull per outcome, and unmatched feedback flags gaps. GitHub is built (see "Feedback" in `ARCHITECTURE.md`); support and CRM sources are still to come.
 - **Research agent**: a scheduled agent that checks planned technical approaches against current libraries and best practice, and watches the product landscape. Findings appear as comments on graph nodes.
-- **More sources**: Linear and Jira `SourceAdapter` implementations.
+- **More sources**: Linear and Jira `SourceAdapter` implementations. Importing a roadmap from a Linear team (initiatives to outcomes, projects to requirements) is built, and Stage 9 plans Linear issues as work items; Jira and per-project Linear OAuth are still to come.
 - **Re-import as a diff**: keep each imported row's own id, so importing an updated roadmap proposes changes to existing outcomes and requirements instead of duplicates.
 - **Teams and permissions**: organisations, roles (viewer, PM, admin) and SSO.
 - **Digests**: a weekly plain-language summary to Slack or email for non-technical stakeholders. Slack is built (see "Weekly digest" in `ARCHITECTURE.md`); email is still to come.

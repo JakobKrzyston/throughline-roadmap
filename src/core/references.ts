@@ -1,4 +1,21 @@
-/** Finds explicit requirement references such as "Implements TL-12" in PR and issue text. Exports parseReferences, Reference. */
+/** Finds explicit requirement references such as "Implements TL-12" in PR and issue text. Exports parseReferences, collidesWithRequirementKeys, REQUIREMENT_KEY_PREFIX, Reference. */
+
+/** The prefix of every requirement key: TL-1, TL-2, … */
+export const REQUIREMENT_KEY_PREFIX = "TL";
+
+/**
+ * Whether a tracker's own issue ids look like requirement keys, as a Linear team keyed TL's do
+ * (TL-12). Where one exists, "Part of TL-12" may name that tracker's issue, not a requirement.
+ *
+ * Args:
+ *   teamKey: The prefix of the tracker's issue ids, e.g. a Linear team key.
+ *
+ * Returns:
+ *   True when its issue ids have the same form as requirement keys.
+ */
+export function collidesWithRequirementKeys(teamKey: string): boolean {
+  return teamKey.toUpperCase() === REQUIREMENT_KEY_PREFIX;
+}
 
 /** One requirement a work item says it delivers. */
 export type Reference = {

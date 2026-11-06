@@ -1,5 +1,5 @@
 "use server";
-/** Server actions behind the settings page. Exports connectRepository, saveDigest, stopDigest and their state types. */
+/** Server actions behind the settings page. Exports connectRepository, connectLinearTeam, saveDigest, stopDigest and their state types. */
 import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { after } from "next/server";
@@ -10,8 +10,14 @@ import {
   isGitHubConfigured,
   isOwnerAllowed,
 } from "@/adapters/github";
+import { isTeamAllowed, linearAdapterFor } from "@/adapters/linear";
+import { LinearError } from "@/adapters/linear/source";
 import { postToSlack, slackWebhookUrlSchema } from "@/adapters/slack";
 import { loadDigest } from "@/core/digest";
+import {
+  collidesWithRequirementKeys,
+  REQUIREMENT_KEY_PREFIX,
+} from "@/core/references";
 import { getDb } from "@/db/client";
 import { projects, repositories } from "@/db/schema";
 import { runQueuedJobs } from "@/jobs";
@@ -128,6 +134,116 @@ export async function connectRepository(
   return {
     status: "success",
     message: `Connected ${repository.fullName}. Importing its open issues and recently merged pull requests now.`,
+  };
+}
+
+const teamKeySchema = z
+  .string({ error: "Enter a team key." })
+  .trim()
+  .regex(
+    /^[A-Za-z0-9]{1,7}$/,
+    "Enter the team's key, the letters before the number in its issue ids, for example ENG.",
+  );
+
+/**
+ * Connect a Linear team to a project and start importing its issues.
+ *
+ * Demo projects connect the sample team, so they never call Linear. A real team must be listed in
+ * LINEAR_ALLOWED_TEAMS. Connecting also records whether the workspace has a team keyed TL, whose
+ * issue ids look like requirement keys; if so, references in the team's issues are ignored.
+ * Throughline only reads from Linear.
+ *
+ * Args:
+ *   slug: The project's slug, bound by the page.
+ *   _previous: The form's previous state (unused; required by useActionState).
+ *   formData: Form fields; `repository` holds the team key, e.g. `ENG`.
+ *
+ * Returns:
+ *   A success message, or an error message to show.
+ */
+export async function connectLinearTeam(
+  slug: string,
+  _previous: ConnectState,
+  formData: FormData,
+): Promise<ConnectState> {
+  const raw = formData.get("repository");
+  const fail = (message: string): ConnectState => ({
+    status: "error",
+    message,
+    repository: typeof raw === "string" ? raw : "",
+  });
+
+  const notAllowed = (key: string): ConnectState =>
+    fail(
+      `This server only connects approved Linear teams, and ${key.toUpperCase()} is not one of them.`,
+    );
+
+  if (isPublicDeployment()) {
+    return fail("Linear teams are connected by the site owner on this server.");
+  }
+  const teamKey = teamKeySchema.safeParse(raw);
+  if (!teamKey.success) return fail(teamKey.error.issues[0].message);
+
+  const db = getDb();
+  const [project] = await db
+    .select({ id: projects.id, isDemo: projects.isDemo })
+    .from(projects)
+    .where(eq(projects.slug, slug));
+  if (!project) return fail("Project not found.");
+  const adapter = linearAdapterFor(project);
+  if (!adapter) return fail("Linear is not set up on this server yet.");
+  // The sample team needs no approval. Checked before the lookup so the answer reveals nothing
+  // about other teams.
+  if (!project.isDemo && !isTeamAllowed(teamKey.data)) {
+    return notAllowed(teamKey.data);
+  }
+
+  let team;
+  let referencesIgnored;
+  try {
+    team = await adapter.findRepository(teamKey.data);
+    referencesIgnored =
+      team !== null &&
+      (collidesWithRequirementKeys(team.fullName) ||
+        (await adapter.findRepository(REQUIREMENT_KEY_PREFIX)) !== null);
+  } catch (error) {
+    console.error("Linear team lookup failed:", error);
+    return fail(
+      error instanceof LinearError
+        ? error.message
+        : "Could not reach Linear. Please try again.",
+    );
+  }
+  if (!team) {
+    return fail(
+      `Throughline cannot see a Linear team with the key ${teamKey.data.toUpperCase()}. Check the key, and that the API key's owner can see the team.`,
+    );
+  }
+
+  const connected = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(repositories)
+      .values({
+        projectId: project.id,
+        source: "linear",
+        externalId: team.externalId,
+        fullName: team.fullName,
+        referencesIgnored,
+      })
+      .onConflictDoNothing()
+      .returning({ id: repositories.id });
+    if (row) await enqueue(tx, "backfill", { repositoryId: row.id });
+    return Boolean(row);
+  });
+  if (!connected) {
+    return fail(`The Linear team ${team.fullName} is already connected.`);
+  }
+
+  after(runQueuedJobs);
+  refresh();
+  return {
+    status: "success",
+    message: `Connected the Linear team ${team.fullName}. Importing its open issues and the issues completed in the last 90 days now.`,
   };
 }
 

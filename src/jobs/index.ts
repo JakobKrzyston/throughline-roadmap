@@ -2,6 +2,7 @@
 import { eq } from "drizzle-orm";
 
 import { getGitHubAdapter, isGitHubConfigured } from "@/adapters/github";
+import { linearAdapterFor } from "@/adapters/linear";
 import { getDemoLLMProvider, getLLMProvider } from "@/adapters/llm";
 import type { LLMProvider } from "@/adapters/llm/provider";
 import type { SourceAdapter } from "@/adapters/source";
@@ -19,10 +20,13 @@ import { runJobs } from "./queue";
 /**
  * Run due jobs against the app database.
  *
- * Without GitHub credentials the agents still run, on the work item's title and description alone.
- * Agents for demo projects use the demo provider (a free OpenRouter model, else sample results)
- * and skip GitHub, wherever the job runs: on a public site visitors queue these jobs and must not
- * spend the Anthropic key, and the demo's repository is made up.
+ * A backfill reads from the source its repository came from, GitHub or Linear; a demo project's
+ * Linear team is the sample one, so its backfill never calls Linear. Without GitHub credentials
+ * the agents still run, on the work item's title and description alone, as they always do for
+ * issues, including Linear's, which have no changed files. Agents for demo projects use the demo
+ * provider (a free OpenRouter model, else sample results) and skip GitHub, wherever the job runs:
+ * on a public site visitors queue these jobs and must not spend the Anthropic key, and the demo's
+ * repository is made up.
  *
  * Returns:
  *   How many jobs finished and how many failed.
@@ -50,7 +54,7 @@ export async function runQueuedJobs(): Promise<{
   }
 
   return runJobs(db, {
-    backfill: (payload) => runBackfill(db, getGitHubAdapter(), payload),
+    backfill: (payload) => runBackfill(db, backfillSource, payload),
     reconcile: async (payload) => {
       const agents = await agentsFor(payload.workItemId);
       await runReconcile(db, agents.llm, agents.source, payload);
@@ -85,4 +89,19 @@ export async function runQueuedJobs(): Promise<{
       );
     },
   });
+}
+
+// The source a backfill reads its repository from.
+function backfillSource(repository: {
+  source: "github" | "linear";
+  isDemo: boolean;
+}): SourceAdapter {
+  if (repository.source === "github") return getGitHubAdapter();
+  const linear = linearAdapterFor(repository);
+  if (!linear) {
+    throw new Error(
+      "Linear is not set up: set LINEAR_API_KEY (see docs/LINEAR.md)",
+    );
+  }
+  return linear;
 }

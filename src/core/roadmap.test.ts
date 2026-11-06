@@ -21,6 +21,7 @@ import {
   stillToCome,
 } from "./roadmap";
 import { productStatus, teamProgress } from "./rollup";
+import { syncWorkItem } from "./work-items";
 
 describe("quarterOf", () => {
   it.each([
@@ -393,6 +394,43 @@ describe("roadmap loaders", () => {
     expect(splits.map((s) => s.requirementKey).sort()).toEqual([
       "TL-1",
       "TL-8",
+    ]);
+  });
+});
+
+describe("linked work item labels", () => {
+  it("names GitHub work by number and Linear issues by their issue id", async () => {
+    const db = await createTestDb();
+    const projectId = await seedDemoProject(db);
+    await syncWorkItem(db, projectId, {
+      source: "linear",
+      externalId: "8f2c1d3e-linear-issue",
+      kind: "issue",
+      title: "Share dialog: copy link button",
+      body: "Part of TL-22",
+      url: "https://linear.app/acme/issue/ENG-41/share-dialog-copy-link-button",
+      identifier: "ENG-41",
+      state: "open",
+      people: [],
+      mergedAt: null,
+      closedAt: null,
+      updatedAt: new Date("2026-11-01"),
+    });
+
+    const roadmap = await loadRoadmap(db, projectId);
+    const all = roadmap.flatMap((outcome) =>
+      outcome.requirements.flatMap((requirement) => [
+        requirement,
+        ...requirement.children,
+      ]),
+    );
+    const byKey = (key: string) => all.find((r) => r.key === key)!;
+    expect(byKey("TL-22").workItems).toMatchObject([
+      { number: "41", label: "ENG-41" },
+    ]);
+    expect(byKey("TL-2").workItems).toMatchObject([
+      { number: "102", label: "PR #102" },
+      { number: "103", label: "PR #103" },
     ]);
   });
 });

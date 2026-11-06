@@ -16,6 +16,8 @@ export interface LinkedWorkItem {
   kind: WorkItemRow["kind"];
   /** The issue or pull request number, e.g. "41". */
   number: string;
+  /** How the source names it: "PR #41" or "Issue #41" on GitHub, the issue id such as "ENG-41" on Linear. */
+  label: string;
   title: string;
   url: string;
   state: WorkItemRow["state"];
@@ -234,7 +236,7 @@ export async function loadRoadmap(
         .map(({ link, item }) => ({
           id: item.id,
           kind: item.kind,
-          number: item.externalId.split("#")[1],
+          ...workItemNumber(item),
           title: item.title,
           url: item.url,
           state: item.state,
@@ -502,4 +504,21 @@ export async function loadSplitHistory(
       children: op.children.map(({ key, title }) => ({ key, title })),
     };
   });
+}
+
+// GitHub work is named by its number, kept in the external id; a Linear issue by its identifier.
+function workItemNumber(
+  item: Pick<WorkItemRow, "kind" | "externalId" | "identifier">,
+): { number: string; label: string } {
+  if (item.identifier) {
+    return {
+      number: item.identifier.split("-")[1] ?? "",
+      label: item.identifier,
+    };
+  }
+  const number = item.externalId.split("#")[1];
+  return {
+    number,
+    label: `${item.kind === "pull_request" ? "PR" : "Issue"} #${number}`,
+  };
 }

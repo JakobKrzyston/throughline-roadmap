@@ -32,7 +32,7 @@ export const workType = pgEnum("work_type", [
   "tech_debt",
   "research",
 ]);
-export const workItemSource = pgEnum("work_item_source", ["github"]);
+export const workItemSource = pgEnum("work_item_source", ["github", "linear"]);
 export const workItemKind = pgEnum("work_item_kind", ["issue", "pull_request"]);
 export const workItemState = pgEnum("work_item_state", [
   "open",
@@ -108,6 +108,9 @@ export const repositories = pgTable(
     source: workItemSource("source").notNull(),
     externalId: text("external_id").notNull(),
     fullName: text("full_name").notNull(),
+    // Linear only: the workspace had a team keyed TL when this team was connected, so "TL-12" in
+    // an issue may name a Linear issue rather than a requirement, and references are ignored.
+    referencesIgnored: boolean("references_ignored").notNull().default(false),
     ...timestamps,
   },
   (t) => [unique().on(t.projectId, t.source, t.externalId)],
@@ -181,6 +184,8 @@ export const workItems = pgTable(
     kind: workItemKind("kind").notNull(),
     title: text("title").notNull(),
     url: text("url").notNull(),
+    // Linear only: the issue's id as people see it, e.g. ENG-41. Null for GitHub, whose number is in external_id.
+    identifier: text("identifier"),
     state: workItemState("state").notNull(),
     bodyExcerpt: text("body_excerpt").notNull().default(""),
     mergedAt: timestamp("merged_at", { withTimezone: true }),

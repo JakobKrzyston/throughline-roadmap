@@ -257,7 +257,7 @@ This stage covers the Linear half of #10. Jira, the other half, stays in future 
 - `POST /api/linear/webhook`: verifies the `Linear-Signature` HMAC with `LINEAR_WEBHOOK_SECRET` (added to `.env.example`) and upserts issues through `syncWorkItem`.
 - Links:
   - **Explicit references:** they work as they do for a PR. "Implements TL-12" or "Part of TL-12" in a Linear issue's title or description links it, through `parseReferences`.
-  - **The `TL` collision:** requirement keys are always `TL-n`, so only a Linear team whose key is `TL` has issue identifiers that look like requirement keys. For such a team, Throughline ignores explicit references in its issues. The settings page says that links will come from suggestions only.
+  - **The `TL` collision:** requirement keys are always `TL-n`, so only a Linear team whose key is `TL` has issue identifiers that look like requirement keys. Once a workspace has such a team, "Part of TL-12" in any team's issue may name its issue. So when the workspace has a `TL` team, Throughline ignores explicit references in all Linear issues. It checks when a team is connected and stores the answer on the team's row. The settings page says that links will come from suggestions only.
   - **Link suggestions:** they run for an unreferenced Linear issue that completes inside a Linear project, as they do for merged PRs. Issues outside any project, which are most bugs and chores, are tracked but get no suggestion, so a busy team does not flood `/review`. GitHub issues still get no suggestions.
 - One piece of work, one reconciliation. Linear often attaches the PR that fixes an issue, so the issue and the PR can both reach the same requirement. Reconcile already skips leaves that are no longer planned or in progress, and a newer proposal supersedes an older pending one. The acceptance tests below show that this is enough, so no new de-duplication is built unless they fail.
 - Throughline only reads from Linear. It never creates, assigns or changes Linear issues.
@@ -267,7 +267,7 @@ This stage covers the Linear half of #10. Jira, the other half, stays in future 
 **Acceptance criteria**
 
 - Webhooks with a bad signature are rejected with 401, and replaying the same webhook twice creates no duplicates.
-- State mapping and reference parsing for Linear issues are unit tested. This includes a team keyed `TL`, whose references are ignored.
+- State mapping and reference parsing for Linear issues are unit tested. This includes a workspace with a team keyed `TL`, where references are ignored.
 - The migration adds `linear` to `work_item_source`, and a Linear work item can be stored.
 - Moving a Linear issue to In Progress marks its linked requirement in progress.
 - Completing a Linear issue that references a requirement queues a reconciliation job.

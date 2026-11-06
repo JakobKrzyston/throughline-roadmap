@@ -4,7 +4,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { SourceAdapter } from "@/adapters/source";
 import { syncFeedback, syncWorkItem } from "@/core/work-items";
 import type { Database } from "@/db/client";
-import { jobs, repositories } from "@/db/schema";
+import { jobs, projects, repositories } from "@/db/schema";
 
 import type { JobPayloads } from "./queue";
 
@@ -31,7 +31,8 @@ export type BackfillStatus =
  *
  * Args:
  *   db: Database to write to.
- *   adapter: Source the repository lives in.
+ *   adapter: Source the repository lives in, or a function that picks it from the stored
+ *     repository's source and its project's demo flag.
  *   payload: The backfill job's payload.
  *   now: Current time, for tests. Only the first page uses it to choose the cut-off date.
  *
@@ -40,21 +41,32 @@ export type BackfillStatus =
  */
 export async function runBackfill(
   db: Database,
-  adapter: SourceAdapter,
+  adapter:
+    | SourceAdapter
+    | ((repository: {
+        source: "github" | "linear";
+        isDemo: boolean;
+      }) => SourceAdapter),
   payload: JobPayloads["backfill"],
   now = new Date(),
 ): Promise<JobPayloads["backfill"] | undefined> {
-  const [repository] = await db
-    .select()
+  const [row] = await db
+    .select({ repository: repositories, isDemo: projects.isDemo })
     .from(repositories)
+    .innerJoin(projects, eq(repositories.projectId, projects.id))
     .where(eq(repositories.id, payload.repositoryId));
   // Disconnected before the job ran; nothing to import.
-  if (!repository) return undefined;
+  if (!row) return undefined;
+  const { repository } = row;
+  const source =
+    typeof adapter === "function"
+      ? adapter({ source: repository.source, isDemo: row.isDemo })
+      : adapter;
 
   const mergedSince =
     payload.mergedSince ??
     new Date(now.getTime() - BACKFILL_DAYS * 86_400_000).toISOString();
-  const { items, nextCursor } = await adapter.listBackfillPage(
+  const { items, nextCursor } = await source.listBackfillPage(
     repository,
     new Date(mergedSince),
     payload.cursor ?? null,

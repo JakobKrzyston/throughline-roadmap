@@ -26,6 +26,8 @@ export default defineConfig({
       OPENROUTER_API_KEY: "",
       // The Linear import must read the sample workspace, never a real one.
       LINEAR_API_KEY: "",
+      // The import and settings specs need a signed-in, editable app, not a view-only public one.
+      PUBLIC_DEPLOYMENT: "",
     },
   },
 });

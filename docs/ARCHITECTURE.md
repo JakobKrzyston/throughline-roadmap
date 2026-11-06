@@ -31,7 +31,7 @@ These rules are deliberate. They are also listed in `CLAUDE.md` so every coding 
 3. **Parent status is computed, never stored.** Only leaf requirements carry a status. Parent requirements and outcomes derive their progress from their leaves on read. There is no rollup state to fall out of sync.
 4. **Everything is an event.** Every change to the graph is written to an append-only `events` table with who made it, why, and a plain-language note. The product view's "what changed" feed is built from this log.
 5. **Plain language first.** The product view never shows ticket numbers, branch names or jargon unless the reader expands a detail panel.
-6. **Integrations sit behind adapters.** GitHub is one `SourceAdapter`. Anthropic is one `LLMProvider`. Linear, Jira or another model provider can be added without touching the core.
+6. **Integrations sit behind adapters.** GitHub is one `SourceAdapter`. Anthropic is one `LLMProvider`. Linear roadmaps are read through a `LinearSource`. Jira or another model provider can be added without touching the core.
 
 ## System overview
 
@@ -240,7 +240,16 @@ Most teams keep their roadmap in a spreadsheet, a docs tool (Notion, Confluence,
 
 `src/agents/import-samples.ts` holds three realistic exports (a Jira CSV, a Productboard CSV and a Notion Markdown page, with the extra columns, empty cells, ids and finished or abandoned work real exports have) that the import page loads into the paste box. Only the button labels are sent with the page; `loadImportSample`, a server action, fetches a sample's text when its button is clicked. A sample that arrives after a newer click or after the person starts typing is dropped, and a failed load says so. Each has the model output written for it, and `importFixturesFor` serves that output from the fake provider when the submitted text is the sample unchanged, so the samples give a believable proposal with no model key. Any other text gets the generic demo proposal. With a model key, samples go to the model like anything else.
 
-The model does not choose keys. `src/agents/import.ts` numbers new outcomes and requirements after the highest `OUT-n` and `TL-n` already in the project or claimed by a pending proposal, so an import cannot clash with existing work.
+The model does not choose keys. `src/agents/import.ts` numbers new outcomes and requirements after the highest `OUT-n` and `TL-n` already in the project or claimed by a pending proposal, so an import cannot clash with existing work. `saveImportProposal` does this for every import, from the model or from Linear.
+
+### Linear roadmap import
+
+"Import from Linear" on `/p/[slug]/import` reads one Linear team and saves its roadmap as one pending `import` proposal, like any other import. Nothing reaches the graph until it is approved.
+
+- **Adapter.** `LinearSource` (`src/adapters/linear/source.ts`) has two methods: list the workspace's teams, and read one team with all its unarchived projects and their initiatives. `LinearApiSource` implements it with `fetch` against Linear's GraphQL API, with no SDK: two queries do not justify the dependency. It follows cursors until the last page before returning, so a failure part way never yields a partial list, and validates every response with Zod. A rejected key, rate limiting, an unreachable API, a GraphQL error or a response of the wrong shape becomes a `LinearError` whose message the page shows. `FakeLinearSource` (`fake.ts`) serves a sample Acme Analytics workspace (two teams and three initiatives, with backlog, started, completed and canceled projects among the planned ones). `linearSourceFor` (`index.ts`) uses the API when `LINEAR_API_KEY` is set and the project is not a demo, and the sample otherwise, so the import works with no key and visitors to a demo never read the owner's Linear. Setup is in `docs/LINEAR.md`.
+- **Mapping without a model.** `planFromLinear` (`src/agents/linear-import.ts`) is a pure function. Linear already stores the hierarchy, dates and priorities as structured data, so a model could only get them wrong: each initiative becomes an outcome and its projects its requirements; a project in no initiative becomes an outcome with itself as the only requirement, since a Linear project is usually one capability that ships on its own; a project in several initiatives goes under the highest-priority one. Outcomes are numbered by Linear priority (none last), then Linear's own order, initiatives first. Each requirement gets the project's target and the team's name as its `team`. Completed and canceled projects and canceled initiatives are left out, as in file imports. Target dates go through `linearTarget`: a day stays a date, a month or quarter becomes its quarter, and a half or year becomes its last quarter.
+- **What the reviewer still decides.** Titles and descriptions are the ones the team wrote in Linear. Initiatives and projects carry no issue keys, so rule 5 is not at risk from ids, but initiative names are often internal shorthand rather than a customer outcome; the rationale asks the reviewer to reword them, and to mark which requirements customers can see, which Linear does not record (every requirement is proposed as not user-visible, the safe default). `work_type` is left empty for the same reason.
+- **Not yet.** Linear is not a `SourceAdapter`: that interface is built around repositories, pull requests and webhooks, and tracking Linear issues as work items needs its own design (issue #10). Importing the same team twice proposes the same outcomes twice; the reviewer rejects the duplicate. The key is per workspace, from the environment; per-project OAuth is a follow-up.
 
 ### Reconciliation agent
 
@@ -398,5 +407,5 @@ The public version is built so a private fork can harden it without a rewrite:
 
 - Swap the job table for a real queue (e.g. Inngest, SQS) behind the same `enqueue` function.
 - Add organisations, roles and SSO around the existing `projects` table.
-- Add `SourceAdapter` implementations for Linear or Jira.
+- Add `SourceAdapter` implementations for Linear or Jira, so their issues are tracked as work items. Linear roadmaps can already be imported through `LinearSource`.
 - Add support and CRM feedback sources, and the research agent listed under "Future work" in `PLAN.md`; they produce proposals like every other agent.

@@ -24,6 +24,8 @@ export default defineConfig({
       // Imports must use the demo fixtures, never a model key from .env.local.
       ANTHROPIC_API_KEY: "",
       OPENROUTER_API_KEY: "",
+      // The Linear import must read the sample workspace, never a real one.
+      LINEAR_API_KEY: "",
     },
   },
 });

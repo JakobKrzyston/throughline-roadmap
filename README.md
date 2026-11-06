@@ -37,7 +37,7 @@ The **feedback** page shows what customers ask for, and what the roadmap is miss
 
 ## How it works
 
-1. **Import a roadmap.** Paste a roadmap or planning notes, or upload the CSV, Markdown or HTML file that Jira, Productboard, Aha!, Linear, Notion, Confluence or a spreadsheet exports. The import agent drafts product outcomes and technical requirements (`TL-1`, `TL-2`, …) as a proposal for review.
+1. **Import a roadmap.** Paste a roadmap or planning notes, or upload the CSV, Markdown or HTML file that Jira, Productboard, Aha!, Linear, Notion, Confluence or a spreadsheet exports. The import agent drafts product outcomes and technical requirements (`TL-1`, `TL-2`, …) as a proposal for review. Or import straight from Linear: a team's initiatives become outcomes and its projects become requirements.
 2. **Connect a repository.** A GitHub App sends Throughline every issue and pull request change. A pull request that says `Implements TL-12` or `Part of TL-12` is linked to that requirement, and opening it marks the requirement in progress.
 3. **Reconcile when work ships.** When linked work merges, the reconciliation agent reads the pull request and the plan and proposes what changed: done, partly done, split into new pieces, or scope added. A merged pull request with no reference gets a suggested link instead.
 4. **Approve.** Every proposal waits in the review queue. Approving it changes the graph and writes an event with a plain-language note, which feeds the product view's "what changed this week".
@@ -91,7 +91,7 @@ What to try:
 - **Plan** (`/p/acme-analytics/plan`): drag outcomes, or use the arrow buttons, into a new priority order, change targets in place by picking a quarter or typing a date, and set each requirement's target, kind of work and team; each move shows up in the product view's change feed. Work due after its outcome's target is flagged.
 - **Feedback** (`/p/acme-analytics/feedback`): requests no outcome covers come first, grouped by theme, then how much each outcome is asked for. Link a request to an outcome yourself, or review the match an agent suggested.
 - **Review queue** (`/p/acme-analytics/review`): five pending proposals, one of each kind: an imported outcome, shipped work, a suggested link, a feedback match and a target at risk. Approve, edit or reject one; it is confirmed in place with a link to where the change shows.
-- **Import** (`/p/acme-analytics/import`): paste a roadmap or upload an exported file (`.md`, `.txt`, `.csv` or `.html`, up to 500 KB and 50,000 characters of text), or load a sample Jira CSV, Productboard CSV or Notion Markdown export with its real-world noise. Without a model key each sample gets a proposal written for it and anything else gets one generic sample proposal; set `ANTHROPIC_API_KEY` in `.env.local` to use Claude, or `OPENROUTER_API_KEY` to use a free model through OpenRouter.
+- **Import** (`/p/acme-analytics/import`): paste a roadmap or upload an exported file (`.md`, `.txt`, `.csv` or `.html`, up to 500 KB and 50,000 characters of text), or load a sample Jira CSV, Productboard CSV or Notion Markdown export with its real-world noise. Without a model key each sample gets a proposal written for it and anything else gets one generic sample proposal; set `ANTHROPIC_API_KEY` in `.env.local` to use Claude, or `OPENROUTER_API_KEY` to use a free model through OpenRouter. **Import from Linear** reads a sample Linear workspace until you set `LINEAR_API_KEY` ([`docs/LINEAR.md`](docs/LINEAR.md)); demo projects always read the sample.
 - **Settings** (`/p/acme-analytics/settings`): read the next weekly digest as it stands, and connect a real repository once you have set up a GitHub App as described in [`docs/GITHUB_APP.md`](docs/GITHUB_APP.md).
 
 Every page works on a phone and follows your system's light or dark theme; the control in the top bar overrides it.
@@ -115,7 +115,7 @@ On a Vercel production build, `pnpm build` first checks that the production data
 - **Parent status is computed, never stored.** Only leaf requirements have a status; everything above is a pure function of them, so there is no rollup state to drift.
 - **Every change is an event**, with who made it and a plain-language note. The "what changed" feed is just this log.
 - **Integrations sit behind adapters.** GitHub is one `SourceAdapter`. Claude and OpenRouter are two `LLMProvider`s, so Linear, Jira or another model can be added without touching the core.
-- **Everything works without secrets.** With no model key or GitHub App, the app uses a fake model and demo data. Tests never call real services.
+- **Everything works without secrets.** With no model key, GitHub App or Linear key, the app uses a fake model, demo data and a sample Linear workspace. Tests never call real services.
 - **A public site without sign-in stays safe.** With `PUBLIC_DEPLOYMENT=true`, visitors can change only the demo: its agents run on a free OpenRouter model or on sample results and never on the Anthropic key, proposals can be approved or rejected but not edited, and it resets nightly. Every other project is view-only. The whole site fits the free tiers of Vercel, Neon and OpenRouter; see [`docs/DEPLOY.md`](docs/DEPLOY.md#running-it-for-free).
 
 ## Throughline on Throughline
@@ -131,7 +131,7 @@ Throughline was built with [Claude Code](https://claude.com/claude-code): first 
 Designed for but not built yet; each has an issue:
 
 - [Research agent](../../issues/9): check planned approaches against current libraries and the market.
-- [More sources](../../issues/10): Linear and Jira alongside GitHub.
+- [More sources](../../issues/10): Linear and Jira alongside GitHub. Importing a roadmap from Linear works today; tracking Linear issues as work items is still to come.
 - [Teams and permissions](../../issues/11): organisations, roles and SSO, replacing the public site's view-only rule.
 
 Two built features have a second half still to come: feedback from support and CRM tools (GitHub issues labelled `feedback` work today), and the weekly digest by email (Slack works today).
@@ -142,6 +142,7 @@ Two built features have a second half still to come: feedback from support and C
 - [Build plan](docs/PLAN.md)
 - [Deploying to Vercel and Neon](docs/DEPLOY.md)
 - [GitHub App setup](docs/GITHUB_APP.md)
+- [Linear import setup](docs/LINEAR.md)
 
 ## License
 

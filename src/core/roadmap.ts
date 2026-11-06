@@ -506,15 +506,15 @@ export async function loadSplitHistory(
   });
 }
 
-// A Linear work item's id is opaque, but its URL holds the issue id: linear.app/acme/issue/ENG-41/….
+// GitHub work is named by its number, kept in the external id; a Linear issue by its identifier.
 function workItemNumber(
-  item: Pick<WorkItemRow, "source" | "kind" | "externalId" | "url">,
+  item: Pick<WorkItemRow, "kind" | "externalId" | "identifier">,
 ): { number: string; label: string } {
-  if (item.source === "linear") {
-    const identifier = /\/issue\/([A-Za-z0-9]+-(\d+))/.exec(item.url);
-    return identifier
-      ? { number: identifier[2], label: identifier[1] }
-      : { number: "", label: "Linear issue" };
+  if (item.identifier) {
+    return {
+      number: item.identifier.split("-")[1] ?? "",
+      label: item.identifier,
+    };
   }
   const number = item.externalId.split("#")[1];
   return {

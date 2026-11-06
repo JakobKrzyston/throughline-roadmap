@@ -4,7 +4,12 @@ import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { ZodError } from "zod";
 
-import { parseLinearWebhook, verifyLinearSignature } from "./webhook";
+import {
+  isFreshDelivery,
+  MAX_DELIVERY_AGE_MS,
+  parseLinearWebhook,
+  verifyLinearSignature,
+} from "./webhook";
 
 const SECRET = "linear-secret";
 const body = Buffer.from('{"type":"Issue"}');
@@ -57,5 +62,26 @@ describe("parseLinearWebhook", () => {
     expect(() =>
       parseLinearWebhook({ type: "Issue", action: "update", data: {} }),
     ).toThrow(ZodError);
+  });
+});
+
+describe("isFreshDelivery", () => {
+  const now = 1762420000000;
+
+  it("accepts a delivery sent within the last minute, allowing for clock skew either way", () => {
+    expect(isFreshDelivery({ webhookTimestamp: now - 5_000 }, now)).toBe(true);
+    expect(isFreshDelivery({ webhookTimestamp: now + 5_000 }, now)).toBe(true);
+    expect(
+      isFreshDelivery({ webhookTimestamp: now - MAX_DELIVERY_AGE_MS }, now),
+    ).toBe(true);
+  });
+
+  it("rejects an older delivery, or one without a numeric timestamp", () => {
+    expect(
+      isFreshDelivery({ webhookTimestamp: now - MAX_DELIVERY_AGE_MS - 1 }, now),
+    ).toBe(false);
+    expect(isFreshDelivery({ type: "Issue" }, now)).toBe(false);
+    expect(isFreshDelivery({ webhookTimestamp: String(now) }, now)).toBe(false);
+    expect(isFreshDelivery(null, now)).toBe(false);
   });
 });

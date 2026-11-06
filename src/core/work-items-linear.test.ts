@@ -12,6 +12,7 @@ import {
   links,
   projects,
   proposals,
+  repositories,
   requirements,
   workItems,
 } from "@/db/schema";
@@ -73,7 +74,7 @@ function linearIssue(overrides: Partial<SourceWorkItem> = {}): SourceWorkItem {
     updatedAt: new Date("2026-11-01T09:00:00.000Z"),
     started: false,
     inProject: true,
-    teamKey: "ENG",
+    identifier: "ENG-12",
     ...overrides,
   };
 }
@@ -108,6 +109,7 @@ describe("syncWorkItem with a Linear issue", () => {
       source: "linear",
       kind: "issue",
       externalId: "8f2c1d3e-linear-issue",
+      identifier: "ENG-12",
       state: "open",
     });
   });
@@ -130,16 +132,48 @@ describe("syncWorkItem with a Linear issue", () => {
     ]);
   });
 
-  it("ignores references in the issues of a team keyed TL", async () => {
+  it("ignores references in any team's issues when the workspace has a team keyed TL", async () => {
+    // An ENG team, connected when the workspace already had a TL team.
+    await db.insert(repositories).values({
+      projectId,
+      source: "linear",
+      externalId: "team-eng",
+      fullName: "ENG",
+      referencesIgnored: true,
+    });
+    // "TL-1" here is the TL team's Linear issue, not the requirement.
     const result = await syncWorkItem(
       db,
       projectId,
-      completed({ teamKey: "TL", body: "Implements TL-1, blocked by TL-2" }),
+      completed({ body: "Part of TL-1" }),
     );
     expect(result).toMatchObject({ linked: [], reconcileJobs: 0 });
     expect(await db.$count(links)).toBe(0);
     // Its links come from suggestions instead.
     expect(result.linkSuggestJob).toBe(true);
+  });
+
+  it("still links GitHub references in a project whose Linear workspace has a TL team", async () => {
+    await db.insert(repositories).values({
+      projectId,
+      source: "linear",
+      externalId: "team-eng",
+      fullName: "ENG",
+      referencesIgnored: true,
+    });
+    const result = await syncWorkItem(
+      db,
+      projectId,
+      linearIssue({
+        source: "github",
+        externalId: "1#5",
+        kind: "pull_request",
+        started: undefined,
+        inProject: undefined,
+        identifier: undefined,
+      }),
+    );
+    expect(result.linked).toEqual(["TL-1"]);
   });
 
   it("does not start work while the issue is not started", async () => {

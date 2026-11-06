@@ -339,9 +339,7 @@ describe("LinearApiSource errors", () => {
       source({
         body: { errors: [{ message: "Argument Validation Error" }] },
       }).listTeams(),
-    ).rejects.toThrow(
-      "Linear returned an error, so nothing was imported: Argument Validation Error",
-    );
+    ).rejects.toThrow("Linear returned an error: Argument Validation Error");
   });
 
   it("refuses a response that does not match the schema", async () => {

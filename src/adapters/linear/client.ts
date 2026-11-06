@@ -159,7 +159,9 @@ export class LinearApiSource implements LinearSource {
     const teams: LinearTeam[] = [];
     let after: string | null = null;
     do {
-      const data: z.output<typeof teamsData> = await this.query(
+      const data: z.output<typeof teamsData> = await linearQuery(
+        this.apiKey,
+        this.fetchFn,
         TEAMS_QUERY,
         { after },
         teamsData,
@@ -179,7 +181,9 @@ export class LinearApiSource implements LinearSource {
     let found: LinearTeam | null = null;
     let after: string | null = null;
     do {
-      const data: z.output<typeof teamProjectsData> = await this.query(
+      const data: z.output<typeof teamProjectsData> = await linearQuery(
+        this.apiKey,
+        this.fetchFn,
         TEAM_PROJECTS_QUERY,
         { teamId, after },
         teamProjectsData,
@@ -216,7 +220,9 @@ export class LinearApiSource implements LinearSource {
     const rest: z.output<typeof initiative>[] = [];
     let after = first.hasNextPage ? first.endCursor : null;
     while (after) {
-      const data: z.output<typeof projectInitiativesData> = await this.query(
+      const data: z.output<typeof projectInitiativesData> = await linearQuery(
+        this.apiKey,
+        this.fetchFn,
         PROJECT_INITIATIVES_QUERY,
         { projectId, after },
         projectInitiativesData,
@@ -237,7 +243,9 @@ export class LinearApiSource implements LinearSource {
     const rest: LinearTeam[] = [];
     let after = first.hasNextPage ? first.endCursor : null;
     while (after) {
-      const data: z.output<typeof projectTeamsData> = await this.query(
+      const data: z.output<typeof projectTeamsData> = await linearQuery(
+        this.apiKey,
+        this.fetchFn,
         PROJECT_TEAMS_QUERY,
         { projectId, after },
         projectTeamsData,
@@ -248,22 +256,6 @@ export class LinearApiSource implements LinearSource {
       after = page.hasNextPage ? page.endCursor : null;
     }
     return rest;
-  }
-
-  private query<T>(
-    query: string,
-    variables: Record<string, unknown>,
-    schema: z.ZodType<T>,
-    notFoundMessage?: string,
-  ): Promise<T> {
-    return linearQuery(
-      this.apiKey,
-      this.fetchFn,
-      query,
-      variables,
-      schema,
-      notFoundMessage,
-    );
   }
 }
 
@@ -308,9 +300,7 @@ export async function linearQuery<T>(
     });
   } catch (error) {
     console.error("Linear request failed:", error);
-    throw new LinearError(
-      "Linear could not be reached, so nothing was imported. Please try again.",
-    );
+    throw new LinearError("Linear could not be reached. Please try again.");
   }
 
   const body: unknown = await response.json().catch(() => null);
@@ -341,9 +331,7 @@ export async function linearQuery<T>(
     throw new LinearError(notFoundMessage);
   }
   if (errors.length > 0) {
-    throw new LinearError(
-      `Linear returned an error, so nothing was imported: ${errors[0].message}`,
-    );
+    throw new LinearError(`Linear returned an error: ${errors[0].message}`);
   }
 
   const parsed = z.object({ data: schema }).safeParse(body);
@@ -353,7 +341,7 @@ export async function linearQuery<T>(
       parsed.error ?? body,
     );
     throw new LinearError(
-      "Linear sent a response Throughline could not read, so nothing was imported. Please try again.",
+      "Linear sent a response Throughline could not read. Please try again.",
     );
   }
   return parsed.data.data;

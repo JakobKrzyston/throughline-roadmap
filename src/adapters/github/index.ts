@@ -1,6 +1,8 @@
 /** Builds the GitHub adapter from environment variables. Exports missingGitHubSettings, isGitHubConfigured, isOwnerAllowed, getGitHubAdapter, githubInstallUrl. */
 import { App } from "octokit";
 
+import { isListed } from "@/lib/allowlist";
+
 import { GitHubAdapter } from "./adapter";
 
 /**
@@ -43,11 +45,7 @@ export function isGitHubConfigured(): boolean {
  *   True when the owner is listed. GitHub names are not case-sensitive, so neither is this.
  */
 export function isOwnerAllowed(fullName: string): boolean {
-  const owner = fullName.split("/")[0].toLowerCase();
-  const allowed = (process.env.GITHUB_ALLOWED_OWNERS ?? "")
-    .split(",")
-    .map((entry) => entry.trim().toLowerCase());
-  return owner !== "" && allowed.includes(owner);
+  return isListed(process.env.GITHUB_ALLOWED_OWNERS, fullName.split("/")[0]);
 }
 
 /**

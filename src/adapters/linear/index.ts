@@ -1,5 +1,6 @@
-/** Picks the Linear source for a project's roadmap import and the Linear adapter for its work items: the real API with LINEAR_API_KEY, otherwise samples. Exports linearSourceFor, linearAdapterFor, isLinearConfigured. */
+/** Picks the Linear source for a project's roadmap import and the Linear adapter for its work items: the real API with LINEAR_API_KEY, otherwise samples. Exports linearSourceFor, linearAdapterFor, missingLinearSettings, isTeamAllowed. */
 import type { SourceAdapter } from "@/adapters/source";
+import { isListed } from "@/lib/allowlist";
 
 import { LinearAdapter, type LinearIssueReader } from "./adapter";
 import { LinearApiSource } from "./client";
@@ -31,13 +32,37 @@ export function linearSourceFor(project: { isDemo: boolean }): {
 }
 
 /**
- * Whether LINEAR_API_KEY is set, so real Linear teams can be connected.
+ * The environment variables that are unset, of those Linear needs before real teams can be
+ * connected.
+ *
+ * LINEAR_ALLOWED_TEAMS is required as well as the key, like GITHUB_ALLOWED_OWNERS: v1 has no
+ * sign-in, so without it anyone who can open the settings page could connect any team the key's
+ * owner can see.
  *
  * Returns:
- *   True when the key is set and not blank.
+ *   The names of the unset variables, empty when real teams can be connected.
  */
-export function isLinearConfigured(): boolean {
-  return Boolean(process.env.LINEAR_API_KEY?.trim());
+export function missingLinearSettings(): string[] {
+  const required = {
+    LINEAR_API_KEY: process.env.LINEAR_API_KEY?.trim(),
+    LINEAR_ALLOWED_TEAMS: process.env.LINEAR_ALLOWED_TEAMS?.trim(),
+  };
+  return Object.entries(required)
+    .filter(([, value]) => !value)
+    .map(([name]) => name);
+}
+
+/**
+ * Whether a Linear team's key is listed in LINEAR_ALLOWED_TEAMS.
+ *
+ * Args:
+ *   teamKey: The team's key, e.g. `ENG`.
+ *
+ * Returns:
+ *   True when the key is listed, in any case.
+ */
+export function isTeamAllowed(teamKey: string): boolean {
+  return isListed(process.env.LINEAR_ALLOWED_TEAMS, teamKey);
 }
 
 /**

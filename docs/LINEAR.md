@@ -37,13 +37,21 @@ Connect a Linear team to a project and its issues are tracked like GitHub's issu
 - Completing a linked issue queues a check of the roadmap against the work, the same as a merged pull request. A canceled or duplicate issue does not.
 - An issue completed inside a Linear project with no reference gets a suggested link on `/review`. Issues outside any project, which are mostly bugs and chores, are tracked but get no suggestion.
 
-A team keyed `TL` is a special case: its issue ids (`TL-5`) look like requirement keys, so Throughline cannot tell "Part of TL-12" apart from a mention of another Linear issue. It ignores references in that team's issues, and its links come from suggestions only.
+A workspace with a team keyed `TL` is a special case: that team's issue ids (`TL-5`) look like requirement keys, so in any team's issue Throughline cannot tell "Part of TL-12" apart from a mention of the TL team's issue. When a team is connected, Throughline checks whether the workspace has a `TL` team. If it does, references in Linear issues are ignored, links come from suggestions only, and the settings page says so. The check is made when the team is connected, so a `TL` team created later is not noticed.
+
+An issue moved to another team keeps updating in every project that already tracks it, even if its new team is not connected.
 
 Demo projects connect a sample team, `ENG`, and never call Linear.
 
-### 1. Set the API key
+### 1. Set the API key and the allowed teams
 
 Set `LINEAR_API_KEY` as in "Importing a roadmap" above. Create the key from an account that can see the teams you want to connect.
+
+Throughline has no sign-in yet, so anyone who can open a project's settings page could connect any team the key can see. `LINEAR_ALLOWED_TEAMS` limits that to the teams you list by key, and real teams cannot be connected until it is set, like `GITHUB_ALLOWED_OWNERS` for repositories:
+
+```bash
+LINEAR_ALLOWED_TEAMS=ENG,MOBILE
+```
 
 ### 2. Connect the team
 
@@ -62,6 +70,6 @@ So Throughline hears about changes as they happen:
 LINEAR_WEBHOOK_SECRET=lin_wh_...
 ```
 
-Throughline checks each delivery's `Linear-Signature` against the secret and rejects anything else with 401. Deliveries for teams that are not connected are ignored. For a connected team, Throughline reads the issue from Linear again, so a delivery that is late or sent twice only syncs the issue as it is now.
+Throughline checks each delivery's `Linear-Signature` against the secret, and its `webhookTimestamp`, as Linear recommends: a delivery that is not signed correctly, or was sent more than a minute ago, is rejected with 401. Deliveries for issues of teams that are not connected are ignored, unless the issue is already tracked. Otherwise Throughline reads the issue from Linear again, so a delivery that is retried only syncs the issue as it is now.
 
 To try the webhook locally, expose the dev server with a tunnel (for example `cloudflared tunnel --url http://localhost:3000`) and use the tunnel's URL in step 2.

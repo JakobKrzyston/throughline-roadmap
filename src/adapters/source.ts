@@ -31,8 +31,8 @@ export type SourceWorkItem = {
    * suggestion when it completes without a reference. Most bugs and chores belong to none.
    */
   inProject?: boolean;
-  /** Linear only: the key of the issue's team, e.g. `ENG`. */
-  teamKey?: string;
+  /** Linear only: the issue's id as people see it, e.g. `ENG-41`. It changes if the issue moves team. */
+  identifier?: string;
 };
 
 /** Customer feedback as a source reports it, such as a GitHub issue labelled `feedback`. */

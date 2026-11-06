@@ -5,7 +5,7 @@ import { connection } from "next/server";
 import { type ReactElement, Suspense } from "react";
 
 import { githubInstallUrl, missingGitHubSettings } from "@/adapters/github";
-import { isLinearConfigured } from "@/adapters/linear";
+import { missingLinearSettings } from "@/adapters/linear";
 import { SectionsSkeleton } from "@/components/skeleton";
 import { loadDigest } from "@/core/digest";
 import { getDb } from "@/db/client";
@@ -80,6 +80,7 @@ async function ProjectSettings({
       id: repositories.id,
       source: repositories.source,
       fullName: repositories.fullName,
+      referencesIgnored: repositories.referencesIgnored,
     })
     .from(repositories)
     .where(eq(repositories.projectId, project.id))
@@ -90,8 +91,9 @@ async function ProjectSettings({
   );
   const githubRepositories = connected.filter((row) => row.source === "github");
   const linearTeams = connected.filter((row) => row.source === "linear");
-  // Demo projects connect the sample Linear team, so they need no key.
-  const linearReady = project.isDemo || isLinearConfigured();
+  // Demo projects connect the sample Linear team, so they need no settings.
+  const missingLinear = missingLinearSettings();
+  const linearReady = project.isDemo || missingLinear.length === 0;
   const webhookReady = Boolean(process.env.LINEAR_WEBHOOK_SECRET);
   const missing = missingGitHubSettings();
   const configured = missing.length === 0;
@@ -174,11 +176,11 @@ async function ProjectSettings({
             {linearTeams.map((team) => (
               <li key={team.id} className="flex flex-col gap-0.5">
                 <span className="font-mono">{team.fullName}</span>
-                {team.fullName.toUpperCase() === "TL" && (
+                {team.referencesIgnored && (
                   <span className="text-muted-foreground">
-                    This team&rsquo;s issue ids look like requirement keys, so
-                    references in its issues are ignored. Its links come from
-                    suggestions only.
+                    The workspace has a team keyed TL, whose issue ids look like
+                    requirement keys, so references in Linear issues are
+                    ignored. Their links come from suggestions only.
                   </span>
                 )}
                 <ImportStatus status={imports.get(team.id)} items="issues" />
@@ -196,6 +198,8 @@ async function ProjectSettings({
               Enter the team&rsquo;s key, the letters before the number in its
               issue ids. Throughline imports its open issues and the issues
               completed in the last 90 days.
+              {!project.isDemo &&
+                " Only teams listed in LINEAR_ALLOWED_TEAMS can be connected."}
               {project.isDemo &&
                 " This demo project connects a sample team, ENG."}
             </p>
@@ -210,8 +214,8 @@ async function ProjectSettings({
         ) : (
           <p className="rounded-md border border-border bg-muted p-3 text-sm">
             Linear is not set up on this server, so teams cannot be connected.
-            Set LINEAR_API_KEY and LINEAR_WEBHOOK_SECRET; the setup steps are in
-            docs/LINEAR.md.
+            Set {missingLinear.join(", ")}, and LINEAR_WEBHOOK_SECRET for later
+            changes to arrive; the setup steps are in docs/LINEAR.md.
           </p>
         )}
         {!isPublicDeployment() && (

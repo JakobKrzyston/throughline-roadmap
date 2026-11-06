@@ -8,6 +8,7 @@ import { LinearError } from "./source";
 function issue(overrides: Partial<LinearIssue> = {}): LinearIssue {
   return {
     id: "issue-1",
+    identifier: "ENG-12",
     title: "CSV export button",
     description: "Implements TL-3",
     url: "https://linear.app/acme/issue/ENG-12/csv-export-button",
@@ -57,7 +58,7 @@ describe("issueToWorkItem", () => {
       updatedAt: new Date("2026-11-01T09:00:00.123Z"),
       started: false,
       inProject: true,
-      teamKey: "ENG",
+      identifier: "ENG-12",
     });
   });
 
@@ -164,7 +165,7 @@ describe("LinearAdapter", () => {
     const adapter = new LinearAdapter("key", fetchFn);
     expect(await adapter.readIssue("issue-1")).toMatchObject({
       repository: { externalId: "team-1", fullName: "ENG" },
-      item: { externalId: "issue-1", teamKey: "ENG" },
+      item: { externalId: "issue-1", identifier: "ENG-12" },
     });
     expect(await adapter.readIssue("gone")).toBeNull();
   });

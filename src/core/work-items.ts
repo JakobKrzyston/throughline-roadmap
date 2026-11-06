@@ -55,8 +55,9 @@ type SyncResult = {
  * new link added to an item that has already finished. A pull request that merges with no links at
  * all gets a link suggestion job instead, and so does a Linear issue completed inside a Linear
  * project; an explicit link added later supersedes a pending suggestion. An issue that was
- * feedback until its label was removed is withdrawn as feedback. A Linear team keyed `TL` has
- * issue identifiers that look like requirement keys, so its issues' references are ignored.
+ * feedback until its label was removed is withdrawn as feedback. A Linear issue's references are
+ * ignored when the project's Linear workspace has a team keyed `TL`, whose issue ids look like
+ * requirement keys (see collidesWithRequirementKeys).
  *
  * Args:
  *   db: Database to write to.
@@ -82,6 +83,7 @@ export async function syncWorkItem(
       kind: item.kind,
       title: item.title,
       url: item.url,
+      identifier: item.identifier ?? null,
       state: item.state,
       bodyExcerpt: item.body.slice(0, BODY_EXCERPT_LENGTH),
       people: item.people,
@@ -108,12 +110,21 @@ export async function syncWorkItem(
       .where(eq(links.workItemId, workItemId));
     const linkedIds = new Set(alreadyLinked.map((row) => row.requirementId));
 
-    // Requirement keys are always TL-n, so in a Linear team keyed TL "Part of TL-12" may name
-    // another Linear issue. Links for that team come from suggestions only.
-    const references =
-      item.teamKey?.toUpperCase() === "TL"
-        ? []
-        : parseReferences(`${item.title}\n${item.body}`);
+    // Where the workspace has a Linear team keyed TL, "Part of TL-12" may name its issue, so
+    // links come from suggestions only.
+    const referencesIgnored =
+      item.source === "linear" &&
+      (await tx.$count(
+        repositories,
+        and(
+          eq(repositories.projectId, projectId),
+          eq(repositories.source, "linear"),
+          eq(repositories.referencesIgnored, true),
+        ),
+      )) > 0;
+    const references = referencesIgnored
+      ? []
+      : parseReferences(`${item.title}\n${item.body}`);
     const found =
       references.length === 0
         ? []

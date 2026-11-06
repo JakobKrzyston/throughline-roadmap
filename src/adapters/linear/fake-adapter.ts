@@ -37,6 +37,7 @@ export function sampleLinearIssues(now = new Date()): LinearIssue[] {
     fields: Partial<LinearIssue> & Pick<LinearIssue, "title" | "state">,
   ): LinearIssue => ({
     id: `sample-issue-eng-${number}`,
+    identifier: `ENG-${number}`,
     description: null,
     url: `https://linear.app/acme/issue/ENG-${number}`,
     team: SAMPLE_LINEAR_TEAM,

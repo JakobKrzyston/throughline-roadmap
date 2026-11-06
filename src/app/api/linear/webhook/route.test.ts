@@ -50,6 +50,7 @@ let db: TestDb;
 function issue(overrides: Partial<LinearIssue> = {}): LinearIssue {
   return {
     id: "issue-1",
+    identifier: "ENG-12",
     title: "CSV export button",
     description: "Implements TL-3",
     url: "https://linear.app/acme/issue/ENG-12/csv-export-button",
@@ -192,7 +193,12 @@ describe("POST /api/linear/webhook", () => {
 
   it("ignores other kinds of delivery and removed issues", async () => {
     const comment = await POST(
-      delivery({ type: "Comment", action: "create", data: { id: "c-1" } }),
+      delivery({
+        type: "Comment",
+        action: "create",
+        data: { id: "c-1" },
+        webhookTimestamp: Date.now(),
+      }),
     );
     const removed = await POST(
       delivery({ ...issueUpdate(), action: "remove" }),
@@ -204,9 +210,62 @@ describe("POST /api/linear/webhook", () => {
 
   it("rejects an unreadable payload with 400", async () => {
     const response = await POST(
-      delivery({ type: "Issue", action: "update", data: {} }),
+      delivery({
+        type: "Issue",
+        action: "update",
+        data: {},
+        webhookTimestamp: Date.now(),
+      }),
     );
     expect(response.status).toBe(400);
+  });
+
+  it("rejects a correctly signed delivery sent more than a minute ago with 401", async () => {
+    const old = await POST(
+      delivery({ ...issueUpdate(), webhookTimestamp: Date.now() - 120_000 }),
+    );
+    const missing = await POST(
+      delivery({ ...issueUpdate(), webhookTimestamp: undefined }),
+    );
+    expect(old.status).toBe(401);
+    expect(missing.status).toBe(401);
+    expect(await db.$count(workItems)).toBe(0);
+    expect(after).not.toHaveBeenCalled();
+  });
+
+  it("keeps updating an issue moved to a team that is not connected", async () => {
+    await POST(delivery(issueUpdate()));
+    expect(await tl3Status()).toBe("in_progress");
+    // Moved to the OPS team, which no project connects, then completed there.
+    state.issues = [
+      issue({
+        identifier: "OPS-7",
+        team: { id: "team-ops", key: "OPS" },
+        state: { type: "completed" },
+        completedAt: "2026-11-02T09:00:00.000Z",
+        updatedAt: "2026-11-02T09:00:00.000Z",
+      }),
+    ];
+    const response = await POST(delivery(issueUpdate("team-ops")));
+    expect(await response.json()).toEqual({ status: "synced", projects: 1 });
+    const [row] = await db.select().from(workItems);
+    expect(row).toMatchObject({ state: "closed", identifier: "OPS-7" });
+    expect(await db.$count(jobs, eq(jobs.type, "reconcile"))).toBe(1);
+  });
+
+  it("syncs a moved issue once into a project that connects both teams", async () => {
+    const [project] = await db.select().from(projects);
+    await db.insert(repositories).values({
+      projectId: project.id,
+      source: "linear",
+      externalId: "team-ops",
+      fullName: "OPS",
+    });
+    await POST(delivery(issueUpdate()));
+    state.issues = [issue({ team: { id: "team-ops", key: "OPS" } })];
+    const response = await POST(delivery(issueUpdate("team-ops")));
+    expect(await response.json()).toEqual({ status: "synced", projects: 1 });
+    expect(await db.$count(workItems)).toBe(1);
   });
 
   it("returns 503 when LINEAR_API_KEY is not set for a connected team", async () => {

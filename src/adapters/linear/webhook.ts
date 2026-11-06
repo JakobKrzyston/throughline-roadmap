@@ -1,4 +1,4 @@
-/** Verifies and reads Linear webhook deliveries. Exports verifyLinearSignature, parseLinearWebhook. */
+/** Verifies and reads Linear webhook deliveries. Exports verifyLinearSignature, isFreshDelivery, parseLinearWebhook, MAX_DELIVERY_AGE_MS. */
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { z } from "zod";
@@ -34,6 +34,27 @@ export function verifyLinearSignature(
   const actual = Buffer.from(signature);
   // timingSafeEqual throws on different lengths, and a length mismatch reveals nothing about the secret.
   return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+/** How far a delivery's timestamp may be from now, as Linear's docs recommend, so a captured
+ * delivery cannot be replayed later. */
+export const MAX_DELIVERY_AGE_MS = 60_000;
+
+/**
+ * Check that a delivery was sent within the last minute, from the `webhookTimestamp` Linear puts
+ * in every payload. Call it only after the signature is verified, which covers the timestamp.
+ *
+ * Args:
+ *   payload: The parsed JSON body.
+ *   now: The current time in milliseconds, for tests.
+ *
+ * Returns:
+ *   True when the timestamp is present and within MAX_DELIVERY_AGE_MS of now.
+ */
+export function isFreshDelivery(payload: unknown, now = Date.now()): boolean {
+  const sent = z.object({ webhookTimestamp: z.number() }).safeParse(payload)
+    .data?.webhookTimestamp;
+  return sent !== undefined && Math.abs(now - sent) <= MAX_DELIVERY_AGE_MS;
 }
 
 /**

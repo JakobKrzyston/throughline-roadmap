@@ -24,6 +24,7 @@ const team = z.object({ id: z.string(), key: z.string() });
 /** The fields of a Linear issue that Throughline reads. */
 export const linearIssueSchema = z.object({
   id: z.string(),
+  identifier: z.string(),
   title: z.string(),
   description: z.string().nullable(),
   url: z.url(),
@@ -42,7 +43,7 @@ export const linearIssueSchema = z.object({
 export type LinearIssue = z.output<typeof linearIssueSchema>;
 
 // The GraphQL selection matching linearIssueSchema.
-const ISSUE_FIELDS = `id title description url updatedAt completedAt canceledAt
+const ISSUE_FIELDS = `id identifier title description url updatedAt completedAt canceledAt
   state { type } team { id key } project { id } assignee { displayName app }`;
 
 const teamsData = z.object({ teams: z.object({ nodes: z.array(team) }) });
@@ -212,6 +213,6 @@ export function issueToWorkItem(issue: LinearIssue): SourceWorkItem {
     updatedAt: new Date(issue.updatedAt),
     started: type === "started",
     inProject: issue.project !== null,
-    teamKey: issue.team.key,
+    identifier: issue.identifier,
   };
 }

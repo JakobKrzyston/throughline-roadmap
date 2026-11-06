@@ -409,6 +409,7 @@ describe("linked work item labels", () => {
       title: "Share dialog: copy link button",
       body: "Part of TL-22",
       url: "https://linear.app/acme/issue/ENG-41/share-dialog-copy-link-button",
+      identifier: "ENG-41",
       state: "open",
       people: [],
       mergedAt: null,

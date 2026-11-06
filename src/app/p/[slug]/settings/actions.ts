@@ -10,10 +10,14 @@ import {
   isGitHubConfigured,
   isOwnerAllowed,
 } from "@/adapters/github";
-import { linearAdapterFor } from "@/adapters/linear";
+import { isTeamAllowed, linearAdapterFor } from "@/adapters/linear";
 import { LinearError } from "@/adapters/linear/source";
 import { postToSlack, slackWebhookUrlSchema } from "@/adapters/slack";
 import { loadDigest } from "@/core/digest";
+import {
+  collidesWithRequirementKeys,
+  REQUIREMENT_KEY_PREFIX,
+} from "@/core/references";
 import { getDb } from "@/db/client";
 import { projects, repositories } from "@/db/schema";
 import { runQueuedJobs } from "@/jobs";
@@ -144,8 +148,10 @@ const teamKeySchema = z
 /**
  * Connect a Linear team to a project and start importing its issues.
  *
- * Demo projects connect the sample team, so they never call Linear. Throughline only reads from
- * Linear.
+ * Demo projects connect the sample team, so they never call Linear. A real team must be listed in
+ * LINEAR_ALLOWED_TEAMS. Connecting also records whether the workspace has a team keyed TL, whose
+ * issue ids look like requirement keys; if so, references in the team's issues are ignored.
+ * Throughline only reads from Linear.
  *
  * Args:
  *   slug: The project's slug, bound by the page.
@@ -167,6 +173,11 @@ export async function connectLinearTeam(
     repository: typeof raw === "string" ? raw : "",
   });
 
+  const notAllowed = (key: string): ConnectState =>
+    fail(
+      `This server only connects approved Linear teams, and ${key.toUpperCase()} is not one of them.`,
+    );
+
   if (isPublicDeployment()) {
     return fail("Linear teams are connected by the site owner on this server.");
   }
@@ -181,10 +192,20 @@ export async function connectLinearTeam(
   if (!project) return fail("Project not found.");
   const adapter = linearAdapterFor(project);
   if (!adapter) return fail("Linear is not set up on this server yet.");
+  // The sample team needs no approval. Checked before the lookup so the answer reveals nothing
+  // about other teams.
+  if (!project.isDemo && !isTeamAllowed(teamKey.data)) {
+    return notAllowed(teamKey.data);
+  }
 
   let team;
+  let referencesIgnored;
   try {
     team = await adapter.findRepository(teamKey.data);
+    referencesIgnored =
+      team !== null &&
+      (collidesWithRequirementKeys(team.fullName) ||
+        (await adapter.findRepository(REQUIREMENT_KEY_PREFIX)) !== null);
   } catch (error) {
     console.error("Linear team lookup failed:", error);
     return fail(
@@ -207,6 +228,7 @@ export async function connectLinearTeam(
         source: "linear",
         externalId: team.externalId,
         fullName: team.fullName,
+        referencesIgnored,
       })
       .onConflictDoNothing()
       .returning({ id: repositories.id });

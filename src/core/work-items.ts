@@ -1,4 +1,4 @@
-/** Mirrors source work items and feedback into a project, links explicit references and queues reconciliation, a link suggestion or a feedback match. Exports syncWorkItem, syncFeedback, syncRepositoryItem, isFinished, SYNC_ACTOR, BODY_EXCERPT_LENGTH. */
+/** Mirrors source work items and feedback into a project, links explicit references and queues reconciliation, a link suggestion or a feedback match. Exports syncWorkItem, syncFeedback, syncRepositoryItem, isFinished, hasStarted, SYNC_ACTOR, LINEAR_SYNC_ACTOR, BODY_EXCERPT_LENGTH. */
 import { and, eq, gt, inArray, isNull, lte, or } from "drizzle-orm";
 
 import type {
@@ -25,6 +25,9 @@ import { parseReferences } from "./references";
 /** The actor recorded on events for links and status changes made from explicit PR references. */
 export const SYNC_ACTOR = "github-sync";
 
+/** The actor recorded on events for links and status changes made from Linear issues. */
+export const LINEAR_SYNC_ACTOR = "linear-sync";
+
 /** How much of a description is stored as agent context. */
 export const BODY_EXCERPT_LENGTH = 2000;
 
@@ -32,11 +35,11 @@ type SyncResult = {
   workItemId: string;
   /** Requirement keys newly linked from explicit references. */
   linked: string[];
-  /** Planned requirements moved to in progress because an open pull request references them. */
+  /** Planned requirements moved to in progress because work on an item linked to them started. */
   started: string[];
   /** Requirements queued for reconciliation. */
   reconcileJobs: number;
-  /** Whether a link suggestion was queued, for a merged pull request that references nothing. */
+  /** Whether a link suggestion was queued, for finished work that references nothing. */
   linkSuggestJob: boolean;
 };
 
@@ -45,13 +48,15 @@ type SyncResult = {
  * reconciliation when it has finished.
  *
  * Safe to repeat: replaying the same item creates no duplicate work items, links or jobs. An
- * item older than the stored copy (a delivery that arrived out of order) changes nothing. An
- * open pull request moves the planned requirements it is linked to into progress. A
- * reconciliation is queued for each linked requirement when the item first becomes merged
- * (or, for an issue, closed as done), and for each new link added to an item that has already
- * finished. A pull request that merges with no links at all gets a link suggestion job instead,
- * and an explicit link added later supersedes a pending suggestion. An issue that was feedback
- * until its label was removed is withdrawn as feedback.
+ * item older than the stored copy (a delivery that arrived out of order) changes nothing. Started
+ * work (an open pull request, or a Linear issue in a started state) moves the planned
+ * requirements it is linked to into progress. A reconciliation is queued for each linked
+ * requirement when the item first becomes merged (or, for an issue, closed as done), and for each
+ * new link added to an item that has already finished. A pull request that merges with no links at
+ * all gets a link suggestion job instead, and so does a Linear issue completed inside a Linear
+ * project; an explicit link added later supersedes a pending suggestion. An issue that was
+ * feedback until its label was removed is withdrawn as feedback. A Linear team keyed `TL` has
+ * issue identifiers that look like requirement keys, so its issues' references are ignored.
  *
  * Args:
  *   db: Database to write to.
@@ -70,6 +75,7 @@ export async function syncWorkItem(
   item: SourceWorkItem,
   { reconcile = true }: { reconcile?: boolean } = {},
 ): Promise<SyncResult> {
+  const actor = item.source === "linear" ? LINEAR_SYNC_ACTOR : SYNC_ACTOR;
   return db.transaction(async (tx) => {
     if (item.kind === "issue") await withdrawFeedback(tx, projectId, item);
     const fields = {
@@ -102,7 +108,12 @@ export async function syncWorkItem(
       .where(eq(links.workItemId, workItemId));
     const linkedIds = new Set(alreadyLinked.map((row) => row.requirementId));
 
-    const references = parseReferences(`${item.title}\n${item.body}`);
+    // Requirement keys are always TL-n, so in a Linear team keyed TL "Part of TL-12" may name
+    // another Linear issue. Links for that team come from suggestions only.
+    const references =
+      item.teamKey?.toUpperCase() === "TL"
+        ? []
+        : parseReferences(`${item.title}\n${item.body}`);
     const found =
       references.length === 0
         ? []
@@ -147,13 +158,13 @@ export async function syncWorkItem(
           triggerWorkItemId: workItemId,
         })
         .returning({ id: proposals.id });
-      await applyProposal(tx, proposal.id, SYNC_ACTOR);
+      await applyProposal(tx, proposal.id, actor);
       // The author has now said what this work is for, so a pending guess is out of date.
       await tx
         .update(proposals)
         .set({
           status: "superseded",
-          decidedBy: SYNC_ACTOR,
+          decidedBy: actor,
           decidedAt: new Date(),
         })
         .where(
@@ -169,10 +180,9 @@ export async function syncWorkItem(
       ...linkedIds,
       ...newLinks.map((link) => link.requirementId),
     ];
-    const started =
-      item.kind === "pull_request" && item.state === "open"
-        ? await startWork(tx, projectId, workItemId, item.title, allLinked)
-        : [];
+    const started = hasStarted(item)
+      ? await startWork(tx, projectId, workItemId, item, allLinked, actor)
+      : [];
 
     const finished = isFinished(item);
     const justFinished = finished && previousState !== item.state;
@@ -185,10 +195,12 @@ export async function syncWorkItem(
     for (const requirementId of toReconcile) {
       await enqueueReconcile(tx, { workItemId, requirementId });
     }
+    // Linear issues outside any project are mostly bugs and chores; suggesting links for them
+    // would flood the review queue.
     const suggestLink =
       justFinished &&
       reconcile &&
-      item.kind === "pull_request" &&
+      (item.kind === "pull_request" || item.inProject === true) &&
       linkedIds.size === 0 &&
       newLinks.length === 0;
     if (suggestLink) await enqueue(tx, "link_suggest", { workItemId });
@@ -204,8 +216,8 @@ export async function syncWorkItem(
 }
 
 /**
- * Move the planned requirements among `requirementIds` to in progress, because an open pull
- * request references them. Requirements already started, finished, dropped or split are left alone.
+ * Move the planned requirements among `requirementIds` to in progress, because started work
+ * references them. Requirements already started, finished, dropped or split are left alone.
  *
  * Like explicit links, this is deterministic, so the proposal is approved at once by the sync.
  *
@@ -216,8 +228,9 @@ async function startWork(
   tx: Transaction,
   projectId: string,
   workItemId: string,
-  title: string,
+  item: SourceWorkItem,
   requirementIds: string[],
+  actor: string,
 ): Promise<string[]> {
   if (requirementIds.length === 0) return [];
   const planned = await tx
@@ -238,9 +251,11 @@ async function startWork(
     .values({
       projectId,
       source: "work_started",
-      summary: `Work started on ${keys.join(", ")}: "${title}"`,
+      summary: `Work started on ${keys.join(", ")}: "${item.title}"`,
       rationale:
-        "An open pull request references these requirements, so work on them has started.",
+        item.source === "linear"
+          ? "A Linear issue linked to these requirements is in progress, so work on them has started."
+          : "An open pull request references these requirements, so work on them has started.",
       operations: keys.map((key) => ({
         type: "set_status",
         requirement_key: key,
@@ -249,7 +264,7 @@ async function startWork(
       triggerWorkItemId: workItemId,
     })
     .returning({ id: proposals.id });
-  await applyProposal(tx, proposal.id, SYNC_ACTOR);
+  await applyProposal(tx, proposal.id, actor);
   return keys;
 }
 
@@ -380,6 +395,23 @@ export function isFinished(item: {
   return (
     item.state === "merged" ||
     (item.kind === "issue" && item.state === "closed")
+  );
+}
+
+/**
+ * Whether work on a work item has started: an open pull request, or an open Linear issue in a
+ * started state such as In Progress.
+ *
+ * Args:
+ *   item: The work item as the source reports it.
+ *
+ * Returns:
+ *   True when the planned requirements it is linked to should move to in progress.
+ */
+export function hasStarted(item: SourceWorkItem): boolean {
+  return (
+    item.state === "open" &&
+    (item.kind === "pull_request" || item.started === true)
   );
 }
 

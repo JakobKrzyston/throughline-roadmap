@@ -372,7 +372,7 @@ function WorkItemRow({
           {item.title}
         </SourceLink>
         <span className="ml-1.5 text-xs whitespace-nowrap text-muted-foreground">
-          {item.kind === "pull_request" ? "PR" : "Issue"} #{item.number}
+          {item.label}
           {item.confidence === "suggested" && " · Suggested link"}
         </span>
       </span>

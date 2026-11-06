@@ -32,7 +32,7 @@ export const workType = pgEnum("work_type", [
   "tech_debt",
   "research",
 ]);
-export const workItemSource = pgEnum("work_item_source", ["github"]);
+export const workItemSource = pgEnum("work_item_source", ["github", "linear"]);
 export const workItemKind = pgEnum("work_item_kind", ["issue", "pull_request"]);
 export const workItemState = pgEnum("work_item_state", [
   "open",

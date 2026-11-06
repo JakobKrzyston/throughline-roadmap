@@ -1,10 +1,11 @@
-/** /p/[slug]/settings: connect GitHub repositories to the project and set up the weekly digest. */
+/** /p/[slug]/settings: connect GitHub repositories and Linear teams to the project and set up the weekly digest. */
 import { asc, eq, sql } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { type ReactElement, Suspense } from "react";
 
 import { githubInstallUrl, missingGitHubSettings } from "@/adapters/github";
+import { isLinearConfigured } from "@/adapters/linear";
 import { SectionsSkeleton } from "@/components/skeleton";
 import { loadDigest } from "@/core/digest";
 import { getDb } from "@/db/client";
@@ -22,7 +23,8 @@ export const maxDuration = 300;
 export const metadata = { title: "Settings" };
 
 /**
- * Settings page: a static heading plus the project's connected repositories and connect form.
+ * Settings page: a static heading plus the project's connected repositories and Linear teams,
+ * their connect forms, and the weekly digest.
  *
  * Args:
  *   params: Route params holding the project slug.
@@ -38,10 +40,10 @@ export default function SettingsPage({
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
         <p className="text-muted-foreground">
-          Connect a GitHub repository so Throughline can follow its issues and
-          pull requests. A pull request that says &ldquo;Implements TL-12&rdquo;
-          or &ldquo;Part of TL-12&rdquo; is linked to that requirement
-          automatically.
+          Connect a GitHub repository or a Linear team so Throughline can follow
+          its issues and pull requests. A pull request or Linear issue that says
+          &ldquo;Implements TL-12&rdquo; or &ldquo;Part of TL-12&rdquo; is
+          linked to that requirement automatically.
         </p>
       </div>
       {/* The project lookup runs per request; the heading above is the static shell. */}
@@ -64,6 +66,7 @@ async function ProjectSettings({
       id: projects.id,
       name: projects.name,
       slug: projects.slug,
+      isDemo: projects.isDemo,
       // Only whether a webhook is saved: the URL itself lets anyone post to the channel.
       digestActive: sql<boolean>`${projects.digestSlackWebhookUrl} is not null`,
       digestSentAt: projects.digestSentAt,
@@ -73,7 +76,11 @@ async function ProjectSettings({
   if (!project) notFound();
 
   const connected = await db
-    .select({ id: repositories.id, fullName: repositories.fullName })
+    .select({
+      id: repositories.id,
+      source: repositories.source,
+      fullName: repositories.fullName,
+    })
     .from(repositories)
     .where(eq(repositories.projectId, project.id))
     .orderBy(asc(repositories.fullName));
@@ -81,6 +88,10 @@ async function ProjectSettings({
     db,
     connected.map((repository) => repository.id),
   );
+  const githubRepositories = connected.filter((row) => row.source === "github");
+  const linearTeams = connected.filter((row) => row.source === "linear");
+  // Demo projects connect the sample Linear team, so they need no key.
+  const linearReady = project.isDemo || isLinearConfigured();
   const missing = missingGitHubSettings();
   const configured = missing.length === 0;
   const installUrl = githubInstallUrl();
@@ -90,16 +101,19 @@ async function ProjectSettings({
     <>
       <section className="flex flex-col gap-3">
         <h2 className="text-xl font-semibold">GitHub repositories</h2>
-        {connected.length === 0 ? (
+        {githubRepositories.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No repositories connected yet.
           </p>
         ) : (
           <ul className="flex flex-col gap-2 text-sm">
-            {connected.map((repository) => (
+            {githubRepositories.map((repository) => (
               <li key={repository.id} className="flex flex-col gap-0.5">
                 <span className="font-mono">{repository.fullName}</span>
-                <ImportStatus status={imports.get(repository.id)} />
+                <ImportStatus
+                  status={imports.get(repository.id)}
+                  items="issues and pull requests"
+                />
               </li>
             ))}
           </ul>
@@ -137,7 +151,61 @@ async function ProjectSettings({
           </p>
         )}
         {!isPublicDeployment() && (
-          <ConnectForm slug={slug} disabled={!configured} />
+          <ConnectForm slug={slug} source="github" disabled={!configured} />
+        )}
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-xl font-semibold">Linear teams</h2>
+        <p className="text-sm text-muted-foreground">
+          A connected team&rsquo;s issues are tracked like GitHub&rsquo;s.
+          Moving an issue to In Progress starts the requirements it is linked
+          to, and completing one asks for the roadmap to be checked. An issue
+          completed inside a Linear project with no reference gets a suggested
+          link. Throughline only reads from Linear.
+        </p>
+        {linearTeams.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No Linear teams connected yet.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2 text-sm">
+            {linearTeams.map((team) => (
+              <li key={team.id} className="flex flex-col gap-0.5">
+                <span className="font-mono">{team.fullName}</span>
+                {team.fullName.toUpperCase() === "TL" && (
+                  <span className="text-muted-foreground">
+                    This team&rsquo;s issue ids look like requirement keys, so
+                    references in its issues are ignored. Its links come from
+                    suggestions only.
+                  </span>
+                )}
+                <ImportStatus status={imports.get(team.id)} items="issues" />
+              </li>
+            ))}
+          </ul>
+        )}
+        {isPublicDeployment() ? (
+          <p className="rounded-md border border-border bg-muted p-3 text-sm">
+            On the public site, Linear teams are connected by the site owner.
+          </p>
+        ) : linearReady ? (
+          <p className="text-sm text-muted-foreground">
+            Enter the team&rsquo;s key, the letters before the number in its
+            issue ids. Throughline imports its open issues and the issues
+            completed in the last 90 days.
+            {project.isDemo &&
+              " This demo project connects a sample team, ENG."}
+          </p>
+        ) : (
+          <p className="rounded-md border border-border bg-muted p-3 text-sm">
+            Linear is not set up on this server, so teams cannot be connected.
+            Set LINEAR_API_KEY and LINEAR_WEBHOOK_SECRET; the setup steps are in
+            docs/LINEAR.md.
+          </p>
+        )}
+        {!isPublicDeployment() && (
+          <ConnectForm slug={slug} source="linear" disabled={!linearReady} />
         )}
       </section>
 
@@ -186,19 +254,18 @@ async function ProjectSettings({
 
 function ImportStatus({
   status,
+  items,
 }: {
   status: BackfillStatus | undefined;
+  /** What is being imported, e.g. "issues and pull requests". */
+  items: string;
 }): ReactElement | null {
   switch (status?.state) {
     case undefined:
     case "done":
       return null;
     case "importing":
-      return (
-        <span className="text-muted-foreground">
-          Importing issues and pull requests…
-        </span>
-      );
+      return <span className="text-muted-foreground">Importing {items}…</span>;
     case "retrying":
       return (
         <span className="text-muted-foreground">
@@ -208,8 +275,8 @@ function ImportStatus({
     case "failed":
       return (
         <span className="text-destructive">
-          The import stopped after repeated failures, so some issues and pull
-          requests are missing: {status.error}
+          The import stopped after repeated failures, so some {items} are
+          missing: {status.error}
         </span>
       );
   }

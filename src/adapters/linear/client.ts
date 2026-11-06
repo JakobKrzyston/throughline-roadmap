@@ -1,4 +1,4 @@
-/** LinearSource backed by Linear's GraphQL API and a workspace API key, using fetch. Responses are checked with Zod. Exports LinearApiSource, LINEAR_API_URL. */
+/** LinearSource backed by Linear's GraphQL API and a workspace API key, using fetch, and the request function it shares with LinearAdapter. Responses are checked with Zod. Exports LinearApiSource, linearQuery, LINEAR_API_URL. */
 import { z } from "zod";
 
 import {
@@ -250,74 +250,111 @@ export class LinearApiSource implements LinearSource {
     return rest;
   }
 
-  private async query<T>(
+  private query<T>(
     query: string,
     variables: Record<string, unknown>,
     schema: z.ZodType<T>,
     notFoundMessage?: string,
   ): Promise<T> {
-    let response: Response;
-    try {
-      response = await this.fetchFn(LINEAR_API_URL, {
-        method: "POST",
-        // Personal API keys go in the header as they are; only OAuth tokens take "Bearer".
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: this.apiKey,
-        },
-        body: JSON.stringify({ query, variables }),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
-    } catch (error) {
-      console.error("Linear request failed:", error);
-      throw new LinearError(
-        "Linear could not be reached, so nothing was imported. Please try again.",
-      );
-    }
-
-    const body: unknown = await response.json().catch(() => null);
-    const errors = graphqlErrors.safeParse(body).data?.errors ?? [];
-    const isAuthError = errors.some(
-      (error) =>
-        error.extensions?.code === "AUTHENTICATION_ERROR" ||
-        error.extensions?.type === "authentication error",
+    return linearQuery(
+      this.apiKey,
+      this.fetchFn,
+      query,
+      variables,
+      schema,
+      notFoundMessage,
     );
-    if (response.status === 401 || response.status === 403 || isAuthError) {
-      throw new LinearError(
-        "Linear did not accept the API key. Check LINEAR_API_KEY (see docs/LINEAR.md).",
-      );
-    }
-    if (
-      response.status === 429 ||
-      errors.some((error) => error.extensions?.code === "RATELIMITED")
-    ) {
-      throw new LinearError(
-        "Linear is limiting requests right now. Wait a minute and try again.",
-      );
-    }
-    // Linear answers a lookup by an unknown or deleted id with "Entity not found: Team - …".
-    if (
-      notFoundMessage &&
-      errors.some((error) => /^entity not found/i.test(error.message))
-    ) {
-      throw new LinearError(notFoundMessage);
-    }
-    if (errors.length > 0) {
-      throw new LinearError(
-        `Linear returned an error, so nothing was imported: ${errors[0].message}`,
-      );
-    }
-
-    const parsed = z.object({ data: schema }).safeParse(body);
-    if (!response.ok || !parsed.success) {
-      console.error(
-        `Unexpected Linear response (HTTP ${response.status}):`,
-        parsed.error ?? body,
-      );
-      throw new LinearError(
-        "Linear sent a response Throughline could not read, so nothing was imported. Please try again.",
-      );
-    }
-    return parsed.data.data;
   }
+}
+
+/**
+ * Send one GraphQL query to Linear and check the response's data with a schema.
+ *
+ * Args:
+ *   apiKey: A Linear API key.
+ *   fetchFn: The fetch to send the request with; tests pass a stub.
+ *   query: The GraphQL query.
+ *   variables: The query's variables.
+ *   schema: The shape the response's `data` must have.
+ *   notFoundMessage: The error to raise when Linear says an id in the query does not exist;
+ *     without it, that is reported like any other GraphQL error.
+ *
+ * Returns:
+ *   The parsed `data`.
+ *
+ * Raises:
+ *   LinearError: Linear could not be reached, rejected the key, limited the request, returned
+ *     an error, or sent a response that does not match the schema.
+ */
+export async function linearQuery<T>(
+  apiKey: string,
+  fetchFn: typeof fetch,
+  query: string,
+  variables: Record<string, unknown>,
+  schema: z.ZodType<T>,
+  notFoundMessage?: string,
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetchFn(LINEAR_API_URL, {
+      method: "POST",
+      // Personal API keys go in the header as they are; only OAuth tokens take "Bearer".
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: apiKey,
+      },
+      body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch (error) {
+    console.error("Linear request failed:", error);
+    throw new LinearError(
+      "Linear could not be reached, so nothing was imported. Please try again.",
+    );
+  }
+
+  const body: unknown = await response.json().catch(() => null);
+  const errors = graphqlErrors.safeParse(body).data?.errors ?? [];
+  const isAuthError = errors.some(
+    (error) =>
+      error.extensions?.code === "AUTHENTICATION_ERROR" ||
+      error.extensions?.type === "authentication error",
+  );
+  if (response.status === 401 || response.status === 403 || isAuthError) {
+    throw new LinearError(
+      "Linear did not accept the API key. Check LINEAR_API_KEY (see docs/LINEAR.md).",
+    );
+  }
+  if (
+    response.status === 429 ||
+    errors.some((error) => error.extensions?.code === "RATELIMITED")
+  ) {
+    throw new LinearError(
+      "Linear is limiting requests right now. Wait a minute and try again.",
+    );
+  }
+  // Linear answers a lookup by an unknown or deleted id with "Entity not found: Team - …".
+  if (
+    notFoundMessage &&
+    errors.some((error) => /^entity not found/i.test(error.message))
+  ) {
+    throw new LinearError(notFoundMessage);
+  }
+  if (errors.length > 0) {
+    throw new LinearError(
+      `Linear returned an error, so nothing was imported: ${errors[0].message}`,
+    );
+  }
+
+  const parsed = z.object({ data: schema }).safeParse(body);
+  if (!response.ok || !parsed.success) {
+    console.error(
+      `Unexpected Linear response (HTTP ${response.status}):`,
+      parsed.error ?? body,
+    );
+    throw new LinearError(
+      "Linear sent a response Throughline could not read, so nothing was imported. Please try again.",
+    );
+  }
+  return parsed.data.data;
 }

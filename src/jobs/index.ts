@@ -2,6 +2,7 @@
 import { eq } from "drizzle-orm";
 
 import { getGitHubAdapter, isGitHubConfigured } from "@/adapters/github";
+import { linearAdapterFor } from "@/adapters/linear";
 import { getDemoLLMProvider, getLLMProvider } from "@/adapters/llm";
 import type { LLMProvider } from "@/adapters/llm/provider";
 import type { SourceAdapter } from "@/adapters/source";
@@ -11,7 +12,13 @@ import { runLinkSuggest } from "@/agents/link-suggest";
 import { runReconcile } from "@/agents/reconcile";
 import { runSlipCheck } from "@/agents/slip";
 import { getDb } from "@/db/client";
-import { feedback, outcomes, projects, workItems } from "@/db/schema";
+import {
+  feedback,
+  outcomes,
+  projects,
+  repositories,
+  workItems,
+} from "@/db/schema";
 
 import { runBackfill } from "./backfill";
 import { runJobs } from "./queue";
@@ -19,10 +26,13 @@ import { runJobs } from "./queue";
 /**
  * Run due jobs against the app database.
  *
- * Without GitHub credentials the agents still run, on the work item's title and description alone.
- * Agents for demo projects use the demo provider (a free OpenRouter model, else sample results)
- * and skip GitHub, wherever the job runs: on a public site visitors queue these jobs and must not
- * spend the Anthropic key, and the demo's repository is made up.
+ * Each job reads from the source its repository or work item came from, GitHub or Linear. Without
+ * GitHub credentials the agents still run, on the work item's title and description alone, as they
+ * always do for Linear issues, which have no changed files. Agents for demo projects use the demo
+ * provider (a free OpenRouter model, else sample results) and skip the source, wherever the job
+ * runs: on a public site visitors queue these jobs and must not spend the Anthropic key, and the
+ * demo's repository is made up. A demo project's Linear team is the sample one, so its backfill
+ * never calls Linear.
  *
  * Returns:
  *   How many jobs finished and how many failed.
@@ -33,24 +43,45 @@ export async function runQueuedJobs(): Promise<{
 }> {
   const db = getDb();
   const llm = getLLMProvider(DEMO_LLM_FIXTURES);
-  const source = isGitHubConfigured() ? getGitHubAdapter() : null;
+  const github = isGitHubConfigured() ? getGitHubAdapter() : null;
 
   async function agentsFor(
     workItemId: string,
   ): Promise<{ llm: LLMProvider; source: SourceAdapter | null }> {
     const [row] = await db
-      .select({ isDemo: projects.isDemo })
+      .select({ isDemo: projects.isDemo, source: workItems.source })
       .from(workItems)
       .innerJoin(projects, eq(workItems.projectId, projects.id))
       .where(eq(workItems.id, workItemId));
     if (row?.isDemo) {
       return { llm: getDemoLLMProvider(DEMO_LLM_FIXTURES), source: null };
     }
-    return { llm, source };
+    return {
+      llm,
+      source:
+        row?.source === "linear" ? linearAdapterFor({ isDemo: false }) : github,
+    };
   }
 
   return runJobs(db, {
-    backfill: (payload) => runBackfill(db, getGitHubAdapter(), payload),
+    backfill: async (payload) => {
+      const [row] = await db
+        .select({ isDemo: projects.isDemo, source: repositories.source })
+        .from(repositories)
+        .innerJoin(projects, eq(repositories.projectId, projects.id))
+        .where(eq(repositories.id, payload.repositoryId));
+      // Disconnected before the job ran: runBackfill finds nothing and stops.
+      if (row?.source !== "linear") {
+        return runBackfill(db, getGitHubAdapter(), payload);
+      }
+      const linear = linearAdapterFor(row);
+      if (!linear) {
+        throw new Error(
+          "Linear is not set up: set LINEAR_API_KEY (see docs/LINEAR.md)",
+        );
+      }
+      return runBackfill(db, linear, payload);
+    },
     reconcile: async (payload) => {
       const agents = await agentsFor(payload.workItemId);
       await runReconcile(db, agents.llm, agents.source, payload);

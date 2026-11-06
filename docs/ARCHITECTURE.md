@@ -31,7 +31,7 @@ These rules are deliberate. They are also listed in `CLAUDE.md` so every coding 
 3. **Parent status is computed, never stored.** Only leaf requirements carry a status. Parent requirements and outcomes derive their progress from their leaves on read. There is no rollup state to fall out of sync.
 4. **Everything is an event.** Every change to the graph is written to an append-only `events` table with who made it, why, and a plain-language note. The product view's "what changed" feed is built from this log.
 5. **Plain language first.** The product view never shows ticket numbers, branch names or jargon unless the reader expands a detail panel.
-6. **Integrations sit behind adapters.** GitHub is one `SourceAdapter`. Anthropic is one `LLMProvider`. Linear roadmaps are read through a `LinearSource`. Jira or another model provider can be added without touching the core.
+6. **Integrations sit behind adapters.** GitHub and Linear are `SourceAdapter`s. Anthropic is one `LLMProvider`. Linear roadmaps are read through a `LinearSource`. Jira or another model provider can be added without touching the core.
 
 ## System overview
 
@@ -76,7 +76,7 @@ One roadmap workspace. Fields: `id`, `name`, `slug`, `is_demo`, `digest_slack_we
 
 ### `repositories`
 
-Source repositories connected to a project. Fields: `project_id`, `source` (`github`), `external_id` (GitHub's numeric repository id, which survives renames), `full_name` (`owner/name`, refreshed from each webhook so it follows renames). Webhooks find their project through `(source, external_id)`; one repository may be connected to several projects.
+Source repositories connected to a project. A row can also be a connected Linear team. Fields: `project_id`, `source` (`github` or `linear`), `external_id` (GitHub's numeric repository id, which survives renames, or the Linear team's id), `full_name` (`owner/name`, or the Linear team's key such as `ENG`, refreshed from each webhook so it follows renames). Webhooks find their project through `(source, external_id)`; one repository may be connected to several projects.
 
 ### `outcomes`
 
@@ -119,18 +119,18 @@ A requirement's effective team is its own, else the nearest ancestor's. Like sta
 
 Mirrors of GitHub issues and pull requests.
 
-| Field                    | Notes                                                                                                             |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `id`                     |                                                                                                                   |
-| `project_id`             |                                                                                                                   |
-| `source`                 | `github` (later `linear`, `jira`)                                                                                 |
-| `external_id`            | e.g. `1043219876#41`: repository id, then number                                                                  |
-| `kind`                   | `issue` or `pull_request`                                                                                         |
-| `title`, `url`, `state`  | `state`: `open`, `closed`, `merged`, `not_planned` (an issue closed as not planned or duplicate)                  |
-| `body_excerpt`           | First part of the description, for agent context                                                                  |
-| `merged_at`, `closed_at` |                                                                                                                   |
-| `source_updated_at`      | When GitHub last changed the item. A delivery older than this is ignored, since webhooks can arrive out of order  |
-| `people`                 | Logins of the people working on it: a PR's author and the item's assignees, bots left out. Refreshed on each sync |
+| Field                    | Notes                                                                                                                                                                           |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                     |                                                                                                                                                                                 |
+| `project_id`             |                                                                                                                                                                                 |
+| `source`                 | `github` or `linear` (later `jira`)                                                                                                                                             |
+| `external_id`            | e.g. `1043219876#41`: repository id, then number. For Linear, the issue's id                                                                                                    |
+| `kind`                   | `issue` or `pull_request`                                                                                                                                                       |
+| `title`, `url`, `state`  | `state`: `open`, `closed`, `merged`, `not_planned` (an issue closed as not planned or duplicate)                                                                                |
+| `body_excerpt`           | First part of the description, for agent context                                                                                                                                |
+| `merged_at`, `closed_at` |                                                                                                                                                                                 |
+| `source_updated_at`      | When the source last changed the item. A delivery older than this is ignored, since webhooks can arrive out of order                                                            |
+| `people`                 | Logins of the people working on it: a PR's author and the item's assignees, bots left out (for Linear, the assignee's display name, app users left out). Refreshed on each sync |
 
 People come from the source, never from Throughline: a requirement's people are everyone on the work items linked to it, and Throughline never assigns work. An issue's author only reported it, so only its assignees count. Work items stored before `people` existed have none until GitHub next sends a change for them; queueing a `backfill` job for a repository again refreshes its open issues and recently merged PRs.
 
@@ -219,9 +219,11 @@ Computed on read by pure functions in `src/core/rollup.ts`.
 
 ## Linking PRs to requirements
 
-1. **Explicit:** a PR body or title containing `Implements TL-12` or `Part of TL-12` creates a link automatically. This is deterministic and needs no review. Matching is case-insensitive, one phrase can list several keys (`Part of TL-3, TL-4 and TL-5`), and keys that are not in the project are ignored (`src/core/references.ts`). The links still go through a proposal with source `explicit_link`, approved at once by the `github-sync` actor, so `applyProposal` stays the only code that changes the graph and every link has an event. Removing a reference from a PR later does not remove the link.
-2. **Suggested:** if a merged PR has no reference, the link agent compares it to the project's requirements and proposes the best match. A person approves it.
-3. **Work started:** an open PR that is linked to a `planned` leaf moves it to `in_progress`, through a `work_started` proposal approved at once by `github-sync`, like an explicit link. Requirements that are already started, finished, dropped or split are left alone, issues never start work, and closing a PR without merging does not move the requirement back. This is what makes an outcome show "in progress" before anything has shipped.
+Linear issues link the same way as PRs; the differences are noted below and under "Linear issues as work items".
+
+1. **Explicit:** a PR or Linear issue whose body or title contains `Implements TL-12` or `Part of TL-12` creates a link automatically. This is deterministic and needs no review. Matching is case-insensitive, one phrase can list several keys (`Part of TL-3, TL-4 and TL-5`), and keys that are not in the project are ignored (`src/core/references.ts`). The links still go through a proposal with source `explicit_link`, approved at once by the `github-sync` actor, so `applyProposal` stays the only code that changes the graph and every link has an event. Removing a reference from a PR later does not remove the link.
+2. **Suggested:** if a merged PR, or a Linear issue completed inside a Linear project, has no reference, the link agent compares it to the project's requirements and proposes the best match. A person approves it.
+3. **Work started:** an open PR, or a Linear issue in a `started` state such as In Progress, that is linked to a `planned` leaf moves it to `in_progress`, through a `work_started` proposal approved at once by `github-sync` (`linear-sync` for Linear), like an explicit link. Requirements that are already started, finished, dropped or split are left alone, GitHub issues never start work, and closing a PR without merging does not move the requirement back. This is what makes an outcome show "in progress" before anything has shipped.
 
 ## Agents
 
@@ -252,7 +254,7 @@ The model does not choose keys. `src/agents/import.ts` numbers new outcomes and 
 - **Mapping without a model.** `planFromLinear` (`src/agents/linear-import.ts`) is a pure function. Linear already stores the hierarchy, dates and priorities as structured data, so a model could only get them wrong: each initiative becomes an outcome and its projects its requirements; a project in no initiative becomes an outcome with itself as the only requirement, since a Linear project is usually one capability that ships on its own; a project in several initiatives goes under the highest-priority one. Outcomes are numbered by Linear priority (none last), then Linear's own order, initiatives first. Each requirement gets the project's target and the team's name as its `team`. Completed and canceled projects and canceled initiatives are left out, as in file imports. Target dates go through `linearTarget`: a day stays a date, a month or quarter becomes its quarter, and a half or year becomes its last quarter.
 - **An open project whose initiatives are all canceled** is kept, as an outcome of its own like a project in no initiative, because the project itself is still planned work and dropping it would hide it. The rationale counts these projects separately from those in no initiative and tells the reviewer to leave them out if the work was dropped with the initiative.
 - **What the reviewer still decides.** Titles and descriptions are the ones the team wrote in Linear. Initiatives and projects carry no issue keys, so rule 5 is not at risk from ids, but initiative names are often internal shorthand rather than a customer outcome; the rationale asks the reviewer to reword them, and to mark which requirements customers can see, which Linear does not record (every requirement is proposed as not user-visible, the safe default). `work_type` is left empty for the same reason.
-- **Not yet.** Linear is not a `SourceAdapter`: that interface is built around repositories, pull requests and webhooks, and tracking Linear issues as work items needs its own design (issue #10). Importing the same team twice proposes the same outcomes twice; the reviewer rejects the duplicate. Likewise, a project shared by several teams is in each team's import, with that team as its `team`. The graph stores no Linear ids to match on, and Linear's lead-team field is marked internal, so the import does not pick one team; instead the rationale counts the shared projects and names the other teams, so the reviewer approves each only once. The key is per workspace, from the environment; per-project OAuth is a follow-up.
+- **Not yet.** Importing the same team twice proposes the same outcomes twice; the reviewer rejects the duplicate. Likewise, a project shared by several teams is in each team's import, with that team as its `team`. The graph stores no Linear ids to match on, and Linear's lead-team field is marked internal, so the import does not pick one team; instead the rationale counts the shared projects and names the other teams, so the reviewer approves each only once. The key is per workspace, from the environment; per-project OAuth is a follow-up.
 
 ### Paired roadmap import
 
@@ -323,6 +325,20 @@ Trade-off: feedback is matched once, against the outcomes that exist when it arr
 - `syncWorkItem` upserts the work item, creates explicit links, starts work on the planned requirements an open PR is linked to, and queues a reconciliation per linked requirement (through `enqueueReconcile`, so near-simultaneous merges share one job) when the item first becomes merged (or, for an issue, closed as done; `not_planned` does not count), and for each link added to an item that has already finished. A PR that merges with no links at all gets a `link_suggest` job instead. Replaying a delivery therefore changes nothing: the work item is keyed by `(project, source, external_id)`, existing links are skipped, and no state change means no new job. Concurrent deliveries for the same item are serialised by a row lock.
 - Jobs run from `/api/jobs/run` (`GET` for Vercel cron, `POST` otherwise), and through Next.js `after()` once the response is sent, so responses stay fast: after connecting a repository, and after every webhook delivery with a valid signature, whether or not it queued anything. Running on every delivery is what picks up retries and jobs cut off by a timeout; when nothing is due it costs one lookup. The cron entry in `vercel.json` is a daily safety net, the most often Vercel's Hobby plan allows. When `CRON_SECRET` is set the route requires it as a bearer token.
 - Trade-off: a retry, or the rest of a long import, runs with the next delivery from any connected repository. On an active installation that is soon; when no deliveries arrive it waits for the daily cron. Each run handles at most 20 jobs, so on a quiet installation a repository with thousands of open issues finishes importing over the following runs rather than at once. On a Vercel plan that allows it, a cron every few minutes removes the wait; it was not used here because Hobby rejects it.
+
+## Linear issues as work items
+
+A connected Linear team is the second source of work items. Teams that plan in Throughline but assign and track work in Linear get the same tracking as GitHub: starting an issue starts the requirements it is linked to, and completing one leads to reconciliation, like a merged PR. Throughline only reads from Linear; it never creates, assigns or changes issues.
+
+- **Adapter.** `LinearAdapter` (`src/adapters/linear/adapter.ts`) is a `SourceAdapter` that shares the roadmap import's GraphQL request function, `linearQuery` (`client.ts`), and its errors. A team is found by its key, case-insensitively, and stored as a `repositories` row with `source = 'linear'`, the team's id as `external_id` and its key as `full_name`. An issue's stable Linear id is its `external_id`. `issueToWorkItem` maps Linear's state types: `completed` is `closed` (done), `canceled` and `duplicate` are `not_planned`, `started` is `open` with `started` set, and anything else, including types Linear adds later, is `open`. The assignee is the one person, by display name, and app users such as agents are left out. `updatedAt` orders deliveries, as for GitHub. `FakeLinearAdapter` (`fake-adapter.ts`) serves a sample team (`ENG`) for demo projects and tests; it is separate from the roadmap import's `FakeLinearSource`, so the two samples do not mix. `linearAdapterFor` returns the fake for a demo project, the real adapter when `LINEAR_API_KEY` is set, and nothing otherwise.
+- **Linear-only fields.** `SourceWorkItem` gains three optional fields that only Linear sets: `started` (the issue is in a started state), `inProject` (it belongs to a Linear project) and `teamKey`. They are optional so GitHub's items, and every GitHub test, are exactly as before: for GitHub an open PR is what shows work has started (`hasStarted` in `src/core/work-items.ts`).
+- **No changed files.** A Linear issue has none, so `listChangedFiles` returns nothing and the agents read its title and description, as they do for any issue.
+- **Connecting and backfill.** A team is connected on `/p/[slug]/settings` by its key. The backfill uses the same job as GitHub's, a page of 50 issues per job: open issues (any state but completed, canceled or duplicate) plus issues completed in the last 90 days. The job runner picks the adapter by the repository row's `source`, for the backfill and for the agents.
+- **Webhook.** `POST /api/linear/webhook` checks the `Linear-Signature` header, a hex HMAC-SHA256 of the raw body with `LINEAR_WEBHOOK_SECRET` (401 if it does not match). The delivery is only used for the issue's and team's ids. For a connected team, the issue is then read fresh from Linear, because the webhook payload does not say whether the assignee is an app user, and so the backfill and the webhook map one shape. A replayed or late delivery therefore syncs the issue as it is now, which changes nothing that is already up to date, so there is no timestamp window to check. Removed issues and other kinds of delivery are ignored. If Linear cannot be read the route answers 503 and Linear retries.
+- **The `TL` key rule.** Requirement keys are always `TL-n`, and a Linear issue id is the team's key and a number. Only a team keyed `TL` has issue ids that look like requirement keys, so for that team "Part of TL-12" may name another Linear issue. Throughline ignores explicit references in that team's issues, and the settings page says its links come from suggestions only.
+- **Link suggestions.** They run for an unreferenced Linear issue that completes inside a Linear project. Issues outside any project, which are most bugs and chores, are tracked but get no suggestion, so a busy team does not flood `/review`. GitHub issues still get none.
+- **One piece of work, one reconciliation.** Linear often attaches the PR that fixes an issue, so the issue and the PR can both reach the same requirement. No extra de-duplication is needed: `enqueueReconcile` folds both into one job when they finish before it runs; otherwise the later proposal supersedes the earlier pending one, and once one is approved the requirement is done and reconcile skips it. `src/core/work-items-linear.test.ts` shows all three.
+- **Labels.** The technical view names a Linear issue by its id, such as `ENG-41`, read from the issue's URL, since the stored id is opaque.
 
 ## Views
 
@@ -423,5 +439,5 @@ The public version is built so a private fork can harden it without a rewrite:
 
 - Swap the job table for a real queue (e.g. Inngest, SQS) behind the same `enqueue` function.
 - Add organisations, roles and SSO around the existing `projects` table.
-- Add `SourceAdapter` implementations for Linear or Jira, so their issues are tracked as work items. Linear roadmaps can already be imported through `LinearSource`.
+- Add a `SourceAdapter` for Jira, so its issues are tracked as work items like GitHub's and Linear's, and per-project Linear OAuth in place of the server-wide key.
 - Add support and CRM feedback sources, and the research agent listed under "Future work" in `PLAN.md`; they produce proposals like every other agent.

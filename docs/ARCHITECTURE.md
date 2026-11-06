@@ -338,6 +338,7 @@ A connected Linear team is the second source of work items. Teams that plan in T
 - **The `TL` key rule.** Requirement keys are always `TL-n`, and a Linear issue id is the team's key and a number. Only a team keyed `TL` has issue ids that look like requirement keys, so for that team "Part of TL-12" may name another Linear issue. Throughline ignores explicit references in that team's issues, and the settings page says its links come from suggestions only.
 - **Link suggestions.** They run for an unreferenced Linear issue that completes inside a Linear project. Issues outside any project, which are most bugs and chores, are tracked but get no suggestion, so a busy team does not flood `/review`. GitHub issues still get none.
 - **One piece of work, one reconciliation.** Linear often attaches the PR that fixes an issue, so the issue and the PR can both reach the same requirement. No extra de-duplication is needed: `enqueueReconcile` folds both into one job when they finish before it runs; otherwise the later proposal supersedes the earlier pending one, and once one is approved the requirement is done and reconcile skips it. `src/core/work-items-linear.test.ts` shows all three.
+- **Not yet.** An issue moved to another team is synced only into the projects its new team is connected to; a project connected to the old team keeps its last copy. Per-project Linear OAuth is a follow-up, as for the import.
 - **Labels.** The technical view names a Linear issue by its id, such as `ENG-41`, read from the issue's URL, since the stored id is opaque.
 
 ## Views

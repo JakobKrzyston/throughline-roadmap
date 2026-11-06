@@ -92,6 +92,7 @@ async function ProjectSettings({
   const linearTeams = connected.filter((row) => row.source === "linear");
   // Demo projects connect the sample Linear team, so they need no key.
   const linearReady = project.isDemo || isLinearConfigured();
+  const webhookReady = Boolean(process.env.LINEAR_WEBHOOK_SECRET);
   const missing = missingGitHubSettings();
   const configured = missing.length === 0;
   const installUrl = githubInstallUrl();
@@ -190,13 +191,22 @@ async function ProjectSettings({
             On the public site, Linear teams are connected by the site owner.
           </p>
         ) : linearReady ? (
-          <p className="text-sm text-muted-foreground">
-            Enter the team&rsquo;s key, the letters before the number in its
-            issue ids. Throughline imports its open issues and the issues
-            completed in the last 90 days.
-            {project.isDemo &&
-              " This demo project connects a sample team, ENG."}
-          </p>
+          <>
+            <p className="text-sm text-muted-foreground">
+              Enter the team&rsquo;s key, the letters before the number in its
+              issue ids. Throughline imports its open issues and the issues
+              completed in the last 90 days.
+              {project.isDemo &&
+                " This demo project connects a sample team, ENG."}
+            </p>
+            {!project.isDemo && !webhookReady && (
+              <p className="rounded-md border border-border bg-muted p-3 text-sm">
+                LINEAR_WEBHOOK_SECRET is not set, so teams can be imported but
+                later changes in Linear will not arrive. The webhook setup is in
+                docs/LINEAR.md.
+              </p>
+            )}
+          </>
         ) : (
           <p className="rounded-md border border-border bg-muted p-3 text-sm">
             Linear is not set up on this server, so teams cannot be connected.

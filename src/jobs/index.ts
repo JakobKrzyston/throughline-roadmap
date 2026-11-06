@@ -70,8 +70,9 @@ export async function runQueuedJobs(): Promise<{
         .from(repositories)
         .innerJoin(projects, eq(repositories.projectId, projects.id))
         .where(eq(repositories.id, payload.repositoryId));
-      // Disconnected before the job ran: runBackfill finds nothing and stops.
-      if (row?.source !== "linear") {
+      // Disconnected before the job ran: nothing to import.
+      if (!row) return undefined;
+      if (row.source === "github") {
         return runBackfill(db, getGitHubAdapter(), payload);
       }
       const linear = linearAdapterFor(row);

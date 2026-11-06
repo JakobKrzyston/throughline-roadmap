@@ -1,6 +1,6 @@
 # Build plan
 
-Throughline v1 is built in seven stages. Each stage is one GitHub issue and one pull request. A stage is done when its acceptance criteria pass and CI is green.
+Throughline v1 was built in seven stages; stages 8 and onward extend it. Each stage is one GitHub issue and one pull request. A stage is done when its acceptance criteria pass and CI is green.
 
 Read `docs/ARCHITECTURE.md` before starting any stage.
 
@@ -162,12 +162,79 @@ Ship it publicly and prove it works on itself.
 
 ---
 
+## Stage 8: Import both roadmaps together
+
+Teams that already keep a product roadmap and a technical roadmap bring both and get one proposal. The proposal links each technical item to the product outcome it delivers, and a person checks every link before anything is saved.
+
+**Build**
+
+- Import page: a "Product and technical roadmap" mode with two inputs, each a paste box or a file that goes through `readRoadmapInput`. The current one-input import stays as it is.
+- Line references, not a parser: before the prompt, each non-empty line of each input is prefixed with a reference (`P12`, `T14`). The model cites these references instead of retyping rows. Code checks that every cited reference exists, so the model cannot invent a row. This works for CSV, Markdown and text alike, and adds no dependency. Excel users save as CSV, as with the file import.
+- Paired import agent (`src/agents/paired-import.ts`). Its output:
+  - Outcomes come from the product roadmap, and requirements come from the technical roadmap.
+  - Titles keep the team's own words, minus issue keys and ids (rule 5). The single-input import still writes titles in customer language, but here the team has already chosen its wording.
+  - Each requirement names its outcome, a confidence (`high` or `low`), a one-line reason and the lines it came from.
+  - Product items with no technical work become outcomes with no requirements, so the product view shows them as not started. That gap is itself useful to see.
+  - Technical items that deliver no outcome are **not placed**. They are listed with a suggested outcome, or none.
+- Existing status: technical rows marked in progress or done are imported with that status, so outcome progress is right from day one. `create_requirement` gains an optional `status` that defaults to `planned`. Rows marked won't do, cancelled or duplicate are still left out, and so are rows under a product item that has already shipped. The rationale names what was left out.
+- Proposal storage: a nullable `import_mapping` JSON column on `proposals`, validated by Zod, holds each placed requirement's confidence, reason and lines, plus the unplaced items. It is review metadata, not a graph operation. Approving writes only the operations, as now.
+- Mapping review on `/p/[slug]/review`, for proposals that have an `import_mapping`:
+  - Requirements are grouped under their outcomes, with low-confidence links marked and the reason shown.
+  - A select on each requirement moves it to another outcome in the proposal or the project. This is the one edit that changes a `create_requirement`'s `outcome_key`.
+  - A "Needs a home" list shows each unplaced item. The reviewer places it under an outcome, which turns it into a `create_requirement` operation, or leaves it out.
+  - Approve stays disabled until every unplaced item is placed or left out. The server refuses approval too, since the form cannot be trusted.
+  - Every requirement still serves an outcome. There is no hidden "internal" outcome, and the data model is unchanged apart from `status` on create.
+- Demo: a paired sample (an Acme Analytics product roadmap CSV and a technical roadmap CSV) with its own fixture output. The fixture has one low-confidence link, one outcome with no plan, one done requirement and two unplaced items: one with a suggested outcome, and one that is upkeep ("Upgrade Postgres") with none.
+- Docs: `ARCHITECTURE.md` describes the paired import, `import_mapping`, `status` on `create_requirement` and the mapping review.
+
+**Acceptance criteria**
+
+- With no model key, the paired sample produces its fixture proposal end to end.
+- A model answer that cites a line reference that does not exist fails validation and gets the usual single retry. It is never partially saved.
+- Tests show approval is refused while any item is unplaced, and allowed once each is placed or left out.
+- A test shows that moving a requirement to another outcome, or placing an unplaced item, produces operations that `applyProposal` accepts. The test also shows the approved graph matches what the reviewer chose.
+- A test shows an imported `done` requirement counts toward its outcome's progress straight away, and writes an event like any other create (rule 4).
+- A Playwright smoke test imports the paired sample, places one item, leaves the other out and approves.
+
+---
+
+## Stage 9: Linear issues as work items
+
+Teams that plan in Throughline but assign and track work in Linear get the same tracking as GitHub. Linear issues become work items, and finishing one leads to reconciliation, just like a merged PR. Builds on the Linear client from the Linear roadmap import (#66).
+
+**Build**
+
+- Generalise `SourceAdapter` only as far as Linear needs. `source` becomes `"github" | "linear"`, and the connected container is a repository for GitHub and a team for Linear. Changed files stay GitHub-only. A Linear issue has none, so the agents use its title and description, as they already do without GitHub credentials.
+- `LinearAdapter` in `src/adapters/linear/`, wrapping the existing GraphQL client:
+  - **Id:** the issue's stable Linear id is the `externalId`.
+  - **State:** `completed` becomes `closed`, `canceled` (and duplicate) becomes `not_planned`, and anything else is `open`.
+  - **People:** the assignee, with bots left out.
+  - **Updates:** `updatedAt` is used to ignore deliveries that arrive out of order.
+- Connect a Linear team on `/p/[slug]/settings`. The backfill brings in open issues plus issues completed in the last 90 days, one page per job, like the GitHub backfill.
+- `POST /api/linear/webhook`: verifies the `Linear-Signature` HMAC with `LINEAR_WEBHOOK_SECRET` (added to `.env.example`) and upserts issues through `syncWorkItem`.
+- Links: explicit references (`TL-12`) in a Linear issue's title or description link it the same way a PR's references do. Unreferenced issues that complete go to the link suggestion agent.
+- One piece of work, one reconciliation. Linear often attaches the PR that fixes an issue, so the issue and the PR can both reach the same requirement. Reconcile already skips leaves that are no longer planned or in progress, and a newer proposal supersedes an older pending one. The acceptance tests below show that this is enough, so no new de-duplication is built unless they fail.
+- Throughline only reads from Linear. It never creates, assigns or changes Linear issues.
+- Demo projects use `FakeLinearSource` and never call Linear (rule 7).
+- Docs: `docs/LINEAR.md` gains webhook setup, and `ARCHITECTURE.md` describes the second source.
+
+**Acceptance criteria**
+
+- Webhooks with a bad signature are rejected with 401, and replaying the same webhook twice creates no duplicates.
+- State mapping and reference parsing for Linear issues are unit tested.
+- Completing a Linear issue that references a requirement queues a reconciliation job.
+- A test shows that a Linear issue completing and its attached PR merging leave at most one pending reconcile proposal for the requirement.
+- GitHub sync behaves exactly as before, shown by the existing tests passing unchanged.
+
+---
+
 ## Future work
 
 Designed for, not built in v1. Each has a `future` issue.
 
 - **Feedback ingestion**: GitHub issues labelled `feedback` first, then support and CRM sources. Feedback is clustered and linked to outcomes so you can see customer pull per outcome, and unmatched feedback flags gaps. GitHub is built (see "Feedback" in `ARCHITECTURE.md`); support and CRM sources are still to come.
 - **Research agent**: a scheduled agent that checks planned technical approaches against current libraries and best practice, and watches the product landscape. Findings appear as comments on graph nodes.
-- **More sources**: Linear and Jira `SourceAdapter` implementations.
+- **More sources**: a Jira `SourceAdapter`. Linear is Stage 9.
+- **Re-import as a diff**: keep each imported row's own id, so importing an updated roadmap proposes changes to existing outcomes and requirements instead of duplicates.
 - **Teams and permissions**: organisations, roles (viewer, PM, admin) and SSO.
 - **Digests**: a weekly plain-language summary to Slack or email for non-technical stakeholders. Slack is built (see "Weekly digest" in `ARCHITECTURE.md`); email is still to come.

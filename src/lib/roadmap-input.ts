@@ -1,4 +1,4 @@
-/** Reads and validates the roadmap submitted on the import page, pasted or as a file. Exports readRoadmapInput, RoadmapInput, ROADMAP_FILE_TYPES, MAX_ROADMAP_CHARS, MAX_FILE_BYTES, FILE_TOO_LARGE. */
+/** Reads and validates the roadmap submitted on the import page, pasted or as a file. Exports readRoadmapInput, RoadmapInput, ROADMAP_FILE_TYPES, MAX_ROADMAP_CHARS, MAX_FILE_BYTES, FILE_TOO_LARGE, FILE_EMPTY. */
 import { z } from "zod";
 
 /** File extensions the import page accepts. All are plain text, so no parser is needed. */
@@ -22,6 +22,9 @@ export const MAX_FILE_BYTES = 500_000;
 
 /** The error for a file over MAX_FILE_BYTES, shared with the form's own check. */
 export const FILE_TOO_LARGE = `That file is over ${MAX_FILE_BYTES / 1000} KB. Export fewer rows or columns, or split it.`;
+
+/** The error for a file with no text, shared with the form's check for a 0-byte file. */
+export const FILE_EMPTY = "That file is empty.";
 
 const pastedSchema = z
   .string({ error: "Paste a roadmap or choose a file first." })
@@ -48,7 +51,7 @@ const fileTextSchema = z
     "That file does not look like text. Export it as CSV, Markdown or plain text.",
   )
   .transform((text) => text.trim())
-  .refine((text) => text.length > 0, "That file is empty.")
+  .refine((text) => text.length > 0, FILE_EMPTY)
   .refine(
     (text) => text.length <= MAX_ROADMAP_CHARS,
     `That file has more than ${MAX_ROADMAP_CHARS.toLocaleString("en")} characters of text, too long to import at once. Export fewer rows or columns, or split it.`,
@@ -72,10 +75,8 @@ export async function readRoadmapInput(
 ): Promise<RoadmapInput> {
   const file = formData.get("file");
   const pasted = formData.get("roadmap");
-  // A blank file input sends an empty file named "" (plain form post) or "undefined" (React's decoder).
-  const hasFile =
-    file instanceof File &&
-    (file.size > 0 || (file.name !== "" && file.name !== "undefined"));
+  // A blank file input still sends an empty file. The form itself reports a chosen 0-byte file.
+  const hasFile = file instanceof File && file.size > 0;
 
   if (!hasFile) {
     const roadmap = pastedSchema.safeParse(pasted);
@@ -129,41 +130,107 @@ const ENTITIES: Record<string, string> = {
   quot: '"',
   apos: "'",
   nbsp: " ",
+  lsquo: "‘",
+  rsquo: "’",
+  ldquo: "“",
+  rdquo: "”",
+  ndash: "–",
+  mdash: "—",
+  hellip: "…",
 };
+
+/** Elements whose content is never text a reader sees. */
+const HIDDEN = new Set([
+  "head",
+  "script",
+  "style",
+  "noscript",
+  "template",
+  "svg",
+]);
+/** Elements that start or end a line of text. */
+const BLOCKS = new Set([
+  "p",
+  "div",
+  "br",
+  "ul",
+  "ol",
+  "table",
+  "section",
+  "article",
+  "blockquote",
+  "pre",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+]);
 
 /**
  * Reduce an exported HTML page to its text, keeping headings, list items, paragraphs and table
  * cells apart so the model still sees the structure.
+ *
+ * It walks the page once with indexOf instead of using regular expressions such as
+ * /<!--[\s\S]*?-->/ or /<[^>]*>/, which rescan to the end of the input from every unclosed "<"
+ * and take seconds on a hostile 500 KB file. An unclosed comment, tag or hidden element runs to
+ * the end of the input.
  */
 function htmlToText(html: string): string {
-  const text = html
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(
-      /<(head|script|style|noscript|template|svg)\b[\s\S]*?<\/\1\s*>/gi,
-      "",
-    )
-    .replace(/<h([1-6])\b[^>]*>/gi, (_, level: string) => {
-      return `\n${"#".repeat(Number(level))} `;
-    })
-    .replace(/<li\b[^>]*>/gi, "\n- ")
-    .replace(/<\/t[dh]\s*>/gi, " | ")
-    .replace(/<\/tr\s*>/gi, "\n")
-    .replace(
-      /<\/?(p|div|br|ul|ol|table|section|article|blockquote|pre|h[1-6])\b[^>]*>/gi,
-      "\n",
-    )
-    .replace(/<[^>]*>/g, "")
-    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, code: string) => {
-      if (!code.startsWith("#")) return ENTITIES[code.toLowerCase()] ?? match;
-      const point = /^#x/i.test(code)
-        ? parseInt(code.slice(2), 16)
-        : parseInt(code.slice(1), 10);
-      return point > 0 && point <= 0x10ffff
-        ? String.fromCodePoint(point)
-        : match;
-    });
+  // Where a search that found nothing leaves off: the end of the input.
+  const after = (found: number, length: number): number =>
+    found === -1 ? html.length : found + length;
+  let text = "";
+  let i = 0;
+  while (i < html.length) {
+    const open = html.indexOf("<", i);
+    if (open === -1) {
+      text += html.slice(i);
+      break;
+    }
+    text += html.slice(i, open);
+    if (html.startsWith("<!--", open)) {
+      i = after(html.indexOf("-->", open + 4), 3);
+      continue;
+    }
+    i = after(html.indexOf(">", open), 1);
+    // Lower-cased on its own, since lower-casing can change a string's length and so its indexes.
+    const tag = html.slice(open + 1, i - 1).toLowerCase();
+    const closing = tag.startsWith("/");
+    const opening = !closing && !tag.endsWith("/");
+    const name = /^\/?\s*([a-z][a-z0-9]*)/.exec(tag)?.[1] ?? "";
+    if (HIDDEN.has(name) && opening) {
+      const end = new RegExp(`</${name}`, "gi");
+      end.lastIndex = i;
+      const found = end.exec(html);
+      i = found ? after(html.indexOf(">", found.index), 1) : html.length;
+    } else if (/^h[1-6]$/.test(name) && opening) {
+      text += `\n${"#".repeat(Number(name[1]))} `;
+    } else if (name === "li" && opening) {
+      text += "\n- ";
+    } else if ((name === "td" || name === "th") && closing) {
+      text += " | ";
+    } else if (name === "tr" && closing) {
+      text += "\n";
+    } else if (BLOCKS.has(name)) {
+      text += "\n";
+    }
+  }
   return text
+    .replace(
+      /&(#x[0-9a-f]{1,6}|#\d{1,7}|[a-z]{1,10});/gi,
+      (match, code: string) => {
+        if (!code.startsWith("#")) return ENTITIES[code.toLowerCase()] ?? match;
+        const point = /^#x/i.test(code)
+          ? parseInt(code.slice(2), 16)
+          : parseInt(code.slice(1), 10);
+        return point > 0 && point <= 0x10ffff
+          ? String.fromCodePoint(point)
+          : match;
+      },
+    )
     .replace(/[ \t]+/g, " ")
-    .replace(/ *\n */g, "\n")
+    .replace(/ ?\n ?/g, "\n")
     .replace(/\n{3,}/g, "\n\n");
 }

@@ -5,6 +5,7 @@ import { type ReactElement, useActionState, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
+  FILE_EMPTY,
   FILE_TOO_LARGE,
   MAX_FILE_BYTES,
   ROADMAP_FILE_TYPES,
@@ -18,6 +19,9 @@ import {
 
 /**
  * Form that sends a pasted or uploaded roadmap to the import agent and links to the resulting proposal.
+ *
+ * The form holds either text or a file, never both: whichever the person uses last (typing,
+ * loading a sample or choosing a file) clears the other.
  *
  * Args:
  *   slug: The project's slug.
@@ -37,6 +41,28 @@ export function ImportForm({
   const roadmapRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [sampleError, setSampleError] = useState<string | null>(null);
+  // Counts sample loads and edits, so a sample that arrives after a newer click or edit is dropped.
+  const latestChange = useRef(0);
+
+  function clearFile(): void {
+    fileRef.current!.value = "";
+    setFileError(null);
+  }
+
+  async function loadSample(id: string): Promise<void> {
+    const change = ++latestChange.current;
+    clearFile();
+    setSampleError(null);
+    try {
+      const text = await loadImportSample(id);
+      if (change === latestChange.current) roadmapRef.current!.value = text;
+    } catch {
+      if (change === latestChange.current) {
+        setSampleError("That sample could not be loaded. Please try again.");
+      }
+    }
+  }
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
@@ -48,16 +74,14 @@ export function ImportForm({
             type="button"
             variant="outline"
             size="sm"
-            onClick={async () => {
-              // A sample replaces whatever was chosen, so the form never holds both.
-              fileRef.current!.value = "";
-              setFileError(null);
-              roadmapRef.current!.value = await loadImportSample(sample.id);
-            }}
+            onClick={() => loadSample(sample.id)}
           >
             {sample.label}
           </Button>
         ))}
+        <p aria-live="polite" className="text-destructive">
+          {sampleError}
+        </p>
       </div>
       <label htmlFor="roadmap" className="text-sm font-medium">
         Roadmap
@@ -66,6 +90,11 @@ export function ImportForm({
         id="roadmap"
         name="roadmap"
         ref={roadmapRef}
+        onChange={() => {
+          latestChange.current++;
+          setSampleError(null);
+          if (fileRef.current!.value) clearFile();
+        }}
         rows={16}
         defaultValue={state.status === "error" ? state.roadmap : ""}
         placeholder="Paste a roadmap, planning notes or a product brief. Markdown and CSV are fine."
@@ -82,13 +111,22 @@ export function ImportForm({
           accept={ROADMAP_FILE_TYPES.join(",")}
           ref={fileRef}
           aria-describedby="file-help file-error"
-          // Next.js rejects a request over 1 MB before the action can explain why, so check here
-          // too. The file is cleared rather than marked invalid, since some browsers cannot clear it.
+          // Next.js rejects a request over 1 MB before the action can explain why, and the server
+          // cannot tell a 0-byte file from no file, so both are checked here. A bad file is cleared
+          // rather than marked invalid, since some browsers cannot clear a file input.
           onChange={(event) => {
             const file = event.currentTarget.files?.[0];
-            const tooLarge = !!file && file.size > MAX_FILE_BYTES;
-            if (tooLarge) event.currentTarget.value = "";
-            setFileError(tooLarge ? FILE_TOO_LARGE : null);
+            let error: string | null = null;
+            if (file && file.size > MAX_FILE_BYTES) error = FILE_TOO_LARGE;
+            else if (file && file.size === 0) error = FILE_EMPTY;
+            setFileError(error);
+            if (error) {
+              event.currentTarget.value = "";
+            } else if (file) {
+              latestChange.current++;
+              setSampleError(null);
+              roadmapRef.current!.value = "";
+            }
           }}
           className="text-sm file:mr-3 file:rounded-md file:border file:border-border file:bg-background file:px-2.5 file:py-1 file:text-sm file:font-medium"
         />

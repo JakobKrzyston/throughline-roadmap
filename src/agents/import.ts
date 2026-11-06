@@ -108,20 +108,16 @@ export function buildImportPrompt(roadmap: string): StructuredPrompt {
     description:
       "Record the product outcomes and technical requirements found in the roadmap.",
     system: SYSTEM_PROMPT,
-    user: `<roadmap>\n${stripRoadmapTags(roadmap)}\n</roadmap>`,
+    user: `<roadmap>\n${escapeRoadmapTags(roadmap)}\n</roadmap>`,
   };
 }
 
-// Remove roadmap tags so the text cannot close the data block early. Repeat until none are left,
-// since removing one can join the text around it into another ("<</roadmap>/roadmap>").
-function stripRoadmapTags(roadmap: string): string {
-  let previous;
-  let text = roadmap;
-  do {
-    previous = text;
-    text = text.replace(/<\/?roadmap>/gi, "");
-  } while (text !== previous);
-  return text;
+// Escape the "<" of anything that reads as a roadmap tag, such as "</roadmap>", "< /roadmap >" or
+// "<roadmap id=x>", so the text cannot open or close the data block. Unlike removing the tags,
+// escaping cannot join the text around a tag into a new one ("<</roadmap>/roadmap>"), and the
+// lookahead keeps this linear on hostile input.
+function escapeRoadmapTags(roadmap: string): string {
+  return roadmap.replace(/<(?=\s*\/?\s*roadmap\b)/gi, "&lt;");
 }
 
 /**

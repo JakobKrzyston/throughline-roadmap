@@ -15,8 +15,11 @@ test("a sample export becomes a proposal in the review queue", async ({
 
   const summary = "Import 3 outcomes and 8 requirements from a pasted roadmap";
   await expect(page.getByText(summary)).toBeVisible();
-  await page.getByRole("link", { name: "Review the proposal" }).click();
-  const card = page.getByRole("article", { name: summary });
+  // The link names this proposal's card, which stays unique when a retry imports the sample again.
+  const link = page.getByRole("link", { name: "Review the proposal" });
+  const cardId = (await link.getAttribute("href"))!.split("#")[1];
+  await link.click();
+  const card = page.locator(`article#${cardId}`);
   await expect(
     card.getByText("Customers get their dashboards by email on a schedule"),
   ).toBeVisible();

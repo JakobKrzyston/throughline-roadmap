@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  FILE_EMPTY,
   FILE_TOO_LARGE,
   MAX_FILE_BYTES,
   MAX_ROADMAP_CHARS,
@@ -9,7 +10,7 @@ import {
   type RoadmapInput,
 } from "./roadmap-input";
 
-// A blank file input arrives as an empty file named "undefined" through React's decoder.
+// A blank file input still sends an empty file; through React's decoder it is named "undefined".
 const NO_FILE = new File([], "undefined");
 
 function form(fields: { roadmap?: string; file?: File }): FormData {
@@ -98,23 +99,26 @@ describe("readRoadmapInput", () => {
     );
   });
 
-  it.each([
-    ["0-byte", ""],
-    ["blank", " \n"],
-  ])("refuses a %s file", async (_, content) => {
-    expect(await upload(content, "empty.md")).toEqual({
+  it("refuses a file with only whitespace", async () => {
+    expect(await upload(" \n", "empty.md")).toEqual({
       ok: false,
-      message: "That file is empty.",
+      message: FILE_EMPTY,
     });
   });
 
-  it("refuses a file and pasted text together, even an empty file", async () => {
-    for (const content of ["Plan B", ""]) {
-      const result = await readRoadmapInput(
-        form({ roadmap: "Plan A", file: new File([content], "plan.md") }),
-      );
-      expect(message(result)).toMatch(/not both/);
-    }
+  // Indistinguishable from a blank file input, so the form reports a chosen 0-byte file instead.
+  it("treats a 0-byte file as no file", async () => {
+    expect(await upload("", "empty.md")).toEqual({
+      ok: false,
+      message: "Paste a roadmap or choose a file first.",
+    });
+  });
+
+  it("refuses a file and pasted text together", async () => {
+    const result = await readRoadmapInput(
+      form({ roadmap: "Plan A", file: new File(["Plan B"], "plan.md") }),
+    );
+    expect(message(result)).toMatch(/not both/);
   });
 
   describe("text encodings", () => {
@@ -173,6 +177,33 @@ describe("readRoadmapInput", () => {
         ].join("\n"),
       });
     });
+
+    it("decode typographic and numeric entities", async () => {
+      const html =
+        "<p>&ldquo;Ship it&rdquo; &ndash; it&rsquo;s &lsquo;done&rsquo; &mdash; nearly&hellip; &#8364;5 &#x2192; &#x1F680; &bogus;</p>";
+      expect(await upload(html, "page.html")).toMatchObject({
+        roadmap: "“Ship it” – it’s ‘done’ — nearly… €5 → 🚀 &bogus;",
+      });
+    });
+
+    it("keep the page after a self-closing hidden element, and drop an unclosed one to the end", async () => {
+      expect(
+        await upload("<svg/><p>Plan A</p><script>x", "page.html"),
+      ).toMatchObject({ roadmap: "Plan A" });
+    });
+
+    // A 500 KB file of each pattern; regular expressions like /<!--[\s\S]*?-->/ take seconds.
+    it.each(["<!--", "<script", "<h1", "<", "<li", "&#1"])(
+      "are reduced in linear time when %j repeats with nothing closing it",
+      async (pattern) => {
+        const html = pattern.repeat(
+          Math.floor(MAX_FILE_BYTES / pattern.length),
+        );
+        const started = performance.now();
+        await upload(html, "page.html");
+        expect(performance.now() - started).toBeLessThan(500);
+      },
+    );
 
     it("are measured after the markup is removed", async () => {
       const padding = `<div style="${"x".repeat(MAX_ROADMAP_CHARS)}">`;

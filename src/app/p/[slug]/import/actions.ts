@@ -41,9 +41,6 @@ export async function generateImportProposal(
     roadmap: typeof raw === "string" ? raw : "",
   });
 
-  const input = await readRoadmapInput(formData);
-  if (!input.ok) return fail(input.message);
-
   const db = getDb();
   const [project] = await db
     .select({ id: projects.id, isDemo: projects.isDemo })
@@ -53,6 +50,9 @@ export async function generateImportProposal(
   if (isViewOnly(project)) {
     return fail("This project is view-only on this server.");
   }
+  // Read and decode the file only once the project may be changed.
+  const input = await readRoadmapInput(formData);
+  if (!input.ok) return fail(input.message);
 
   // Without a model, a sample export gets the proposal written for it.
   const demoFixtures = importFixturesFor(input.roadmap);

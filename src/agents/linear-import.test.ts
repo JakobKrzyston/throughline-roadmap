@@ -50,6 +50,7 @@ function project(
     priority: 0,
     sortOrder: 0,
     initiatives: [],
+    teams: [TEAM],
     ...overrides,
   };
 }
@@ -196,6 +197,41 @@ describe("planFromLinear", () => {
     );
   });
 
+  it("names open projects whose initiatives are all canceled apart from those in none", () => {
+    const plan = planFromLinear(TEAM, [
+      project("loose"),
+      project("orphan", {
+        initiatives: [initiative("gone", { status: "Canceled" })],
+      }),
+    ]);
+
+    expect(plan?.outcomes).toHaveLength(2);
+    expect(plan?.rationale).toContain(
+      "1 project in no initiative became an outcome of its own.",
+    );
+    expect(plan?.rationale).toContain(
+      "1 open project whose initiatives are all canceled became an outcome of its own; leave it out if the work was dropped with the initiative.",
+    );
+  });
+
+  it("flags projects shared with other teams, which their imports propose again", () => {
+    const platform = { id: "team-2", name: "Platform" };
+    const data = { id: "team-3", name: "Data" };
+    const plan = planFromLinear(TEAM, [
+      project("mine"),
+      project("shared-1", { teams: [TEAM, platform] }),
+      project("shared-2", { teams: [data, TEAM, platform] }),
+    ]);
+
+    expect(plan?.outcomes).toHaveLength(3);
+    expect(plan?.rationale).toContain(
+      "2 projects are shared with Data, Platform. Importing those teams proposes them again, so approve them only once.",
+    );
+    expect(planFromLinear(TEAM, [project("mine")])?.rationale).not.toContain(
+      "shared",
+    );
+  });
+
   it("returns null when nothing is left to import", () => {
     expect(planFromLinear(TEAM, [])).toBeNull();
     expect(
@@ -243,7 +279,7 @@ describe("runLinearImport", () => {
     );
 
     expect(summary).toBe(
-      "Import 3 outcomes and 5 requirements from the Linear team Product",
+      "Import 3 outcomes and 6 requirements from the Linear team Product",
     );
     const [proposal] = await db.select().from(proposals);
     expect(proposal).toMatchObject({
@@ -251,6 +287,7 @@ describe("runLinearImport", () => {
       source: "import",
       status: "pending",
     });
+    expect(proposal.rationale).toContain("1 project is shared with Platform.");
     const operations = operationListSchema.parse(proposal.operations);
     expect(
       operations.map((op) => [op.type, "key" in op ? op.key : null]),
@@ -258,11 +295,12 @@ describe("runLinearImport", () => {
       ["create_outcome", "OUT-1"],
       ["create_requirement", "TL-1"],
       ["create_requirement", "TL-2"],
-      ["create_outcome", "OUT-2"],
       ["create_requirement", "TL-3"],
+      ["create_outcome", "OUT-2"],
       ["create_requirement", "TL-4"],
-      ["create_outcome", "OUT-3"],
       ["create_requirement", "TL-5"],
+      ["create_outcome", "OUT-3"],
+      ["create_requirement", "TL-6"],
     ]);
 
     await applyProposal(db, proposalId, "pm");
@@ -279,7 +317,7 @@ describe("runLinearImport", () => {
       ]),
     );
     const created = await db.select().from(requirements);
-    expect(created).toHaveLength(5);
+    expect(created).toHaveLength(6);
     expect(created.every((requirement) => requirement.team === "Product")).toBe(
       true,
     );

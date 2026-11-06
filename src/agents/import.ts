@@ -7,7 +7,7 @@ import { targetSchema } from "@/core/schedule";
 import type { Database } from "@/db/client";
 import { proposals } from "@/db/schema";
 
-import { workTypeOutput } from "./context";
+import { count, workTypeOutput } from "./context";
 import { lastKeyNumbers } from "./keys";
 
 export const IMPORT_TASK = "roadmap_import";
@@ -151,27 +151,24 @@ export async function runImport(
   return saveImportProposal(db, projectId, output, source);
 }
 
+type ImportOutput = z.output<typeof importOutputSchema>;
+type OutputOutcome = ImportOutput["outcomes"][number];
+type OutputRequirement = OutputOutcome["requirements"][number];
+
 /**
- * The outcomes and requirements an import proposes, as the model returns them or as they are read
- * from a planning tool such as Linear. Requirements may also carry a target and a team.
+ * The outcomes and requirements an import proposes: the model's output, or the same shape read
+ * from a planning tool such as Linear. Derived from importOutputSchema so a new output field
+ * reaches here too. Beyond the model's output, a requirement may have no work type, and may carry
+ * a target and a team.
  */
-export type ImportPlan = {
-  rationale: string;
-  outcomes: {
-    title: string;
-    description: string;
-    target: string | null;
-    priority: number;
-    requirements: {
-      title: string;
-      description: string;
-      user_visible: boolean;
+export type ImportPlan = Omit<ImportOutput, "outcomes"> & {
+  outcomes: (Omit<OutputOutcome, "requirements"> & {
+    requirements: (Omit<OutputRequirement, "work_type"> & {
       work_type: WorkType | null;
-      product_note: string | null;
       target?: string | null;
       team?: string | null;
-    }[];
-  }[];
+    })[];
+  })[];
 };
 
 /**
@@ -244,8 +241,4 @@ function toOperations(
       })),
     ];
   });
-}
-
-function count(n: number, noun: string): string {
-  return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }

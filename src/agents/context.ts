@@ -1,4 +1,4 @@
-/** Builds the size-limited work item context agents send to the model, and output fields agents share. Exports summariseChanges, describeChanges, dataBlock, workTypeOutput and the size limits. */
+/** Builds the size-limited work item context agents send to the model, and output fields agents share. Exports summariseChanges, describeChanges, dataBlock, workTypeOutput, count and the size limits. */
 import { and, eq } from "drizzle-orm";
 
 import { workTypeSchema } from "@/core/operations";
@@ -170,6 +170,16 @@ function basename(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
 }
 
-function count(n: number, noun: string): string {
+/**
+ * A number with its noun, plural unless the number is 1.
+ *
+ * Args:
+ *   n: How many.
+ *   noun: The singular noun, e.g. "file".
+ *
+ * Returns:
+ *   E.g. "1 file" or "3 files".
+ */
+export function count(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }

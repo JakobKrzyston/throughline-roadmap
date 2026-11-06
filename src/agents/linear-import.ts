@@ -8,6 +8,7 @@ import {
 } from "@/adapters/linear/source";
 import type { Database } from "@/db/client";
 
+import { count } from "./context";
 import { type ImportPlan, saveImportProposal } from "./import";
 
 // The import records planned work, as file imports do: finished and dropped projects stay out.
@@ -45,9 +46,12 @@ export function linearTarget(
  *
  * Each initiative becomes an outcome and its projects become requirements. A project in no
  * initiative becomes an outcome with itself as the only requirement, since a Linear project is
- * usually one capability that ships on its own. A project in several initiatives goes under the
- * first by priority, then Linear's order. Outcomes are numbered in that same order, initiatives
- * first. Completed and canceled projects, and canceled initiatives, are left out.
+ * usually one capability that ships on its own. So does an open project whose initiatives are all
+ * canceled: the work is still planned, and the rationale names these apart. A project in several
+ * initiatives goes under the first by priority, then Linear's order. Outcomes are numbered in that
+ * same order, initiatives first. Completed and canceled projects, and canceled initiatives, are
+ * left out. Projects shared with other teams are kept and counted in the rationale, since
+ * importing those teams proposes them again.
  *
  * Args:
  *   team: The team the projects belong to; it becomes each requirement's team.
@@ -74,12 +78,20 @@ export function planFromLinear(
   >();
   const standalone: LinearProject[] = [];
   let inSeveral = 0;
+  let initiativesCanceled = 0;
+  let shared = 0;
+  const otherTeams = new Set<string>();
   for (const project of open) {
+    const others = project.teams.filter((other) => other.id !== team.id);
+    if (others.length > 0) shared++;
+    others.forEach((other) => otherTeams.add(other.name));
+
     const homes = project.initiatives
       .filter((initiative) => initiative.status !== "Canceled")
       .sort(byPriority);
     if (homes.length > 1) inSeveral++;
     if (homes.length === 0) {
+      if (project.initiatives.length > 0) initiativesCanceled++;
       standalone.push(project);
       continue;
     }
@@ -127,9 +139,12 @@ export function planFromLinear(
   return {
     rationale: rationale(team.name, {
       open: open.length,
-      standalone: standalone.length,
+      noInitiative: standalone.length - initiativesCanceled,
+      initiativesCanceled,
       leftOut: projects.length - open.length,
       inSeveral,
+      shared,
+      otherTeams: [...otherTeams].sort(),
     }),
     outcomes,
   };
@@ -187,22 +202,38 @@ function rationale(
   teamName: string,
   counts: {
     open: number;
-    standalone: number;
+    noInitiative: number;
+    initiativesCanceled: number;
     leftOut: number;
     inSeveral: number;
+    shared: number;
+    otherTeams: string[];
   },
 ): string {
   const sentences = [
     `Read ${count(counts.open, "open project")} from the Linear team ${teamName}. Each initiative became an outcome, with its projects as requirements.`,
   ];
-  if (counts.standalone > 0) {
+  const ownOutcome = (n: number) =>
+    n === 1 ? "an outcome of its own" : "outcomes of their own";
+  if (counts.noInitiative > 0) {
     sentences.push(
-      `${count(counts.standalone, "project")} in no initiative became ${counts.standalone === 1 ? "an outcome of its own" : "outcomes of their own"}.`,
+      `${count(counts.noInitiative, "project")} in no initiative became ${ownOutcome(counts.noInitiative)}.`,
+    );
+  }
+  if (counts.initiativesCanceled > 0) {
+    sentences.push(
+      `${count(counts.initiativesCanceled, "open project")} whose initiatives are all canceled became ${ownOutcome(counts.initiativesCanceled)}; leave ${counts.initiativesCanceled === 1 ? "it" : "them"} out if the work was dropped with the initiative.`,
     );
   }
   if (counts.inSeveral > 0) {
     sentences.push(
       `${count(counts.inSeveral, "project")} in more than one initiative ${counts.inSeveral === 1 ? "is" : "are"} under the highest-priority one.`,
+    );
+  }
+  if (counts.shared > 0) {
+    const teams = counts.otherTeams.join(", ");
+    sentences.push(
+      `${count(counts.shared, "project")} ${counts.shared === 1 ? "is" : "are"} shared with ${teams}. Importing ${counts.otherTeams.length === 1 ? "that team" : "those teams"} proposes ${counts.shared === 1 ? "it" : "them"} again, so approve ${counts.shared === 1 ? "it" : "them"} only once.`,
     );
   }
   if (counts.leftOut > 0) {
@@ -214,8 +245,4 @@ function rationale(
     "Linear does not say which work customers can see, so no requirement is marked as visible to customers: set that, and reword outcomes for customers, before approving.",
   );
   return sentences.join(" ");
-}
-
-function count(n: number, noun: string): string {
-  return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }

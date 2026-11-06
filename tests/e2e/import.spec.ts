@@ -67,11 +67,14 @@ test("a Linear team from the sample workspace becomes a proposal", async ({
   await page.goto(IMPORT_PAGE);
 
   await expect(page.getByText("reads a sample Linear workspace")).toBeVisible();
+  // Teams load only on request, so the page itself never waits on Linear.
+  await expect(page.getByLabel("Linear team")).toHaveCount(0);
+  await page.getByRole("button", { name: "Choose a Linear team" }).click();
   await page.getByLabel("Linear team").selectOption({ label: "Product" });
   await page.getByRole("button", { name: "Import from Linear" }).click();
 
   const summary =
-    "Import 3 outcomes and 5 requirements from the Linear team Product";
+    "Import 3 outcomes and 6 requirements from the Linear team Product";
   await expect(page.getByText(summary)).toBeVisible();
   const link = page.getByRole("link", { name: "Review the proposal" });
   const cardId = (await link.getAttribute("href"))!.split("#")[1];

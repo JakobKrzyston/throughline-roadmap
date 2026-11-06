@@ -20,6 +20,6 @@ The key applies to the whole server, the same way the GitHub App credentials do.
 
 ## 3. Import
 
-Open `/p/<project>/import`, pick a team under **Import from Linear**, and click **Import from Linear**. Before you approve, reword outcomes for customers where the initiative's name is internal shorthand, and mark which requirements customers can see. Linear does not record that, so the import marks none of them.
+Open `/p/<project>/import`, click **Choose a Linear team** under **Import from Linear**, pick a team, and click **Import from Linear**. Before you approve, reword outcomes for customers where the initiative's name is internal shorthand, and mark which requirements customers can see. Linear does not record that, so the import marks none of them. A project shared with other teams appears in each of their imports; the proposal says which, so approve it once.
 
 If Linear rejects the key, limits requests or cannot be reached, the page says so and nothing is saved.

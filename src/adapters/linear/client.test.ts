@@ -40,7 +40,26 @@ function projectNode(id: string, overrides: Record<string, unknown> = {}) {
     priority: 0,
     sortOrder: 1,
     status: { type: "planned" },
-    initiatives: { nodes: [] },
+    initiatives: connection([]),
+    teams: connection([{ id: "team-1", name: "Product" }]),
+    ...overrides,
+  };
+}
+
+function connection(nodes: unknown[], endCursor: string | null = null) {
+  return { nodes, pageInfo: { hasNextPage: endCursor !== null, endCursor } };
+}
+
+function initiativeNode(id: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    name: `Initiative ${id}`,
+    description: "",
+    status: "Active",
+    targetDate: null,
+    targetDateResolution: null,
+    priority: 0,
+    sortOrder: 1,
     ...overrides,
   };
 }
@@ -127,7 +146,7 @@ describe("LinearApiSource.readTeamProjects", () => {
             targetDate: "2027-05-14",
             priority: 2,
             status: { type: "started" },
-            initiatives: { nodes: [initiative] },
+            initiatives: connection([initiative]),
           }),
         ],
         "c1",
@@ -155,6 +174,7 @@ describe("LinearApiSource.readTeamProjects", () => {
       priority: 2,
       sortOrder: 1,
       initiatives: [{ ...initiative, description: "" }],
+      teams: [{ id: "team-1", name: "Product" }],
     });
     // A resolution Linear adds later is read as a plain date.
     expect(projects[1].targetDateResolution).toBeNull();
@@ -176,11 +196,97 @@ describe("LinearApiSource.readTeamProjects", () => {
     ).rejects.toThrow("Linear could not be reached");
   });
 
+  it("reads the rest of a project's initiatives and teams past the first page", async () => {
+    const { fetchFn, requests } = stubFetch(
+      projectsPage(
+        [
+          projectNode("p1", {
+            initiatives: connection([initiativeNode("i1")], "ic1"),
+            teams: connection([{ id: "team-1", name: "Product" }], "tc1"),
+          }),
+        ],
+        null,
+      ),
+      {
+        body: {
+          data: {
+            project: {
+              initiatives: connection([initiativeNode("i2")], "ic2"),
+            },
+          },
+        },
+      },
+      {
+        body: {
+          data: {
+            project: { initiatives: connection([initiativeNode("i3")]) },
+          },
+        },
+      },
+      {
+        body: {
+          data: {
+            project: {
+              teams: connection([{ id: "team-2", name: "Platform" }]),
+            },
+          },
+        },
+      },
+    );
+
+    const { projects } = await new LinearApiSource(
+      "key",
+      fetchFn,
+    ).readTeamProjects("team-1");
+
+    expect(projects[0].initiatives.map((i) => i.id)).toEqual([
+      "i1",
+      "i2",
+      "i3",
+    ]);
+    expect(projects[0].teams.map((t) => t.name)).toEqual([
+      "Product",
+      "Platform",
+    ]);
+    expect(requests.slice(1).map((request) => request.body.variables)).toEqual([
+      { projectId: "p1", after: "ic1" },
+      { projectId: "p1", after: "ic2" },
+      { projectId: "p1", after: "tc1" },
+    ]);
+  });
+
+  it("fails rather than drop initiatives when a later initiatives page fails", async () => {
+    const { fetchFn } = stubFetch(
+      projectsPage(
+        [projectNode("p1", { initiatives: connection([], "ic1") })],
+        null,
+      ),
+      { status: 502, body: null },
+    );
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(
+      new LinearApiSource("key", fetchFn).readTeamProjects("team-1"),
+    ).rejects.toThrow("could not read");
+  });
+
   it("says when the team does not exist", async () => {
-    const { fetchFn } = stubFetch({ body: { data: { team: null } } });
+    // Query.team returns Team!, so Linear answers an unknown id with an error, not null.
+    const { fetchFn } = stubFetch({
+      status: 400,
+      body: {
+        data: null,
+        errors: [
+          {
+            message: "Entity not found: Team - Could not find referenced Team.",
+            extensions: { type: "invalid input", code: "INVALID_INPUT" },
+          },
+        ],
+      },
+    });
     await expect(
       new LinearApiSource("key", fetchFn).readTeamProjects("nope"),
-    ).rejects.toThrow("That Linear team was not found.");
+    ).rejects.toThrow(/^That Linear team was not found\.$/);
   });
 });
 
@@ -231,10 +337,10 @@ describe("LinearApiSource errors", () => {
   it("passes on other GraphQL errors", async () => {
     await expect(
       source({
-        body: { errors: [{ message: "Entity not found: Team" }] },
+        body: { errors: [{ message: "Argument Validation Error" }] },
       }).listTeams(),
     ).rejects.toThrow(
-      "Linear returned an error, so nothing was imported: Entity not found: Team",
+      "Linear returned an error, so nothing was imported: Argument Validation Error",
     );
   });
 

@@ -1,15 +1,60 @@
 "use server";
-/** Server action behind the import page's "Import from Linear" form. Exports importFromLinear and its state type. */
+/** Server actions behind the import page's "Import from Linear" form. Exports loadLinearTeams, importFromLinear and their result types. */
 import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { linearSourceFor } from "@/adapters/linear";
-import { LinearError } from "@/adapters/linear/source";
+import { LinearError, type LinearTeam } from "@/adapters/linear/source";
 import { runLinearImport } from "@/agents/linear-import";
 import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
 import { isViewOnly } from "@/lib/public-deployment";
+
+export type LinearTeamsResult =
+  { ok: true; teams: LinearTeam[] } | { ok: false; message: string };
+
+/**
+ * List the Linear teams a project can import from, when the form asks for them.
+ *
+ * Teams are read on request rather than with the page, so people who only paste or upload never
+ * wait on Linear.
+ *
+ * Args:
+ *   slug: The project's slug.
+ *
+ * Returns:
+ *   The teams, or a message saying why they could not be read.
+ */
+export async function loadLinearTeams(
+  slug: string,
+): Promise<LinearTeamsResult> {
+  const [project] = await getDb()
+    .select({ isDemo: projects.isDemo })
+    .from(projects)
+    .where(eq(projects.slug, slug));
+  if (!project) return { ok: false, message: "Project not found." };
+  if (isViewOnly(project)) {
+    return { ok: false, message: "This project is view-only on this server." };
+  }
+  try {
+    const teams = await linearSourceFor(project).source.listTeams();
+    return teams.length > 0
+      ? { ok: true, teams }
+      : {
+          ok: false,
+          message: "The Linear workspace has no teams this API key can read.",
+        };
+  } catch (error) {
+    if (error instanceof LinearError)
+      return { ok: false, message: error.message };
+    console.error("Listing Linear teams failed:", error);
+    return {
+      ok: false,
+      message: "Something went wrong while reading Linear. Please try again.",
+    };
+  }
+}
 
 export type LinearImportState =
   | { status: "idle" }

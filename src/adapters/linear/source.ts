@@ -42,7 +42,10 @@ export type LinearProject = {
   priority: number;
   /** Linear's manual order: lower comes first. */
   sortOrder: number;
+  /** Every initiative the project belongs to. */
   initiatives: LinearInitiative[];
+  /** Every team the project is shared with, including the team it was read from. */
+  teams: LinearTeam[];
 };
 
 /** Reads the roadmap of a Linear workspace: its teams, and each team's projects. */
@@ -59,7 +62,8 @@ export interface LinearSource {
   listTeams(): Promise<LinearTeam[]>;
 
   /**
-   * Read one team and all of its projects that are not archived.
+   * Read one team and all of its projects that are not archived, including projects it shares
+   * with other teams.
    *
    * Every page is read before this returns, so a failure part way never yields a partial list.
    *

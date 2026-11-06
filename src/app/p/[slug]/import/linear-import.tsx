@@ -1,13 +1,14 @@
-/** The import page's "Import from Linear" section: reads the workspace's teams and shows the form, or why Linear cannot be read. Exports LinearImport. */
+/** The import page's "Import from Linear" section: what the import does, which workspace it reads, and the form. Exports LinearImport. */
 import type { ReactElement } from "react";
 
 import { linearSourceFor } from "@/adapters/linear";
-import { LinearError, type LinearTeam } from "@/adapters/linear/source";
 
 import { LinearImportForm } from "./linear-import-form";
 
 /**
  * Section that imports a Linear team's initiatives and projects as a proposal.
+ *
+ * It calls nothing on Linear itself; the form loads the teams when asked.
  *
  * Args:
  *   slug: The project's slug.
@@ -16,22 +17,14 @@ import { LinearImportForm } from "./linear-import-form";
  * Returns:
  *   The section.
  */
-export async function LinearImport({
+export function LinearImport({
   slug,
   isDemo,
 }: {
   slug: string;
   isDemo: boolean;
-}): Promise<ReactElement> {
-  const { source, sample } = linearSourceFor({ isDemo });
-  let teams: LinearTeam[] = [];
-  let error: string | null = null;
-  try {
-    teams = await source.listTeams();
-  } catch (caught) {
-    if (!(caught instanceof LinearError)) throw caught;
-    error = caught.message;
-  }
+}): ReactElement {
+  const { sample } = linearSourceFor({ isDemo });
 
   return (
     <section
@@ -53,15 +46,7 @@ export async function LinearImport({
             : "No LINEAR_API_KEY is set, so this reads a sample Linear workspace. See docs/LINEAR.md to import your own."}
         </p>
       )}
-      {error ? (
-        <p className="text-sm text-destructive">{error}</p>
-      ) : teams.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          The Linear workspace has no teams this API key can read.
-        </p>
-      ) : (
-        <LinearImportForm slug={slug} teams={teams} />
-      )}
+      <LinearImportForm slug={slug} />
     </section>
   );
 }

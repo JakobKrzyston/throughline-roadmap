@@ -10,9 +10,10 @@ import {
 
 export const LINEAR_API_URL = "https://api.linear.app/graphql";
 
-// Linear's default page size. Projects ask for at most 10 initiatives each, which keeps a page
-// well inside Linear's per-query complexity limit.
+// Linear's default page size. Each project asks for its first 10 initiatives and teams, which
+// keeps a page well inside Linear's per-query complexity limit; the rest are read separately.
 const PAGE_SIZE = 50;
+const NESTED_PAGE_SIZE = 10;
 const TIMEOUT_MS = 20_000;
 
 const pageInfo = z.object({
@@ -51,21 +52,29 @@ const project = z.object({
   targetDateResolution: resolution,
   priority: z.number().int(),
   sortOrder: z.number(),
-  initiatives: z
-    .object({ nodes: z.array(initiative) })
-    .transform((connection) => connection.nodes),
+  initiatives: z.object({ nodes: z.array(initiative), pageInfo }),
+  teams: z.object({ nodes: z.array(team), pageInfo }),
 });
 
 const teamsData = z.object({
   teams: z.object({ nodes: z.array(team), pageInfo }),
 });
 
+// Query.team returns Team!: an unknown id is a GraphQL "Entity not found" error, not null.
 const teamProjectsData = z.object({
-  team: team
-    .extend({
-      projects: z.object({ nodes: z.array(project), pageInfo }),
-    })
-    .nullable(),
+  team: team.extend({
+    projects: z.object({ nodes: z.array(project), pageInfo }),
+  }),
+});
+
+const projectInitiativesData = z.object({
+  project: z.object({
+    initiatives: z.object({ nodes: z.array(initiative), pageInfo }),
+  }),
+});
+
+const projectTeamsData = z.object({
+  project: z.object({ teams: z.object({ nodes: z.array(team), pageInfo }) }),
 });
 
 const graphqlErrors = z.object({
@@ -98,12 +107,41 @@ const TEAM_PROJECTS_QUERY = `query TeamProjects($teamId: String!, $after: String
       nodes {
         id name description targetDate targetDateResolution priority sortOrder
         status { type }
-        initiatives(first: 10) { nodes { ${INITIATIVE_FIELDS} } }
+        initiatives(first: ${NESTED_PAGE_SIZE}) {
+          nodes { ${INITIATIVE_FIELDS} }
+          pageInfo { hasNextPage endCursor }
+        }
+        teams(first: ${NESTED_PAGE_SIZE}) {
+          nodes { id name }
+          pageInfo { hasNextPage endCursor }
+        }
       }
       pageInfo { hasNextPage endCursor }
     }
   }
 }`;
+
+const PROJECT_INITIATIVES_QUERY = `query ProjectInitiatives($projectId: String!, $after: String) {
+  project(id: $projectId) {
+    initiatives(first: ${PAGE_SIZE}, after: $after) {
+      nodes { ${INITIATIVE_FIELDS} }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}`;
+
+const PROJECT_TEAMS_QUERY = `query ProjectTeams($projectId: String!, $after: String) {
+  project(id: $projectId) {
+    teams(first: ${PAGE_SIZE}, after: $after) {
+      nodes { id name }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}`;
+
+const TEAM_NOT_FOUND = "That Linear team was not found.";
+const CHANGED_WHILE_READING =
+  "A Linear project changed while it was being read, so nothing was imported. Please try again.";
 
 /** Reads teams and projects from Linear with a workspace API key. */
 export class LinearApiSource implements LinearSource {
@@ -145,20 +183,78 @@ export class LinearApiSource implements LinearSource {
         TEAM_PROJECTS_QUERY,
         { teamId, after },
         teamProjectsData,
+        TEAM_NOT_FOUND,
       );
-      if (!data.team) throw new LinearError("That Linear team was not found.");
       found = { id: data.team.id, name: data.team.name };
-      projects.push(...data.team.projects.nodes);
+      for (const node of data.team.projects.nodes) {
+        projects.push({
+          ...node,
+          initiatives: [
+            ...node.initiatives.nodes,
+            ...(await this.restOfInitiatives(
+              node.id,
+              node.initiatives.pageInfo,
+            )),
+          ],
+          teams: [
+            ...node.teams.nodes,
+            ...(await this.restOfTeams(node.id, node.teams.pageInfo)),
+          ],
+        });
+      }
       const page = data.team.projects.pageInfo;
       after = page.hasNextPage ? page.endCursor : null;
     } while (after);
-    return { team: found, projects };
+    return { team: found!, projects };
+  }
+
+  // The initiatives after a project's first page, for the rare project in more than ten.
+  private async restOfInitiatives(
+    projectId: string,
+    first: z.output<typeof pageInfo>,
+  ): Promise<z.output<typeof initiative>[]> {
+    const rest: z.output<typeof initiative>[] = [];
+    let after = first.hasNextPage ? first.endCursor : null;
+    while (after) {
+      const data: z.output<typeof projectInitiativesData> = await this.query(
+        PROJECT_INITIATIVES_QUERY,
+        { projectId, after },
+        projectInitiativesData,
+        CHANGED_WHILE_READING,
+      );
+      rest.push(...data.project.initiatives.nodes);
+      const page = data.project.initiatives.pageInfo;
+      after = page.hasNextPage ? page.endCursor : null;
+    }
+    return rest;
+  }
+
+  // The teams after a project's first page, for a project shared with more than ten.
+  private async restOfTeams(
+    projectId: string,
+    first: z.output<typeof pageInfo>,
+  ): Promise<LinearTeam[]> {
+    const rest: LinearTeam[] = [];
+    let after = first.hasNextPage ? first.endCursor : null;
+    while (after) {
+      const data: z.output<typeof projectTeamsData> = await this.query(
+        PROJECT_TEAMS_QUERY,
+        { projectId, after },
+        projectTeamsData,
+        CHANGED_WHILE_READING,
+      );
+      rest.push(...data.project.teams.nodes);
+      const page = data.project.teams.pageInfo;
+      after = page.hasNextPage ? page.endCursor : null;
+    }
+    return rest;
   }
 
   private async query<T>(
     query: string,
     variables: Record<string, unknown>,
     schema: z.ZodType<T>,
+    notFoundMessage?: string,
   ): Promise<T> {
     let response: Response;
     try {
@@ -198,6 +294,13 @@ export class LinearApiSource implements LinearSource {
       throw new LinearError(
         "Linear is limiting requests right now. Wait a minute and try again.",
       );
+    }
+    // Linear answers a lookup by an unknown or deleted id with "Entity not found: Team - …".
+    if (
+      notFoundMessage &&
+      errors.some((error) => /^entity not found/i.test(error.message))
+    ) {
+      throw new LinearError(notFoundMessage);
     }
     if (errors.length > 0) {
       throw new LinearError(

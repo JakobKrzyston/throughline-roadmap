@@ -43,6 +43,9 @@ const euData: LinearInitiative = {
   sortOrder: 3,
 };
 
+const product: LinearTeam = { id: "sample-team-product", name: "Product" };
+const platform: LinearTeam = { id: "sample-team-platform", name: "Platform" };
+
 function project(
   fields: Partial<LinearProject> & Pick<LinearProject, "id" | "name">,
 ): LinearProject {
@@ -54,24 +57,40 @@ function project(
     priority: 0,
     sortOrder: 0,
     initiatives: [],
+    teams: [],
     ...fields,
   };
 }
 
-/** The sample workspace: two teams, their projects and the initiatives those belong to. */
+// Shared by both teams, so each team's import includes it.
+const pushService = project({
+  id: "sample-project-push-service",
+  name: "Push notification service",
+  description: "Send push notifications to the iOS and Android apps.",
+  targetDate: "2027-04-01",
+  targetDateResolution: "month",
+  priority: 2,
+  sortOrder: 3,
+  initiatives: [mobile],
+  teams: [platform, product],
+});
+
+/** The sample workspace: two teams, their projects (one shared by both) and the initiatives those belong to. */
 export const SAMPLE_LINEAR_WORKSPACE: {
   team: LinearTeam;
   projects: LinearProject[];
 }[] = [
   {
-    team: { id: "sample-team-product", name: "Product" },
+    team: product,
     projects: [
+      pushService,
       project({
         id: "sample-project-mobile-viewer",
         name: "Mobile dashboard viewer",
         description: "Read-only dashboards in a layout that fits a phone.",
         targetDate: "2027-05-14",
         priority: 2,
+        teams: [product],
         sortOrder: 1,
         initiatives: [mobile],
       }),
@@ -82,6 +101,7 @@ export const SAMPLE_LINEAR_WORKSPACE: {
           "Notify people on their phone when a metric crosses a threshold they set.",
         status: "backlog",
         priority: 3,
+        teams: [product],
         sortOrder: 2,
         initiatives: [mobile],
       }),
@@ -93,6 +113,7 @@ export const SAMPLE_LINEAR_WORKSPACE: {
         targetDate: "2027-02-01",
         targetDateResolution: "month",
         priority: 2,
+        teams: [product],
         sortOrder: 3,
         initiatives: [darkMode],
       }),
@@ -101,6 +122,7 @@ export const SAMPLE_LINEAR_WORKSPACE: {
         name: "Wall-screen display mode",
         description: "Full-screen dashboards that refresh themselves.",
         priority: 4,
+        teams: [product],
         sortOrder: 4,
         initiatives: [darkMode],
       }),
@@ -112,6 +134,7 @@ export const SAMPLE_LINEAR_WORKSPACE: {
         targetDate: "2027-01-01",
         targetDateResolution: "halfYear",
         priority: 3,
+        teams: [product],
         sortOrder: 5,
       }),
       project({
@@ -119,18 +142,20 @@ export const SAMPLE_LINEAR_WORKSPACE: {
         name: "Dashboard comments",
         description: "Discuss a chart next to the data.",
         status: "completed",
+        teams: [product],
         sortOrder: 6,
       }),
       project({
         id: "sample-project-report-builder",
         name: "Rewrite the legacy report builder",
         status: "canceled",
+        teams: [product],
         sortOrder: 7,
       }),
     ],
   },
   {
-    team: { id: "sample-team-platform", name: "Platform" },
+    team: platform,
     projects: [
       project({
         id: "sample-project-eu-region",
@@ -140,6 +165,7 @@ export const SAMPLE_LINEAR_WORKSPACE: {
         targetDate: "2027-07-01",
         targetDateResolution: "quarter",
         priority: 1,
+        teams: [platform],
         sortOrder: 1,
         initiatives: [euData],
       }),
@@ -149,19 +175,11 @@ export const SAMPLE_LINEAR_WORKSPACE: {
         description: "Keep each account's backups in the region it chose.",
         status: "backlog",
         priority: 3,
+        teams: [platform],
         sortOrder: 2,
         initiatives: [euData],
       }),
-      project({
-        id: "sample-project-push-service",
-        name: "Push notification service",
-        description: "Send push notifications to the iOS and Android apps.",
-        targetDate: "2027-04-01",
-        targetDateResolution: "month",
-        priority: 2,
-        sortOrder: 3,
-        initiatives: [mobile],
-      }),
+      pushService,
     ],
   },
 ];

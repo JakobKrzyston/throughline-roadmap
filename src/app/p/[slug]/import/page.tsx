@@ -91,10 +91,7 @@ async function ProjectImport({
             // Only the buttons; a sample's text is fetched when its button is clicked.
             samples={IMPORT_SAMPLES.map(({ id, label }) => ({ id, label }))}
           />
-          {/* Its own boundary, so a slow Linear never holds up the paste form. */}
-          <Suspense fallback={<FormSkeleton />}>
-            <LinearImport slug={slug} isDemo={project.isDemo} />
-          </Suspense>
+          <LinearImport slug={slug} isDemo={project.isDemo} />
         </>
       )}
     </>

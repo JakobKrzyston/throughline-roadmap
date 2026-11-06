@@ -26,6 +26,8 @@ const decisionSchema = z.object({
   decision: z.enum(["approve", "reject"]),
   // The edited operations as JSON, present only for "edit then approve".
   operations: z.string().optional(),
+  // A paired import's moves and placements as JSON, checked by applyProposal.
+  mapping: z.string().optional(),
 });
 
 /**
@@ -34,7 +36,8 @@ const decisionSchema = z.object({
  * Args:
  *   slug: The project's slug, bound by the page.
  *   _previous: The form's previous state (unused; required by useActionState).
- *   formData: `proposalId`, `decision` (`approve` or `reject`) and, after an edit, `operations`.
+ *   formData: `proposalId`, `decision` (`approve` or `reject`), after an edit `operations`, and
+ *     for a paired import `mapping`.
  *
  * Returns:
  *   The decision once made (the page refreshes and the proposal moves to "Recently decided"), or
@@ -52,7 +55,7 @@ export async function decideProposal(
   });
   const input = decisionSchema.safeParse(Object.fromEntries(formData));
   if (!input.success) return fail("That request was not understood.");
-  const { proposalId, decision, operations } = input.data;
+  const { proposalId, decision, operations, mapping } = input.data;
 
   // Visitors' wording would show on the public demo until the nightly reset.
   if (operations !== undefined && isPublicDeployment()) {
@@ -61,12 +64,13 @@ export async function decideProposal(
     );
   }
   let edited: unknown;
-  if (operations !== undefined) {
-    try {
-      edited = JSON.parse(operations);
-    } catch {
-      return fail("The edits could not be read.");
-    }
+  let mappingDecisions: unknown;
+  try {
+    if (operations !== undefined) edited = JSON.parse(operations);
+    // Moves and placements choose between outcomes and write no wording, so the demo allows them.
+    if (mapping !== undefined) mappingDecisions = JSON.parse(mapping);
+  } catch {
+    return fail("The edits could not be read.");
   }
 
   // Only decide proposals that belong to the project in the URL.
@@ -83,7 +87,15 @@ export async function decideProposal(
   try {
     if (decision === "reject") {
       await rejectProposal(db, proposalId, REVIEWER);
-    } else if ((await approveProposal(db, proposalId, REVIEWER, edited)) > 0) {
+    } else if (
+      (await approveProposal(
+        db,
+        proposalId,
+        REVIEWER,
+        edited,
+        mappingDecisions,
+      )) > 0
+    ) {
       after(runQueuedJobs);
     }
   } catch (error) {

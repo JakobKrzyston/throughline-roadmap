@@ -106,6 +106,10 @@ export function describeOperations(
             { field: "Description", after: op.description || null },
             { field: "Visible to customers", after: yesNo(op.user_visible) },
             { field: "Product note", after: op.product_note || null },
+            // An import may bring work that is already under way or finished.
+            ...(op.status !== "planned"
+              ? [{ field: "Status", after: STATUS_LABELS[op.status] }]
+              : []),
             ...(op.target ? [{ field: "Target", after: op.target }] : []),
             ...(op.work_type
               ? [

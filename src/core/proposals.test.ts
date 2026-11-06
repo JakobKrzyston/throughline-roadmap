@@ -312,6 +312,33 @@ describe("applyProposal with edits", () => {
     expect(proposal.operations).toMatchObject(edited);
   });
 
+  it("refuses mapping choices for a proposal without an import mapping", async () => {
+    const proposalId = await propose(exportOutcome);
+
+    await expect(
+      applyProposal(db, proposalId, "pm", undefined, {
+        moves: { "TL-1": "OUT-2" },
+      }),
+    ).rejects.toThrow("This proposal has no import mapping to change");
+    expect(await db.select().from(outcomes)).toHaveLength(0);
+  });
+
+  it("creates a requirement as planned unless the operation gives a status", async () => {
+    await approve([
+      ...exportOutcome,
+      {
+        type: "create_requirement",
+        key: "TL-2",
+        outcome_key: "OUT-1",
+        title: "Export button",
+        status: "done",
+      },
+    ]);
+
+    expect((await requirementByKey("TL-1")).status).toBe("planned");
+    expect((await requirementByKey("TL-2")).status).toBe("done");
+  });
+
   it("refuses an edit that changes what the proposal touches", async () => {
     await approve(exportOutcome);
     const before = await snapshot();

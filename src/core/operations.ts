@@ -1,4 +1,4 @@
-/** Zod schemas for the typed graph operations a proposal carries. Exports graphOperationSchema, operationListSchema, leafStatusSchema, workTypeSchema, WORK_TYPE_LABELS and their types. */
+/** Zod schemas for the typed graph operations a proposal carries. Exports graphOperationSchema, operationListSchema, createRequirementSchema, leafStatusSchema, workTypeSchema, WORK_TYPE_LABELS and their types. */
 import { z } from "zod";
 
 import { targetSchema } from "./schedule";
@@ -57,7 +57,8 @@ const updateOutcome = z
     nothingToChange,
   );
 
-const createRequirement = z.object({
+/** A new requirement under an outcome. Exported so an import can hold one back until a reviewer places it. */
+export const createRequirementSchema = z.object({
   type: z.literal("create_requirement"),
   key,
   outcome_key: key,
@@ -68,6 +69,8 @@ const createRequirement = z.object({
   target: targetSchema.nullish(),
   work_type: workTypeSchema.nullish(),
   team: team.nullish(),
+  // Set by an import that brings work already under way or finished, so progress is right at once.
+  status: leafStatusSchema.default("planned"),
 });
 
 // Children get no team of their own, so they inherit the parent's.
@@ -152,7 +155,7 @@ const unlinkFeedback = z.object({
 export const graphOperationSchema = z.discriminatedUnion("type", [
   createOutcome,
   updateOutcome,
-  createRequirement,
+  createRequirementSchema,
   splitRequirement,
   updateRequirement,
   setStatus,

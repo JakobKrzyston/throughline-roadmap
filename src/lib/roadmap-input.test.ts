@@ -6,6 +6,8 @@ import {
   FILE_TOO_LARGE,
   MAX_FILE_BYTES,
   MAX_ROADMAP_CHARS,
+  PAIRED_FILES_TOO_LARGE,
+  readPairedRoadmapInput,
   readRoadmapInput,
   type RoadmapInput,
 } from "./roadmap-input";
@@ -225,3 +227,57 @@ function utf16(text: string, littleEndian: boolean): number[] {
     return littleEndian ? [code & 0xff, code >> 8] : [code >> 8, code & 0xff];
   });
 }
+
+describe("readPairedRoadmapInput", () => {
+  function pairedForm(fields: {
+    product?: string;
+    productFile?: File;
+    technical?: string;
+    technicalFile?: File;
+  }): FormData {
+    const data = new FormData();
+    data.set("product_roadmap", fields.product ?? "");
+    data.set("product_file", fields.productFile ?? NO_FILE);
+    data.set("technical_roadmap", fields.technical ?? "");
+    data.set("technical_file", fields.technicalFile ?? NO_FILE);
+    return data;
+  }
+
+  it("reads each roadmap from its own prefixed fields, pasted or uploaded", async () => {
+    expect(
+      await readPairedRoadmapInput(
+        pairedForm({
+          product: " Outcomes\n",
+          technicalFile: new File(["Key,Summary\nT-1,Work"], "plan.csv"),
+        }),
+      ),
+    ).toEqual({
+      ok: true,
+      product: "Outcomes",
+      technical: "Key,Summary\nT-1,Work",
+    });
+  });
+
+  it("says which roadmap is wrong", async () => {
+    expect(
+      await readPairedRoadmapInput(pairedForm({ product: "Outcomes" })),
+    ).toEqual({
+      ok: false,
+      message: "Technical roadmap: Paste a roadmap or choose a file first.",
+    });
+  });
+
+  it("refuses two files over 900 KB together, though each is within its own limit", async () => {
+    const file = (name: string): File => new File(["a".repeat(460_000)], name);
+    expect(file("x.csv").size).toBeLessThanOrEqual(MAX_FILE_BYTES);
+
+    expect(
+      await readPairedRoadmapInput(
+        pairedForm({
+          productFile: file("product.csv"),
+          technicalFile: file("technical.csv"),
+        }),
+      ),
+    ).toEqual({ ok: false, message: PAIRED_FILES_TOO_LARGE });
+  });
+});

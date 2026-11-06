@@ -16,6 +16,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import type { ImportMappingInput } from "@/core/import-mapping";
 import type { GraphOperationInput } from "@/core/operations";
 
 export const requirementStatus = pgEnum("requirement_status", [
@@ -264,6 +265,9 @@ export const proposals = pgTable("proposals", {
   rationale: text("rationale").notNull().default(""),
   // Validated with operationListSchema when the proposal is applied.
   operations: jsonb("operations").$type<GraphOperationInput[]>().notNull(),
+  // Set by a paired roadmap import: where each item came from and how sure each link is. Review
+  // metadata, validated with importMappingSchema; approving writes only the operations.
+  importMapping: jsonb("import_mapping").$type<ImportMappingInput>(),
   triggerWorkItemId: uuid("trigger_work_item_id").references(
     () => workItems.id,
     { onDelete: "set null" },

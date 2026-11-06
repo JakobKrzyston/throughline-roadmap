@@ -7,9 +7,10 @@ import { outcomes, projects, proposals, requirements } from "@/db/schema";
 /**
  * Lock the project and find the highest `OUT-n` and `TL-n` numbers in use.
  *
- * Counts keys in the graph and keys that pending proposals would create. Call it inside the
- * transaction that inserts the new proposal: the project row lock makes two agents running at
- * once wait for each other instead of picking the same keys.
+ * Counts keys in the graph and keys that pending proposals would create, including the keys held
+ * for unplaced import items. Call it inside the transaction that inserts the new proposal: the
+ * project row lock makes two agents running at once wait for each other instead of picking the
+ * same keys.
  *
  * Args:
  *   tx: Transaction the new proposal will be written in.
@@ -30,7 +31,10 @@ export async function lastKeyNumbers(
   // Pending proposals first, then the graph: a proposal approved in between has its keys in the
   // graph by the second read, so no key can slip between the two.
   const pending = await tx
-    .select({ operations: proposals.operations })
+    .select({
+      operations: proposals.operations,
+      importMapping: proposals.importMapping,
+    })
     .from(proposals)
     .where(
       and(eq(proposals.projectId, projectId), eq(proposals.status, "pending")),
@@ -43,8 +47,8 @@ export async function lastKeyNumbers(
     .select({ key: requirements.key })
     .from(requirements)
     .where(eq(requirements.projectId, projectId));
-  const proposed = pending.flatMap(({ operations }) =>
-    operations.flatMap((op) => {
+  const proposed = pending.flatMap(({ operations, importMapping }) => [
+    ...operations.flatMap((op) => {
       if (op.type === "create_outcome" || op.type === "create_requirement") {
         return [op.key];
       }
@@ -53,7 +57,9 @@ export async function lastKeyNumbers(
       }
       return [];
     }),
-  );
+    // An unplaced import item keeps its key in case the reviewer places it.
+    ...(importMapping?.unplaced.map((item) => item.requirement.key) ?? []),
+  ]);
   const taken = [...outcomeRows, ...requirementRows]
     .map((row) => row.key)
     .concat(proposed);

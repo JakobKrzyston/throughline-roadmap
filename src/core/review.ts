@@ -23,6 +23,7 @@ import { isFinished } from "./work-items";
  *   proposalId: The proposal to approve.
  *   actor: The reviewer.
  *   editedOperations: The reviewer's edited operations, if they changed any (see applyProposal).
+ *   mappingDecisions: A paired import's moves and placements (see applyProposal).
  *
  * Returns:
  *   How many jobs were queued.
@@ -35,9 +36,16 @@ export async function approveProposal(
   proposalId: string,
   actor: string,
   editedOperations?: unknown,
+  mappingDecisions?: unknown,
 ): Promise<number> {
   return db.transaction(async (tx) => {
-    await applyProposal(tx, proposalId, actor, editedOperations);
+    await applyProposal(
+      tx,
+      proposalId,
+      actor,
+      editedOperations,
+      mappingDecisions,
+    );
 
     const [proposal] = await tx
       .select()

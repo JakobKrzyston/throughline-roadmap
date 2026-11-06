@@ -13,6 +13,11 @@ import {
   workItems,
 } from "@/db/schema";
 
+import {
+  importMappingSchema,
+  mappingDecisionsSchema,
+  resolveImportMapping,
+} from "./import-mapping";
 import { type GraphOperation, operationListSchema } from "./operations";
 import { describeTargetMove } from "./schedule";
 
@@ -43,17 +48,20 @@ export class ProposalError extends Error {
  *   actor: User id of the person approving it.
  *   editedOperations: The reviewer's edited copy of the operations, applied and stored in place of
  *     the originals. Edits may change wording and values but not what the proposal touches.
+ *   mappingDecisions: For a proposal with an import mapping, the reviewer's moves and placements
+ *     (see resolveImportMapping). The resulting operations are applied and stored.
  *
  * Raises:
- *   ProposalError: The proposal is missing or not pending, an edit changes what it touches, or an
- *     operation is invalid for the current graph.
- *   ZodError: The stored or edited operations do not match the operation schema.
+ *   ProposalError: The proposal is missing or not pending, an edit changes what it touches, an
+ *     imported item still needs a home, or an operation is invalid for the current graph.
+ *   ZodError: The stored or edited operations, or the mapping choices, do not match their schema.
  */
 export async function applyProposal(
   db: Database,
   proposalId: string,
   actor: string,
   editedOperations?: unknown,
+  mappingDecisions?: unknown,
 ): Promise<void> {
   await db.transaction(async (tx) => {
     const proposal = await lockPendingProposal(tx, proposalId);
@@ -69,6 +77,21 @@ export async function applyProposal(
         );
       }
       operations = edited;
+    }
+    // Moving a requirement or placing an unplaced one changes what the proposal touches, so it
+    // goes through the mapping, which checks every choice, rather than through an edit.
+    if (proposal.importMapping !== null) {
+      const resolved = resolveImportMapping(
+        operations,
+        importMappingSchema.parse(proposal.importMapping),
+        mappingDecisionsSchema.parse(mappingDecisions ?? {}),
+      );
+      if (!resolved.ok) throw new ProposalError(resolved.message);
+      operations = operationListSchema.parse(resolved.operations);
+    } else if (mappingDecisions !== undefined) {
+      throw new ProposalError("This proposal has no import mapping to change");
+    }
+    if (editedOperations !== undefined || proposal.importMapping !== null) {
       await tx
         .update(proposals)
         .set({ operations })
@@ -190,7 +213,7 @@ async function applyOperation(
           outcomeId: outcome.id,
           title: op.title,
           description: op.description,
-          status: "planned",
+          status: op.status,
           userVisible: op.user_visible,
           productNote: op.product_note,
           target: op.target,

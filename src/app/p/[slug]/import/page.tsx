@@ -12,7 +12,7 @@ import { projects } from "@/db/schema";
 import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
 
 import { ViewOnlyNotice } from "../view-only-notice";
-import { ImportForm } from "./import-form";
+import { ImportModes } from "./import-modes";
 import { LinearImport } from "./linear-import";
 
 // Up to two model calls run in this page's server action; allow them more than the platform default.
@@ -41,8 +41,9 @@ export default function ImportPage({
         <p className="text-muted-foreground">
           Paste a roadmap, upload an export from the tool you plan in, or read
           it straight from Linear, and Throughline drafts its product outcomes
-          and technical requirements as a proposal. Nothing changes until you
-          approve it in the review queue.
+          and technical requirements as a proposal. Teams that keep a product
+          roadmap and a technical roadmap can bring both together. Nothing
+          changes until you approve it in the review queue.
         </p>
       </div>
       {/* The project lookup runs per request; the heading above is the static shell. */}
@@ -82,11 +83,12 @@ async function ProjectImport({
               <p className="rounded-md border border-border bg-muted p-3 text-sm">
                 Demo mode: each sample export gets a proposal written for it,
                 and anything else you paste or upload gets the same sample
-                proposal.
+                proposal. A product and a technical roadmap can be imported
+                together only as their sample.
               </p>
             )
           )}
-          <ImportForm
+          <ImportModes
             slug={slug}
             // Only the buttons; a sample's text is fetched when its button is clicked.
             samples={IMPORT_SAMPLES.map(({ id, label }) => ({ id, label }))}

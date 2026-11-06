@@ -42,9 +42,6 @@ export async function importFromLinear(
     status: "error",
     message,
   });
-  const teamId = teamIdSchema.safeParse(formData.get("team"));
-  if (!teamId.success) return fail(teamId.error.issues[0].message);
-
   const db = getDb();
   const [project] = await db
     .select({ id: projects.id, isDemo: projects.isDemo })
@@ -54,6 +51,8 @@ export async function importFromLinear(
   if (isViewOnly(project)) {
     return fail("This project is view-only on this server.");
   }
+  const teamId = teamIdSchema.safeParse(formData.get("team"));
+  if (!teamId.success) return fail(teamId.error.issues[0].message);
 
   try {
     const { proposalId, summary } = await runLinearImport(

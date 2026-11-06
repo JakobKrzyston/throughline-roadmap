@@ -73,8 +73,10 @@ test("a Linear team from the sample workspace becomes a proposal", async ({
   const summary =
     "Import 3 outcomes and 5 requirements from the Linear team Product";
   await expect(page.getByText(summary)).toBeVisible();
-  await page.getByRole("link", { name: "Review the proposal" }).click();
-  const card = page.getByRole("article", { name: summary });
+  const link = page.getByRole("link", { name: "Review the proposal" });
+  const cardId = (await link.getAttribute("href"))!.split("#")[1];
+  await link.click();
+  const card = page.locator(`article#${cardId}`);
   await expect(card.getByText("Dashboards on the go")).toBeVisible();
   await expect(card.getByText("Dashboard comments")).toHaveCount(0);
 });

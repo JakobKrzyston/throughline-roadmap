@@ -9,22 +9,10 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: { baseURL: `http://localhost:${PORT}`, trace: "on-first-retry" },
-  projects: [
-    {
-      name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
-      testIgnore: "import.spec.ts",
-    },
-    // Imports add proposals, which would change the counts review.spec.ts checks, so they run after.
-    {
-      name: "import",
-      use: { ...devices["Desktop Chrome"] },
-      testMatch: "import.spec.ts",
-      dependencies: ["chromium"],
-    },
-  ],
+  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: `pnpm db:migrate && pnpm db:seed && pnpm build && pnpm start --port ${PORT}`,
+    // The import specs get a project of their own, so the demo's proposal counts stay as seeded.
+    command: `pnpm db:migrate && pnpm db:seed && pnpm exec tsx tests/e2e/seed-import-project.ts && pnpm build && pnpm start --port ${PORT}`,
     url: `http://localhost:${PORT}`,
     timeout: 300_000,
     reuseExistingServer: false,

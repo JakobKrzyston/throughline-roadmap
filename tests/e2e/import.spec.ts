@@ -1,10 +1,13 @@
 /** Smoke test: a roadmap imports from a sample export or an uploaded file, and a bad file is explained. */
 import { expect, test } from "@playwright/test";
 
+// An empty project made by seed-import-project.ts, so these imports leave the demo's queue alone.
+const IMPORT_PAGE = "/p/import-e2e/import";
+
 test("a sample export becomes a proposal in the review queue", async ({
   page,
 }) => {
-  await page.goto("/p/acme-analytics/import");
+  await page.goto(IMPORT_PAGE);
 
   await page.getByRole("button", { name: "Jira CSV" }).click();
   await expect(page.getByLabel("Roadmap")).toHaveValue(/^Summary,Issue key/);
@@ -20,7 +23,7 @@ test("a sample export becomes a proposal in the review queue", async ({
 });
 
 test("an uploaded file becomes a proposal", async ({ page }) => {
-  await page.goto("/p/acme-analytics/import");
+  await page.goto(IMPORT_PAGE);
 
   await page.getByLabel("Or upload an export").setInputFiles({
     name: "roadmap.md",
@@ -30,14 +33,16 @@ test("an uploaded file becomes a proposal", async ({ page }) => {
   await page.getByRole("button", { name: "Generate proposal" }).click();
 
   await expect(
-    page.getByText("Import 2 outcomes and 5 requirements from roadmap.md"),
+    page.getByText(
+      "Import 2 outcomes and 5 requirements from an uploaded file",
+    ),
   ).toBeVisible();
 });
 
 test("an unsupported file gets a clear error and saves nothing", async ({
   page,
 }) => {
-  await page.goto("/p/acme-analytics/import");
+  await page.goto(IMPORT_PAGE);
 
   await page.getByLabel("Or upload an export").setInputFiles({
     name: "roadmap.xlsx",

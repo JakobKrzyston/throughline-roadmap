@@ -199,7 +199,7 @@ describe("on a public deployment", () => {
 
     expect(result).toMatchObject({
       status: "success",
-      summary: "Import 3 outcomes and 7 requirements from roadmap.md",
+      summary: "Import 3 outcomes and 7 requirements from an uploaded file",
     });
     const [proposal] = await db
       .select()

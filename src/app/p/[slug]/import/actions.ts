@@ -1,12 +1,12 @@
 "use server";
-/** Server action behind the import page. Exports generateImportProposal and its state type. */
+/** Server actions behind the import page. Exports generateImportProposal, its state type, and loadImportSample. */
 import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 
 import { getDemoLLMProvider, getLLMProvider } from "@/adapters/llm";
 import { LLMOutputError } from "@/adapters/llm/provider";
 import { runImport } from "@/agents/import";
-import { importFixturesFor } from "@/agents/import-samples";
+import { IMPORT_SAMPLES, importFixturesFor } from "@/agents/import-samples";
 import { getDb } from "@/db/client";
 import { projects } from "@/db/schema";
 import { isPublicDeployment, isViewOnly } from "@/lib/public-deployment";
@@ -81,4 +81,17 @@ export async function generateImportProposal(
       "Something went wrong while generating the proposal, so nothing was saved. Please try again.",
     );
   }
+}
+
+/**
+ * Return one sample export's text, so the page only sends a sample when someone asks for it.
+ *
+ * Args:
+ *   id: The sample's id, from the button that was clicked.
+ *
+ * Returns:
+ *   The sample's text, or an empty string for an unknown id.
+ */
+export async function loadImportSample(id: string): Promise<string> {
+  return IMPORT_SAMPLES.find((sample) => sample.id === id)?.content ?? "";
 }

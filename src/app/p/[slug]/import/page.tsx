@@ -86,12 +86,8 @@ async function ProjectImport({
           )}
           <ImportForm
             slug={slug}
-            // Only what the form shows; the demo outputs stay on the server.
-            samples={IMPORT_SAMPLES.map(({ id, label, content }) => ({
-              id,
-              label,
-              content,
-            }))}
+            // Only the buttons; a sample's text is fetched when its button is clicked.
+            samples={IMPORT_SAMPLES.map(({ id, label }) => ({ id, label }))}
           />
         </>
       )}

@@ -3,16 +3,32 @@ import { describe, expect, it } from "vitest";
 
 import {
   FILE_TOO_LARGE,
+  MAX_FILE_BYTES,
   MAX_ROADMAP_CHARS,
   readRoadmapInput,
+  type RoadmapInput,
 } from "./roadmap-input";
+
+// A blank file input arrives as an empty file named "undefined" through React's decoder.
+const NO_FILE = new File([], "undefined");
 
 function form(fields: { roadmap?: string; file?: File }): FormData {
   const data = new FormData();
-  // A browser sends both fields, and React's decoder names the empty file from a blank input "undefined".
+  // A browser sends both fields.
   data.set("roadmap", fields.roadmap ?? "");
-  data.set("file", fields.file ?? new File([], "undefined"));
+  data.set("file", fields.file ?? NO_FILE);
   return data;
+}
+
+async function upload(
+  content: BlobPart,
+  name = "roadmap.csv",
+): Promise<RoadmapInput> {
+  return readRoadmapInput(form({ file: new File([content], name) }));
+}
+
+function message(result: RoadmapInput): string {
+  return result.ok ? "" : result.message;
 }
 
 describe("readRoadmapInput", () => {
@@ -22,6 +38,15 @@ describe("readRoadmapInput", () => {
       roadmap: "Plan A",
       source: "a pasted roadmap",
     });
+  });
+
+  it.each([
+    ["React's decoder", NO_FILE],
+    ["a plain form post", new File([], "")],
+  ])("reads pasted text beside a blank file input from %s", async (_, file) => {
+    expect(
+      await readRoadmapInput(form({ roadmap: "Plan A", file })),
+    ).toMatchObject({ ok: true, roadmap: "Plan A" });
   });
 
   it("asks for a roadmap when nothing is given", async () => {
@@ -38,57 +63,134 @@ describe("readRoadmapInput", () => {
     expect(result).toMatchObject({ ok: false });
   });
 
-  it.each([
-    "roadmap.md",
-    "Roadmap.MARKDOWN",
-    "notes.txt",
-    "Jira.CSV",
-    "page.html",
-    "page.htm",
-  ])("reads an uploaded %s file and names it as the source", async (name) => {
-    const file = new File(["﻿Summary,Issue Type\nExport,Epic\n"], name);
-    expect(await readRoadmapInput(form({ file }))).toEqual({
-      ok: true,
-      roadmap: "Summary,Issue Type\nExport,Epic",
-      source: name,
-    });
-  });
+  it.each(["roadmap.md", "Roadmap.MARKDOWN", "notes.txt", "Jira.CSV"])(
+    "reads an uploaded %s file without naming it",
+    async (name) => {
+      expect(await upload("﻿Summary,Issue Type\nExport,Epic\n", name)).toEqual({
+        ok: true,
+        roadmap: "Summary,Issue Type\nExport,Epic",
+        // A shared demo would show other visitors whatever the name says.
+        source: "an uploaded file",
+      });
+    },
+  );
 
   it.each(["roadmap.xlsx", "roadmap.docx", "roadmap.pdf", "csv"])(
     "refuses a %s file",
     async (name) => {
-      const result = await readRoadmapInput(
-        form({ file: new File(["data"], name) }),
-      );
-      expect(result).toMatchObject({ ok: false });
-      expect(!result.ok && result.message).toMatch(/not supported/);
+      expect(message(await upload("data", name))).toMatch(/not supported/);
     },
   );
 
-  it("refuses a file over the limit, and accepts one at it", async () => {
-    const at = new File(["x".repeat(MAX_ROADMAP_CHARS)], "big.csv");
-    const over = new File(["x".repeat(MAX_ROADMAP_CHARS + 1)], "big.csv");
-
-    expect(await readRoadmapInput(form({ file: at }))).toMatchObject({
-      ok: true,
-    });
-    expect(await readRoadmapInput(form({ file: over }))).toEqual({
+  it("refuses a file over the byte limit", async () => {
+    expect(await upload("x".repeat(MAX_FILE_BYTES + 1))).toEqual({
       ok: false,
       message: FILE_TOO_LARGE,
     });
   });
 
-  it("refuses an empty file", async () => {
-    expect(
-      await readRoadmapInput(form({ file: new File([" \n"], "empty.md") })),
-    ).toEqual({ ok: false, message: "That file is empty." });
+  it("refuses a file with more text than one import takes, and accepts one at the limit", async () => {
+    expect(await upload("x".repeat(MAX_ROADMAP_CHARS))).toMatchObject({
+      ok: true,
+    });
+    expect(message(await upload("x".repeat(MAX_ROADMAP_CHARS + 1)))).toMatch(
+      /more than 50,000 characters/,
+    );
   });
 
-  it("refuses a file and pasted text together", async () => {
-    const result = await readRoadmapInput(
-      form({ roadmap: "Plan A", file: new File(["Plan B"], "plan.md") }),
-    );
-    expect(result).toMatchObject({ ok: false });
-    expect(!result.ok && result.message).toMatch(/not both/);
+  it.each([
+    ["0-byte", ""],
+    ["blank", " \n"],
+  ])("refuses a %s file", async (_, content) => {
+    expect(await upload(content, "empty.md")).toEqual({
+      ok: false,
+      message: "That file is empty.",
+    });
+  });
+
+  it("refuses a file and pasted text together, even an empty file", async () => {
+    for (const content of ["Plan B", ""]) {
+      const result = await readRoadmapInput(
+        form({ roadmap: "Plan A", file: new File([content], "plan.md") }),
+      );
+      expect(message(result)).toMatch(/not both/);
+    }
+  });
+
+  describe("text encodings", () => {
+    const text = "Café rollout – Q1 “launch”";
+
+    it("reads UTF-16 with a byte order mark", async () => {
+      const le = new Uint8Array([0xff, 0xfe, ...utf16(text, true)]);
+      const be = new Uint8Array([0xfe, 0xff, ...utf16(text, false)]);
+      expect(await upload(le)).toMatchObject({ roadmap: text });
+      expect(await upload(be)).toMatchObject({ roadmap: text });
+    });
+
+    it("reads Windows-1252, as Excel saves CSV", async () => {
+      // "Café rollout – Q1 “launch”" in Windows-1252.
+      const bytes = new Uint8Array([
+        ...ascii("Caf"),
+        0xe9,
+        ...ascii(" rollout "),
+        0x96,
+        ...ascii(" Q1 "),
+        0x93,
+        ...ascii("launch"),
+        0x94,
+      ]);
+      expect(await upload(bytes)).toMatchObject({ roadmap: text });
+    });
+
+    it("refuses binary data", async () => {
+      const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00]);
+      expect(message(await upload(bytes))).toMatch(/does not look like text/);
+    });
+  });
+
+  describe("HTML files", () => {
+    it("are reduced to their text, keeping the structure", async () => {
+      const html = `<!doctype html><html><head><title>Roadmap</title>
+        <style>.x { color: red }</style><script>alert("hi")</script></head>
+        <body><!-- exported by Confluence --><h1 class="title">2027 roadmap</h1>
+        <p>Teams asked for <strong>scheduled</strong>&nbsp;reports &amp; alerts.</p>
+        <ul><li>Email delivery</li><li>Slack delivery &#8211; maybe</li></ul>
+        <table><tr><th>Item</th><th>When</th></tr><tr><td>PDF export</td><td>Q2</td></tr></table>
+        </body></html>`;
+
+      expect(await upload(html, "roadmap.html")).toMatchObject({
+        ok: true,
+        roadmap: [
+          "# 2027 roadmap",
+          "",
+          "Teams asked for scheduled reports & alerts.",
+          "",
+          "- Email delivery",
+          "- Slack delivery – maybe",
+          "",
+          "Item | When |",
+          "PDF export | Q2 |",
+        ].join("\n"),
+      });
+    });
+
+    it("are measured after the markup is removed", async () => {
+      const padding = `<div style="${"x".repeat(MAX_ROADMAP_CHARS)}">`;
+      expect(await upload(`${padding}Plan A</div>`, "page.htm")).toMatchObject({
+        ok: true,
+        roadmap: "Plan A",
+      });
+    });
   });
 });
+
+function ascii(text: string): number[] {
+  return [...text].map((char) => char.charCodeAt(0));
+}
+
+function utf16(text: string, littleEndian: boolean): number[] {
+  return [...text].flatMap((char) => {
+    const code = char.charCodeAt(0);
+    return littleEndian ? [code & 0xff, code >> 8] : [code >> 8, code & 0xff];
+  });
+}

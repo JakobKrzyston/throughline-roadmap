@@ -1,16 +1,20 @@
 "use client";
 /** The import page's form: paste box, file upload, sample exports and "Generate proposal" button. Exports ImportForm. */
 import Link from "next/link";
-import { type ReactElement, useActionState, useRef } from "react";
+import { type ReactElement, useActionState, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
   FILE_TOO_LARGE,
-  MAX_ROADMAP_CHARS,
+  MAX_FILE_BYTES,
   ROADMAP_FILE_TYPES,
 } from "@/lib/roadmap-input";
 
-import { generateImportProposal, type ImportState } from "./actions";
+import {
+  generateImportProposal,
+  type ImportState,
+  loadImportSample,
+} from "./actions";
 
 /**
  * Form that sends a pasted or uploaded roadmap to the import agent and links to the resulting proposal.
@@ -24,13 +28,15 @@ export function ImportForm({
   samples,
 }: {
   slug: string;
-  samples: { id: string; label: string; content: string }[];
+  samples: { id: string; label: string }[];
 }): ReactElement {
   const [state, formAction, pending] = useActionState<ImportState, FormData>(
     generateImportProposal.bind(null, slug),
     { status: "idle" },
   );
   const roadmapRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
@@ -42,8 +48,11 @@ export function ImportForm({
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => {
-              roadmapRef.current!.value = sample.content;
+            onClick={async () => {
+              // A sample replaces whatever was chosen, so the form never holds both.
+              fileRef.current!.value = "";
+              setFileError(null);
+              roadmapRef.current!.value = await loadImportSample(sample.id);
             }}
           >
             {sample.label}
@@ -71,21 +80,29 @@ export function ImportForm({
           name="file"
           type="file"
           accept={ROADMAP_FILE_TYPES.join(",")}
-          aria-describedby="file-help"
-          // Next.js rejects a request over 1 MB before the action can explain why, so check here too.
+          ref={fileRef}
+          aria-describedby="file-help file-error"
+          // Next.js rejects a request over 1 MB before the action can explain why, so check here
+          // too. The file is cleared rather than marked invalid, since some browsers cannot clear it.
           onChange={(event) => {
             const file = event.currentTarget.files?.[0];
-            event.currentTarget.setCustomValidity(
-              file && file.size > MAX_ROADMAP_CHARS ? FILE_TOO_LARGE : "",
-            );
-            event.currentTarget.reportValidity();
+            const tooLarge = !!file && file.size > MAX_FILE_BYTES;
+            if (tooLarge) event.currentTarget.value = "";
+            setFileError(tooLarge ? FILE_TOO_LARGE : null);
           }}
           className="text-sm file:mr-3 file:rounded-md file:border file:border-border file:bg-background file:px-2.5 file:py-1 file:text-sm file:font-medium"
         />
         <p id="file-help" className="text-sm text-muted-foreground">
-          A Markdown, text, CSV or HTML file up to {MAX_ROADMAP_CHARS / 1000}{" "}
-          KB, such as a CSV export from Jira, Productboard, Aha! or Linear, or a
+          A Markdown, text, CSV or HTML file up to {MAX_FILE_BYTES / 1000} KB,
+          such as a CSV export from Jira, Productboard, Aha! or Linear, or a
           Markdown export from Notion or Confluence.
+        </p>
+        <p
+          id="file-error"
+          aria-live="polite"
+          className="text-sm text-destructive"
+        >
+          {fileError}
         </p>
       </div>
       <div>

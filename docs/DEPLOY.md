@@ -228,13 +228,15 @@ The public site is built for strangers: its agents never spend your Anthropic ke
 
    Do not set `OPENROUTER_API_KEY` here unless you want a free model as a fallback; with the Anthropic key set, your projects never use it.
 
-4. **Lock the door.** With `PUBLIC_DEPLOYMENT` unset, anyone who finds the URL can approve proposals, connect repositories and spend your key. Turn on **Deployment Protection → Vercel Authentication** in the project's settings so every page, including production, requires your Vercel sign-in. That is the stand-in for real sign-in until the "Teams and permissions" issue is built. Vercel cron requests carry `CRON_SECRET` and are exempt from Deployment Protection, so the cron routes keep working.
+4. **Lock the door.** With `PUBLIC_DEPLOYMENT` unset, anyone who finds the URL can approve proposals, connect repositories and spend your key. In the project's **Settings → Deployment Protection**, turn on **Vercel Authentication** and set its scope to **All Deployments**. The default scope, Standard Protection, leaves production domains public, which is exactly the URL you need to close. Every page then requires your Vercel sign-in. That is the stand-in for real sign-in until the "Teams and permissions" issue is built.
 
-5. **A GitHub App of its own.** A GitHub App has one webhook URL, so the public site's app cannot also deliver to this instance. Register a second app following [`GITHUB_APP.md`](GITHUB_APP.md), with its webhook URL set to `https://<private-host>/api/github/webhook`, and install it on the repositories this instance will follow.
+   Vercel's documentation does not say whether its own cron requests pass Deployment Protection, so check once protection is on: run `vercel crons run /api/jobs/run` and confirm in the Cron Jobs tab's **View Logs** that it returned 200. No log entry, or a 401, means it did not get through. If the cron is blocked, merged pull requests still reconcile, because the webhook runs queued jobs straight away; only the daily catch-up sweep and the weekly digest email stop.
+
+5. **A GitHub App of its own.** A GitHub App has one webhook URL, so the public site's app cannot also deliver to this instance. GitHub cannot sign in to Vercel, so its deliveries need a bypass: in **Deployment Protection**, turn on **Protection Bypass for Automation** and copy the secret. Then register a second app following [`GITHUB_APP.md`](GITHUB_APP.md), with its webhook URL set to `https://<private-host>/api/github/webhook?x-vercel-protection-bypass=<secret>`, and install it on the repositories this instance will follow. The secret only lets a request past Deployment Protection; the webhook route still rejects any delivery not signed with the app's webhook secret. Without it, every delivery gets a 401 and nothing reconciles; the app's **Advanced → Recent Deliveries** page shows the status.
 
 6. **Create your project** with the SQL in the previous section, then import a roadmap and connect a repository from the deployed site itself; since the instance is private, there is no need to work from a local copy.
 
-What this instance costs: Vercel Hobby and Neon Free are enough; the Anthropic key is billed per reconciliation, roughly one agent call per merged pull request that references a requirement, plus one per suggested link. Deployment Protection is included on Hobby.
+What this instance costs: Vercel Hobby and Neon Free are enough; the Anthropic key is billed per reconciliation, roughly one agent call per merged pull request that references a requirement, plus one per suggested link. Vercel Authentication on All Deployments and Protection Bypass for Automation are both free on Hobby.
 
 ### Example: the factory-platform roadmap
 

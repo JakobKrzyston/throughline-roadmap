@@ -94,6 +94,29 @@ describe("applyProposal", () => {
     expect(proposal.decidedAt).toBeInstanceOf(Date);
   });
 
+  it("puts a new outcome in the change feed with its description as the note", async () => {
+    await approve([
+      {
+        type: "create_outcome",
+        key: "OUT-1",
+        title: "Usage alerts",
+        description:
+          "Admins hear about unusual usage before the invoice arrives.",
+      },
+      { type: "create_outcome", key: "OUT-2", title: "Untitled plan" },
+    ]);
+
+    const notes = await db
+      .select({ note: events.productNote })
+      .from(events)
+      .where(eq(events.type, "create_outcome"))
+      .orderBy(events.seq);
+    expect(notes.map((row) => row.note)).toEqual([
+      "Admins hear about unusual usage before the invoice arrives.",
+      null,
+    ]);
+  });
+
   it("changes nothing when any operation fails", async () => {
     await approve(exportOutcome);
     const before = await snapshot();

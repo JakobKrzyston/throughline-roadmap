@@ -200,7 +200,8 @@ async function applyOperation(
         .onConflictDoNothing()
         .returning();
       if (!outcome) throw new ProposalError(`Outcome key ${op.key} is in use`);
-      return event(op, "outcome", outcome.id, null);
+      // A new outcome belongs in "what changed this week"; its description is already plain language.
+      return event(op, "outcome", outcome.id, op.description || null);
     }
 
     case "update_outcome": {

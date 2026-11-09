@@ -83,6 +83,8 @@ A **small team** gets a roadmap that maintains itself for a few minutes of revie
 
 Throughline tracks its own build: [`docs/PLAN.md`](docs/PLAN.md) is imported into a `throughline` project on the public site, and this repository is connected to it, so each stage's pull request updates that roadmap when it merges. The setup steps are in [`docs/DEPLOY.md`](docs/DEPLOY.md#dogfooding-throughline-tracking-its-own-roadmap).
 
+It also tracks a second project, [factory-platform](https://github.com/JakobKrzyston/factory-platform), on a private instance that runs on its own database and model key. How to run one is in [`docs/DEPLOY.md`](docs/DEPLOY.md#a-private-instance-on-your-own-key).
+
 ## Built with Claude
 
 Throughline was built with [Claude Code](https://claude.com/claude-code), one stage of [`docs/PLAN.md`](docs/PLAN.md) per pull request and then issue by issue. [`CLAUDE.md`](CLAUDE.md) gives every session the design rules above, and each pull request was reviewed before it merged. Inside the app, the agents call Claude through the Anthropic TypeScript SDK, or any OpenRouter model through a second provider that the public demo uses with a free model.

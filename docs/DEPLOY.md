@@ -198,6 +198,50 @@ insert into projects (name, slug) values ('Throughline', 'throughline');
 
 The project is then at `https://<your-host>/p/throughline`.
 
+## A private instance on your own key
+
+The public site is built for strangers: its agents never spend your Anthropic key, and anything outside the demo is view-only. For a roadmap you rely on, run a second instance of the same code that is private to you, with its own database and your own model key. The two instances share a repository, so a fix made for one reaches the other on the next release.
+
+1. **A second database.** Create a new Neon project (for example `throughline-private`) rather than a branch of the public one, so a mistake on either side cannot touch the other. Migrate it as in section 2.
+
+   If `pnpm db:migrate` cannot reach Neon from where you are running it (some sandboxes allow only HTTP traffic), apply the migrations by hand: run each file under `src/db/migrations/` in order, then record them so the production build check passes. The check reads `drizzle.__drizzle_migrations`, matching each row's `created_at` to the `when` field in `meta/_journal.json`:
+
+   ```sql
+   create schema if not exists drizzle;
+   create table if not exists drizzle.__drizzle_migrations (id serial primary key, hash text not null, created_at bigint);
+   -- one row per migration: hash is the SHA-256 of the .sql file, created_at is its journal "when"
+   insert into drizzle.__drizzle_migrations (hash, created_at) values ('<sha256>', 1793730616788);
+   ```
+
+2. **A second Vercel project** importing the same GitHub repository (Vercel allows several projects per repository). Set its production branch to `release` as in section 3, or to `main` if this instance does not need staging.
+
+3. **Environment variables**, for Production:
+
+   | Variable            | Value                                                                                                                                      |
+   | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+   | `DATABASE_URL`      | The new database's pooled connection string                                                                                                |
+   | `ANTHROPIC_API_KEY` | Your key. Every project on this instance uses it.                                                                                          |
+   | `ANTHROPIC_MODEL`   | Optional. Defaults to `claude-sonnet-5-5`; set `claude-opus-5-5` for the most careful reconciliation.                                      |
+   | `CRON_SECRET`       | A fresh random string, different from the public site's                                                                                    |
+   | `GITHUB_*`          | A GitHub App for this instance (see step 5), with `GITHUB_ALLOWED_OWNERS` set to your account                                              |
+   | `PUBLIC_DEPLOYMENT` | **Leave unset.** This is what makes the instance private: forms work on every project, and agents use `ANTHROPIC_API_KEY` for all of them. |
+
+   Do not set `OPENROUTER_API_KEY` here unless you want a free model as a fallback; with the Anthropic key set, your projects never use it.
+
+4. **Lock the door.** With `PUBLIC_DEPLOYMENT` unset, anyone who finds the URL can approve proposals, connect repositories and spend your key. In the project's **Settings → Deployment Protection**, turn on **Vercel Authentication** and set its scope to **All Deployments**. The default scope, Standard Protection, leaves production domains public, which is exactly the URL you need to close. Every page then requires your Vercel sign-in. That is the stand-in for real sign-in until the "Teams and permissions" issue is built.
+
+   Vercel's documentation does not say whether its own cron requests pass Deployment Protection, so check once protection is on: run `vercel crons run /api/jobs/run` and confirm in the Cron Jobs tab's **View Logs** that it returned 200. No log entry, or a 401, means it did not get through. If the cron is blocked, merged pull requests still reconcile, because the webhook runs queued jobs straight away; only the daily catch-up sweep and the weekly digest email stop.
+
+5. **A GitHub App of its own.** A GitHub App has one webhook URL, so the public site's app cannot also deliver to this instance. GitHub cannot sign in to Vercel, so its deliveries need a bypass: in **Deployment Protection**, turn on **Protection Bypass for Automation** and copy the secret. Then register a second app following [`GITHUB_APP.md`](GITHUB_APP.md), with its webhook URL set to `https://<private-host>/api/github/webhook?x-vercel-protection-bypass=<secret>`, and install it on the repositories this instance will follow. The secret only lets a request past Deployment Protection; the webhook route still rejects any delivery not signed with the app's webhook secret. Without it, every delivery gets a 401 and nothing reconciles; the app's **Advanced → Recent Deliveries** page shows the status.
+
+6. **Create your project** with the SQL in the previous section, then import a roadmap and connect a repository from the deployed site itself; since the instance is private, there is no need to work from a local copy.
+
+What this instance costs: Vercel Hobby and Neon Free are enough; the Anthropic key is billed per reconciliation, roughly one agent call per merged pull request that references a requirement, plus one per suggested link. Vercel Authentication on All Deployments and Protection Bypass for Automation are both free on Hobby.
+
+### Example: the factory-platform roadmap
+
+Throughline's second use of itself is tracking the [factory-platform](https://github.com/JakobKrzyston/factory-platform) project, a software factory built in the open. That roadmap lives on a private instance set up exactly as above, with a `factory` project seeded from the repository's `docs/PLAN.md` as a single approved import proposal. Its pull requests reference requirements with `Implements TL-n` and are reconciled on merge, and the factory's own agents are planned to report back through a Throughline MCP server (issue #71).
+
 ## Dogfooding: Throughline tracking its own roadmap
 
 Throughline's own roadmap, [`docs/PLAN.md`](PLAN.md), lives in the `throughline` project on the public site, connected to this repository. To set it up, with the local app from the previous section running:

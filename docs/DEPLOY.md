@@ -236,11 +236,19 @@ The public site is built for strangers: its agents never spend your Anthropic ke
 
 6. **Create your project** with the SQL in the previous section, then import a roadmap and connect a repository from the deployed site itself; since the instance is private, there is no need to work from a local copy.
 
+7. **Optional: agents over MCP.** Set `MCP_TOKEN` to a fresh random string to turn on `/api/mcp`, so coding agents can read requirements and propose pull request links for you to approve (see "MCP server" in [`ARCHITECTURE.md`](ARCHITECTURE.md)). An agent needs both the token and the bypass secret from step 5, since Deployment Protection stops it first. In Claude Code:
+
+   ```bash
+   claude mcp add --transport http throughline "https://<private-host>/api/mcp" \
+     --header "Authorization: Bearer <MCP_TOKEN>" \
+     --header "x-vercel-protection-bypass: <secret>"
+   ```
+
 What this instance costs: Vercel Hobby and Neon Free are enough; the Anthropic key is billed per reconciliation, roughly one agent call per merged pull request that references a requirement, plus one per suggested link. Vercel Authentication on All Deployments and Protection Bypass for Automation are both free on Hobby.
 
 ### Example: the factory-platform roadmap
 
-Throughline's second use of itself is tracking the [factory-platform](https://github.com/JakobKrzyston/factory-platform) project, a software factory built in the open. That roadmap lives on a private instance set up exactly as above, with a `factory` project seeded from the repository's `docs/PLAN.md` as a single approved import proposal. Its pull requests reference requirements with `Implements TL-n` and are reconciled on merge, and the factory's own agents are planned to report back through a Throughline MCP server (issue #71).
+Throughline's second use of itself is tracking the [factory-platform](https://github.com/JakobKrzyston/factory-platform) project, a software factory built in the open. That roadmap lives on a private instance set up exactly as above, with a `factory` project seeded from the repository's `docs/PLAN.md` as a single approved import proposal. Its pull requests reference requirements with `Implements TL-n` and are reconciled on merge, and the factory's own agents read their requirement and propose their pull request's link through the MCP server (step 7).
 
 ## Dogfooding: Throughline tracking its own roadmap
 

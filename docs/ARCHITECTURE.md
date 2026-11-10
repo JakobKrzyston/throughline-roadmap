@@ -48,7 +48,8 @@ These rules are deliberate. They are also listed in `CLAUDE.md` so every coding 
                    │     ┌────────────┴─────────────┐
                    └───► │  Agents → Proposals      │ ───► Review queue
                          │  import, reconcile, link │      (PM approves)
-                         └──────────────────────────┘
+ MCP clients ──────────► └──────────────────────────┘
+ (outside agents)
 ```
 
 ## Stack
@@ -151,20 +152,20 @@ Many-to-many between requirements and work items. Fields: `requirement_id`, `wor
 
 The review queue.
 
-| Field                      | Notes                                                                                                            |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `id`                       |                                                                                                                  |
-| `project_id`               |                                                                                                                  |
-| `source`                   | `import`, `reconcile`, `link_suggest`, `explicit_link`, `work_started`, `manual`, `reschedule`, `feedback_match` |
-| `status`                   | `pending`, `approved`, `rejected`, `superseded`                                                                  |
-| `summary`                  | One plain-language line for the queue                                                                            |
-| `rationale`                | Why the agent suggests this                                                                                      |
-| `operations`               | JSON array of typed graph operations (see below)                                                                 |
-| `trigger_work_item_id`     | The PR or issue that caused it, if any                                                                           |
-| `requirement_id`           | The requirement a `reconcile` proposal is about                                                                  |
-| `trigger_feedback_id`      | The feedback a `feedback_match` (or manual feedback link) proposal is about                                      |
-| `import_mapping`           | A paired roadmap import's review metadata (see "Paired roadmap import"); null for every other proposal           |
-| `decided_by`, `decided_at` |                                                                                                                  |
+| Field                      | Notes                                                                                                                   |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `id`                       |                                                                                                                         |
+| `project_id`               |                                                                                                                         |
+| `source`                   | `import`, `reconcile`, `link_suggest`, `explicit_link`, `work_started`, `manual`, `reschedule`, `feedback_match`, `mcp` |
+| `status`                   | `pending`, `approved`, `rejected`, `superseded`                                                                         |
+| `summary`                  | One plain-language line for the queue                                                                                   |
+| `rationale`                | Why the agent suggests this                                                                                             |
+| `operations`               | JSON array of typed graph operations (see below)                                                                        |
+| `trigger_work_item_id`     | The PR or issue that caused it, if any                                                                                  |
+| `requirement_id`           | The requirement a `reconcile` proposal is about                                                                         |
+| `trigger_feedback_id`      | The feedback a `feedback_match` (or manual feedback link) proposal is about                                             |
+| `import_mapping`           | A paired roadmap import's review metadata (see "Paired roadmap import"); null for every other proposal                  |
+| `decided_by`, `decided_at` |                                                                                                                         |
 
 ### `events`
 
@@ -225,6 +226,21 @@ Linear issues link the same way as PRs; the differences are noted below and unde
 1. **Explicit:** a PR or Linear issue whose body or title contains `Implements TL-12` or `Part of TL-12` creates a link automatically. This is deterministic and needs no review. Matching is case-insensitive, one phrase can list several keys (`Part of TL-3, TL-4 and TL-5`), and keys that are not in the project are ignored (`src/core/references.ts`). The links still go through a proposal with source `explicit_link`, approved at once by the `github-sync` actor, so `applyProposal` stays the only code that changes the graph and every link has an event. Removing a reference from a PR later does not remove the link.
 2. **Suggested:** if a merged PR, or a Linear issue completed inside a Linear project, has no reference, the link agent compares it to the project's requirements and proposes the best match. A person approves it.
 3. **Work started:** an open PR, or a Linear issue in a `started` state such as In Progress, that is linked to a `planned` leaf moves it to `in_progress`, through a `work_started` proposal approved at once by `github-sync` (`linear-sync` for Linear), like an explicit link. Requirements that are already started, finished, dropped or split are left alone, GitHub issues never start work, and closing a PR without merging does not move the requirement back. This is what makes an outcome show "in progress" before anything has shipped.
+
+4. **Proposed by an agent:** an agent outside Throughline, such as the one that wrote the PR, calls the MCP server's `propose_link` (see "MCP server"). This makes a pending `mcp` proposal with one `link_work_item` operation, which a person approves like a suggestion. Unlike a suggestion it can arrive while the PR is open, so approving a link to an open PR also starts a `planned` requirement, as a reference would. A reference added to the PR later supersedes the pending proposal, and the link agent does not suggest a link for a PR that already has one waiting.
+
+## MCP server
+
+`/api/mcp` (`src/app/api/mcp/route.ts`) is a [Model Context Protocol](https://modelcontextprotocol.io) server over Streamable HTTP, so an agent outside Throughline can read the roadmap and propose changes to it. It is stateless: each POST builds a server with `createMcpServer` (`src/mcp/server.ts`), and replies are plain JSON; GET and DELETE answer 405, since there is no session to stream to or end. Every request must carry `Authorization: Bearer <MCP_TOKEN>`. With `MCP_TOKEN` unset, or on a public deployment, the route answers 503, so the public site exposes nothing. A tool that fails unexpectedly logs the error and tells the agent only that something went wrong. The token gives access to every project on the instance, so it suits a private instance with one owner until "Teams and permissions" brings per-project access.
+
+| Tool              | Input                                             | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get_requirement` | `project` (slug), `key`                           | Returns the requirement's title, description (where the acceptance criteria are), status (rolled up for a parent), outcome, parent, children and linked work items, read with `loadRoadmap`. Keys match in any case; requirements under archived outcomes are not found.                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `propose_link`    | `project`, `pull_request_url`, `key`, `rationale` | Creates a pending `mcp` proposal linking the PR to the requirement with `explicit` confidence, since the agent that wrote the PR says what it is for. The address may be any GitHub link into the PR (Files tab, a comment); it is read as repository and number and matched to a connected repository. The PR must already be a work item, which the GitHub sync makes when it is opened; MCP never creates work items. Returns the waiting proposal if the same link is already pending, and `already_linked` if the link exists, so a retry adds nothing while a proposal waits; calls for one PR take turns on its row lock. After a person rejects a proposal, calling again makes a new one. |
+
+Rule 1 holds: neither tool changes the graph, and no tool approves a proposal. The review queue labels `mcp` proposals "Proposed by an agent", and approving one goes through `approveProposal`, so a link to a merged PR queues reconciliation as an approved suggestion does. The approval event's `proposal_id` points at the `mcp` proposal, which is how the history shows a change came from an agent.
+
+That guarantee belongs to the tools, not to the credentials. On a private instance behind Vercel Authentication, an agent also needs the protection bypass secret, and the secret opens every page, including the review queue, where it could approve proposals itself. Until Throughline has its own sign-in, give these credentials only to agents a person is watching.
 
 ## Agents
 

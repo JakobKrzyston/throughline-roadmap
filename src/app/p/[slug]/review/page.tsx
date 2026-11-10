@@ -44,6 +44,7 @@ const SOURCES: Record<Source, { label: string; tone: BadgeTone }> = {
   explicit_link: { label: "Linked by reference", tone: "neutral" },
   work_started: { label: "Work started", tone: "neutral" },
   manual: { label: "Planning change", tone: "neutral" },
+  mcp: { label: "Proposed by an agent", tone: "purple" },
 };
 
 export const metadata = { title: "Review queue" };
@@ -56,6 +57,7 @@ const REVIEWED: Partial<Record<Source, { path: string; label: string }>> = {
   feedback_match: { path: "/feedback", label: "feedback page" },
   reconcile: { path: "/tech", label: "technical view" },
   link_suggest: { path: "/tech", label: "technical view" },
+  mcp: { path: "/tech", label: "technical view" },
 };
 const RECENT_LIMIT = 5;
 

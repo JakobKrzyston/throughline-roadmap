@@ -8,14 +8,15 @@ import { enqueueReconcile, enqueueSlipCheck } from "@/jobs/queue";
 import { operationListSchema } from "./operations";
 import { applyProposal } from "./proposals";
 import { outcomeIdOf } from "./roadmap";
-import { isFinished } from "./work-items";
+import { isFinished, startWork } from "./work-items";
 
 /**
  * Apply a proposal for a reviewer, and queue the agent work it leads to.
  *
  * Linking a merged pull request to a requirement, as an approved link suggestion does, means the
  * requirement has new finished work to compare against the plan, just as when a pull request
- * that references it merges. An approved reconciliation changes what is left to do under an
+ * that references it merges. Linking an open pull request, as an agent's proposal can, starts a
+ * planned requirement, just as when an open pull request references it. An approved reconciliation changes what is left to do under an
  * outcome, so the outcome's target is checked again.
  *
  * Args:
@@ -73,7 +74,6 @@ export async function approveProposal(
       );
     for (const op of linksAdded) {
       const item = items.find((row) => row.id === op.work_item_id)!;
-      if (!isFinished(item)) continue;
       const [requirement] = await tx
         .select({ id: requirements.id })
         .from(requirements)
@@ -83,6 +83,19 @@ export async function approveProposal(
             eq(requirements.key, op.requirement_key),
           ),
         );
+      // An open pull request now linked to a planned requirement has started it, as a reference would.
+      if (item.kind === "pull_request" && item.state === "open") {
+        await startWork(
+          tx,
+          proposal.projectId,
+          item.id,
+          item,
+          [requirement.id],
+          actor,
+        );
+        continue;
+      }
+      if (!isFinished(item)) continue;
       await enqueueReconcile(tx, {
         workItemId: item.id,
         requirementId: requirement.id,

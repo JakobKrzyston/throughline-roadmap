@@ -170,7 +170,8 @@ export async function syncWorkItem(
         })
         .returning({ id: proposals.id });
       await applyProposal(tx, proposal.id, actor);
-      // The author has now said what this work is for, so a pending guess is out of date.
+      // The author has now said what this work is for, so a pending guess or agent proposal is
+      // out of date.
       await tx
         .update(proposals)
         .set({
@@ -181,7 +182,7 @@ export async function syncWorkItem(
         .where(
           and(
             eq(proposals.triggerWorkItemId, workItemId),
-            eq(proposals.source, "link_suggest"),
+            inArray(proposals.source, ["link_suggest", "mcp"]),
             eq(proposals.status, "pending"),
           ),
         );
@@ -230,16 +231,17 @@ export async function syncWorkItem(
  * Move the planned requirements among `requirementIds` to in progress, because started work
  * references them. Requirements already started, finished, dropped or split are left alone.
  *
- * Like explicit links, this is deterministic, so the proposal is approved at once by the sync.
+ * Like explicit links, this is deterministic, so the proposal is approved at once by the sync,
+ * or by the reviewer who approved the link to an open pull request.
  *
  * Returns:
  *   The keys of the requirements that were started.
  */
-async function startWork(
+export async function startWork(
   tx: Transaction,
   projectId: string,
   workItemId: string,
-  item: SourceWorkItem,
+  item: Pick<SourceWorkItem, "source" | "title">,
   requirementIds: string[],
   actor: string,
 ): Promise<string[]> {

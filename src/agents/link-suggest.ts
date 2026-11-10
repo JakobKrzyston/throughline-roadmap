@@ -1,5 +1,5 @@
 /** Link suggestion agent: proposes which requirement a merged pull request, or a completed Linear issue in a project, with no reference belongs to. Exports runLinkSuggest, buildLinkSuggestPrompt, rankCandidates, linkSuggestOutputSchema, LinkSuggestOutput, LINK_SUGGEST_TASK, MAX_CANDIDATES. */
-import { and, eq, isNotNull, ne } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne } from "drizzle-orm";
 import { z } from "zod";
 
 import type { LLMProvider, StructuredPrompt } from "@/adapters/llm/provider";
@@ -213,7 +213,7 @@ export async function runLinkSuggest(
       proposals,
       and(
         eq(proposals.triggerWorkItemId, workItem.id),
-        eq(proposals.source, "link_suggest"),
+        inArray(proposals.source, ["link_suggest", "mcp"]),
         eq(proposals.status, "pending"),
       ),
     ),

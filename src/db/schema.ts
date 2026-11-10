@@ -60,6 +60,8 @@ export const proposalSource = pgEnum("proposal_source", [
   "reschedule",
   // The feedback agent proposes the outcome a piece of customer feedback asks for.
   "feedback_match",
+  // An agent outside Throughline proposed it through the MCP server. A person still approves it.
+  "mcp",
 ]);
 export const proposalStatus = pgEnum("proposal_status", [
   "pending",

@@ -1,0 +1,1 @@
+ALTER TYPE "public"."proposal_source" ADD VALUE 'mcp';

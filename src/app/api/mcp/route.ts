@@ -1,9 +1,10 @@
-/** /api/mcp: the MCP server over Streamable HTTP, for agents holding MCP_TOKEN. Stateless: each request gets its own server. */
+/** /api/mcp: the MCP server over Streamable HTTP, for agents holding MCP_TOKEN. Stateless: each POST gets its own server. Exports POST, GET, DELETE. */
 import { timingSafeEqual } from "node:crypto";
 
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 
 import { getDb } from "@/db/client";
+import { isPublicDeployment } from "@/lib/public-deployment";
 import { createMcpServer } from "@/mcp/server";
 
 /**
@@ -13,13 +14,19 @@ import { createMcpServer } from "@/mcp/server";
  *   request: A JSON-RPC message from an MCP client, with `Authorization: Bearer <MCP_TOKEN>`.
  *
  * Returns:
- *   503 when MCP_TOKEN is not set, 401 for a missing or wrong token, otherwise the transport's
- *   response.
+ *   503 when MCP_TOKEN is not set or the site is a public deployment, 401 for a missing or wrong
+ *   token, otherwise the transport's response.
  */
-async function handle(request: Request): Promise<Response> {
+export async function POST(request: Request): Promise<Response> {
   const token = process.env.MCP_TOKEN;
-  if (!token) {
-    return Response.json({ error: "MCP_TOKEN is not set" }, { status: 503 });
+  // The tools can propose changes to any project, which a public site allows only on demos.
+  if (!token || isPublicDeployment()) {
+    return Response.json(
+      {
+        error: "MCP is off: MCP_TOKEN is unset or this is a public deployment",
+      },
+      { status: 503 },
+    );
   }
   if (!isAuthorized(request.headers.get("authorization"), token)) {
     return Response.json({ error: "Bad token" }, { status: 401 });
@@ -39,4 +46,18 @@ function isAuthorized(header: string | null, token: string): boolean {
   return given.length === expected.length && timingSafeEqual(given, expected);
 }
 
-export { handle as DELETE, handle as GET, handle as POST };
+/**
+ * Refuse the stream (GET) and session end (DELETE) requests. A stateless server has nothing to
+ * stream, and an open GET would hold a serverless function until it timed out.
+ *
+ * Returns:
+ *   405, which tells MCP clients to use POST only.
+ */
+function methodNotAllowed(): Response {
+  return Response.json(
+    { error: "Method not allowed" },
+    { status: 405, headers: { Allow: "POST" } },
+  );
+}
+
+export { methodNotAllowed as DELETE, methodNotAllowed as GET };

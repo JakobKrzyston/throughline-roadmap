@@ -12,7 +12,7 @@ vi.mock(import("@/db/client"), async (importOriginal) => ({
   getDb: () => state.db as TestDb,
 }));
 
-const { POST } = await import("./route");
+const { GET, POST } = await import("./route");
 
 const TOKEN = "mcp-token";
 let db: TestDb;
@@ -55,7 +55,10 @@ function rpc(
   });
 }
 
-async function callTool(name: string, args: object) {
+async function callTool(
+  name: string,
+  args: object,
+): Promise<{ content: { text: string }[]; isError?: boolean }> {
   const response = await POST(rpc("tools/call", { name, arguments: args }));
   expect(response.status).toBe(200);
   const { result } = await response.json();
@@ -69,6 +72,16 @@ describe("/api/mcp", () => {
     vi.stubEnv("MCP_TOKEN", TOKEN);
     expect((await POST(rpc("tools/list", {}, "Bearer nope"))).status).toBe(401);
     expect((await POST(rpc("tools/list", {}, ""))).status).toBe(401);
+  });
+
+  it("is off on a public deployment, even with a token", async () => {
+    vi.stubEnv("PUBLIC_DEPLOYMENT", "true");
+    expect((await POST(rpc("tools/list", {}))).status).toBe(503);
+    vi.stubEnv("PUBLIC_DEPLOYMENT", "");
+  });
+
+  it("refuses GET instead of holding a stream open", () => {
+    expect(GET().status).toBe(405);
   });
 
   it("answers initialize and lists both tools", async () => {
@@ -99,7 +112,7 @@ describe("/api/mcp", () => {
     });
   });
 
-  it("returns a readable error for an unknown pull request and creates nothing", async () => {
+  it("returns a readable error for a repository not connected, and creates nothing", async () => {
     const result = await callTool("propose_link", {
       project: "factory",
       pull_request_url: "https://github.com/acme/app/pull/1",
@@ -107,7 +120,7 @@ describe("/api/mcp", () => {
       rationale: "It adds the server.",
     });
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toMatch(/has not seen/);
+    expect(result.content[0].text).toMatch(/is not connected/);
     expect(await db.$count(proposals)).toBe(0);
   });
 });

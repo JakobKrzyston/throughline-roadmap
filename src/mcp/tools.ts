@@ -1,5 +1,5 @@
-/** What the MCP tools read and write: a requirement's context, and a pending proposal to link a pull request. Exports getRequirement, proposeLink, McpToolError. */
-import { and, eq } from "drizzle-orm";
+/** What the MCP tools read and write: a requirement's context, and a pending proposal to link a pull request. Exports getRequirement, proposeLink, parsePullRequestUrl, McpToolError. */
+import { and, eq, sql } from "drizzle-orm";
 
 import type { GraphOperationInput } from "@/core/operations";
 import { type RequirementTree, loadRoadmap } from "@/core/roadmap";
@@ -9,6 +9,7 @@ import {
   links,
   projects,
   proposals,
+  repositories,
   requirements,
   workItems,
 } from "@/db/schema";
@@ -100,7 +101,7 @@ export type ProposeLinkResult =
  * Args:
  *   db: Database to write to.
  *   projectSlug: The project, e.g. "factory".
- *   pullRequestUrl: The pull request's web address, as GitHub shows it.
+ *   pullRequestUrl: The pull request's web address (see parsePullRequestUrl).
  *   key: The requirement key, e.g. "TL-3".
  *   rationale: Why the agent thinks the pull request implements the requirement.
  *
@@ -108,7 +109,8 @@ export type ProposeLinkResult =
  *   The new pending proposal, the one already waiting for the same link, or `already_linked`.
  *
  * Raises:
- *   McpToolError: The project, requirement or pull request is not in Throughline.
+ *   McpToolError: The project or requirement does not exist, the address is not a GitHub pull
+ *     request in a repository connected to the project, or the GitHub sync has not delivered it.
  */
 export async function proposeLink(
   db: Database,
@@ -117,78 +119,139 @@ export async function proposeLink(
   key: string,
   rationale: string,
 ): Promise<ProposeLinkResult> {
+  // The same lookup as get_requirement, so both tools agree on which requirements exist.
+  const requirement = await getRequirement(db, projectSlug, key);
   const project = await findProject(db, projectSlug);
-  const [requirement] = await db
-    .select()
-    .from(requirements)
-    .where(
-      and(eq(requirements.projectId, project.id), eq(requirements.key, key)),
-    );
-  if (!requirement) {
-    throw new McpToolError(`No requirement ${key} in project ${projectSlug}`);
-  }
-  // Pull requests reach Throughline through the GitHub sync, never through MCP.
-  const [pull] = await db
-    .select()
-    .from(workItems)
-    .where(
-      and(
-        eq(workItems.projectId, project.id),
-        eq(workItems.kind, "pull_request"),
-        eq(workItems.url, pullRequestUrl.trim().replace(/\/+$/, "")),
-      ),
-    );
-  if (!pull) {
+  const reference = parsePullRequestUrl(pullRequestUrl);
+  if (!reference) {
     throw new McpToolError(
-      `Throughline has not seen ${pullRequestUrl} in project ${projectSlug}. A pull request appears shortly after it is opened in a connected repository; try again in a minute.`,
+      `${pullRequestUrl} is not a GitHub pull request address like https://github.com/owner/repo/pull/12`,
+    );
+  }
+  const [repository] = await db
+    .select({ externalId: repositories.externalId })
+    .from(repositories)
+    .where(
+      and(
+        eq(repositories.projectId, project.id),
+        eq(repositories.source, "github"),
+        sql`lower(${repositories.fullName}) = ${reference.fullName.toLowerCase()}`,
+      ),
+    );
+  if (!repository) {
+    throw new McpToolError(
+      `${reference.fullName} is not connected to project ${projectSlug}`,
     );
   }
 
-  const linked = await db.$count(
-    links,
-    and(eq(links.requirementId, requirement.id), eq(links.workItemId, pull.id)),
-  );
-  if (linked > 0) return { status: "already_linked" };
+  return db.transaction(async (tx) => {
+    // Pull requests reach Throughline through the GitHub sync, never through MCP. The row lock
+    // makes two calls for the same pull request take turns, so they cannot both add a proposal.
+    const [pull] = await tx
+      .select()
+      .from(workItems)
+      .where(
+        and(
+          eq(workItems.projectId, project.id),
+          eq(workItems.source, "github"),
+          eq(workItems.kind, "pull_request"),
+          eq(
+            workItems.externalId,
+            `${repository.externalId}#${reference.number}`,
+          ),
+        ),
+      )
+      .for("update");
+    if (!pull) {
+      throw new McpToolError(
+        `Throughline has not seen ${reference.fullName} pull request #${reference.number} yet. It appears shortly after the pull request is opened; try again in a minute.`,
+      );
+    }
 
-  const pending = await db
-    .select({ id: proposals.id, operations: proposals.operations })
-    .from(proposals)
-    .where(
+    const [requirementRow] = await tx
+      .select({ id: requirements.id })
+      .from(requirements)
+      .where(
+        and(
+          eq(requirements.projectId, project.id),
+          eq(requirements.key, requirement.key),
+        ),
+      );
+    const linked = await tx.$count(
+      links,
       and(
-        eq(proposals.triggerWorkItemId, pull.id),
-        eq(proposals.source, "mcp"),
-        eq(proposals.status, "pending"),
+        eq(links.requirementId, requirementRow.id),
+        eq(links.workItemId, pull.id),
       ),
     );
-  const same = pending.find((row) =>
-    row.operations.some(
-      (op) => op.type === "link_work_item" && op.requirement_key === key,
-    ),
-  );
-  if (same) return { status: "already_pending", proposalId: same.id };
+    if (linked > 0) return { status: "already_linked" as const };
 
-  const operations: GraphOperationInput[] = [
-    {
-      type: "link_work_item",
-      requirement_key: key,
-      work_item_id: pull.id,
-      relation: "implements",
-      // The agent that wrote the pull request says what it is for, as a PR reference would.
-      confidence: "explicit",
-    },
-  ];
-  const [proposal] = await db
-    .insert(proposals)
-    .values({
-      projectId: project.id,
-      source: "mcp",
-      summary: `Link "${pull.title}" to ${key} ${requirement.title}`,
-      rationale: rationale.trim(),
-      operations,
-      triggerWorkItemId: pull.id,
-    })
-    .returning({ id: proposals.id });
-  return { status: "pending", proposalId: proposal.id };
+    const pending = await tx
+      .select({ id: proposals.id, operations: proposals.operations })
+      .from(proposals)
+      .where(
+        and(
+          eq(proposals.triggerWorkItemId, pull.id),
+          eq(proposals.source, "mcp"),
+          eq(proposals.status, "pending"),
+        ),
+      );
+    const same = pending.find((row) =>
+      row.operations.some(
+        (op) =>
+          op.type === "link_work_item" &&
+          op.requirement_key === requirement.key,
+      ),
+    );
+    if (same)
+      return { status: "already_pending" as const, proposalId: same.id };
+
+    const operations: GraphOperationInput[] = [
+      {
+        type: "link_work_item",
+        requirement_key: requirement.key,
+        work_item_id: pull.id,
+        relation: "implements",
+        // The agent that wrote the pull request says what it is for, as a PR reference would.
+        confidence: "explicit",
+      },
+    ];
+    const [proposal] = await tx
+      .insert(proposals)
+      .values({
+        projectId: project.id,
+        source: "mcp",
+        summary: `Link "${pull.title}" to ${requirement.key} ${requirement.title}`,
+        rationale: rationale.trim(),
+        operations,
+        triggerWorkItemId: pull.id,
+      })
+      .returning({ id: proposals.id });
+    return { status: "pending" as const, proposalId: proposal.id };
+  });
+}
+
+/**
+ * Read the repository and number from a GitHub pull request address. Accepts the forms people
+ * copy, such as a link to the Files tab or a comment, in any case.
+ *
+ * Args:
+ *   url: The address.
+ *
+ * Returns:
+ *   The repository's owner/name and the pull request number, or null for any other address.
+ */
+export function parsePullRequestUrl(
+  url: string,
+): { fullName: string; number: number } | null {
+  const match = url
+    .trim()
+    .match(
+      /^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:[/?#]|$)/i,
+    );
+  return match
+    ? { fullName: `${match[1]}/${match[2]}`, number: Number(match[3]) }
+    : null;
 }
 
 async function findProject(
@@ -209,7 +272,10 @@ function findInTree(
   parentKey: string | null,
 ): { node: RequirementTree; parentKey: string | null } | null {
   for (const node of nodes) {
-    if (node.key === key) return { node, parentKey };
+    // Keys are compared ignoring case, as PR references are ("implements tl-3").
+    if (node.key.toUpperCase() === key.toUpperCase()) {
+      return { node, parentKey };
+    }
     const found = findInTree(node.children, key, node.key);
     if (found) return found;
   }

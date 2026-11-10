@@ -11,11 +11,13 @@ const project = z
   .string()
   .trim()
   .min(1)
+  .max(100)
   .describe('The project slug from its address, /p/<slug>, e.g. "factory".');
 const key = z
   .string()
   .trim()
   .min(1)
+  .max(50)
   .describe('The requirement key, e.g. "TL-3".');
 
 /**
@@ -51,6 +53,7 @@ export function createMcpServer(db: Database): McpServer {
         project,
         pull_request_url: z
           .url()
+          .max(500)
           .describe(
             "The pull request's web address, e.g. https://github.com/owner/repo/pull/12.",
           ),
@@ -59,6 +62,7 @@ export function createMcpServer(db: Database): McpServer {
           .string()
           .trim()
           .min(1)
+          .max(1000)
           .describe(
             "One or two sentences on why this pull request implements the requirement, for the reviewer.",
           ),
@@ -73,7 +77,10 @@ export function createMcpServer(db: Database): McpServer {
   return server;
 }
 
-/** Run a tool and return its result as JSON text; a McpToolError becomes an error the agent can read. */
+/**
+ * Run a tool and return its result as JSON text. A McpToolError becomes an error the agent can
+ * read; anything else is logged here and reported without its details, which may be database text.
+ */
 async function respond(run: () => Promise<unknown>): Promise<CallToolResult> {
   try {
     const result = await run();
@@ -81,7 +88,16 @@ async function respond(run: () => Promise<unknown>): Promise<CallToolResult> {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
     };
   } catch (error) {
-    if (!(error instanceof McpToolError)) throw error;
-    return { content: [{ type: "text", text: error.message }], isError: true };
+    if (error instanceof McpToolError) {
+      return {
+        content: [{ type: "text", text: error.message }],
+        isError: true,
+      };
+    }
+    console.error("MCP tool failed", error);
+    return {
+      content: [{ type: "text", text: "Throughline hit an internal error." }],
+      isError: true,
+    };
   }
 }

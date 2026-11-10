@@ -236,7 +236,7 @@ The public site is built for strangers: its agents never spend your Anthropic ke
 
 6. **Create your project** with the SQL in the previous section, then import a roadmap and connect a repository from the deployed site itself; since the instance is private, there is no need to work from a local copy.
 
-7. **Optional: agents over MCP.** Set `MCP_TOKEN` to a fresh random string to turn on `/api/mcp`, so coding agents can read requirements and propose pull request links for you to approve (see "MCP server" in [`ARCHITECTURE.md`](ARCHITECTURE.md)). An agent needs both the token and the bypass secret from step 5, since Deployment Protection stops it first. In Claude Code:
+7. **Optional: agents over MCP.** Set `MCP_TOKEN` to a fresh random string to turn on `/api/mcp`, so coding agents can read requirements and propose pull request links for you to approve (see "MCP server" in [`ARCHITECTURE.md`](ARCHITECTURE.md)). An agent needs both the token and the bypass secret from step 5, since Deployment Protection stops it first. The bypass secret opens the whole instance, not just `/api/mcp`: whoever holds it can open the review queue and approve proposals. Give it only to sessions you supervise, not to unattended agents. In Claude Code:
 
    ```bash
    claude mcp add --transport http throughline "https://<private-host>/api/mcp" \

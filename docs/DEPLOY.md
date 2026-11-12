@@ -259,6 +259,44 @@ What this instance costs: Vercel Hobby and Neon Free are enough; the Anthropic k
 
 Throughline's second use of itself is tracking the [factory-platform](https://github.com/JakobKrzyston/factory-platform) project, a software factory built in the open. That roadmap lives on a private instance set up exactly as above, with a `factory` project seeded from the repository's `docs/PLAN.md` as a single approved import proposal. Its pull requests reference requirements with `Implements TL-n` and are reconciled on merge, and the factory's own agents read their requirement and propose their pull request's link through the MCP server (step 7).
 
+## A view-only mirror of a private instance
+
+A private instance is closed to everyone but you, and anything that gets a visitor past Deployment Protection (the bypass secret, a Vercel share link) opens all of it: the review queue, import and your model key. To send someone a read-only link to a private roadmap, run a third Vercel project on the private instance's database in public mode. Every non-demo project is then view-only (see [What the public site allows](#what-the-public-site-allows)), and the mirror leaves those projects' jobs and digests to the private instance.
+
+1. **A Vercel project** importing the same repository, building `release` like the private instance, so both run the same code against the same schema.
+2. **Environment variables**, for Production only:
+
+   | Variable                | Value                                                              |
+   | ----------------------- | ------------------------------------------------------------------ |
+   | `DATABASE_URL`          | The private instance's pooled connection string                    |
+   | `DATABASE_URL_UNPOOLED` | Its direct connection string (used by the build's migration check) |
+   | `PUBLIC_DEPLOYMENT`     | `true`                                                             |
+
+   **Leave everything else unset:** no `ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY`, no `CRON_SECRET`, no `MCP_TOKEN`, no `GITHUB_*` or `LINEAR_*`, no Slack webhook. Each missing setting closes a door: without `CRON_SECRET` the demo reset and digest routes refuse every request, `/api/mcp` is off on any public deployment, and without webhook secrets the webhook routes refuse every delivery.
+
+3. **Deployment Protection off**, so the link opens without a Vercel sign-in.
+4. **Webhooks stay where they are.** GitHub and Linear keep delivering to the private instance, which reconciles and runs the jobs; the mirror only reads the result.
+5. **Deploy it whenever the private instance moves to a new release.** It has no migrations of its own: once the private database is migrated, both builds pass the check.
+
+The database may also hold the Acme Analytics demo, which visitors to the mirror can change as on any public site. With no `CRON_SECRET` it is never reset there. That does not touch your own projects.
+
+**Check it from a signed-out client** (`curl` or a private window):
+
+```bash
+M=https://<mirror-host>
+curl -s -o /dev/null -w '%{http_code}\n' $M/p/<slug>                              # 200: the product view
+for p in review plan import; do curl -s $M/p/<slug>/$p | grep -c '<form'; done   # 0 each: no forms
+curl -s -X POST $M/api/jobs/run        # {"done":0,...} unless a demo job is queued
+curl -s -X POST $M/api/digests/send    # 401
+curl -s -X POST $M/api/demo/reset      # 401
+curl -s -X POST $M/api/mcp             # 503
+curl -s -X POST $M/api/github/webhook  # 503
+```
+
+The review, plan and import pages each say the project is view-only. Then compare the private project's job and event counts before and after a day of the mirror running: only the private instance should have added to them.
+
+The factory-platform roadmap is mirrored this way: its `factory` project is readable on the mirror without a sign-in, while the private instance stays behind Vercel Authentication.
+
 ## Dogfooding: Throughline tracking its own roadmap
 
 Throughline's own roadmap, [`docs/PLAN.md`](PLAN.md), lives in the `throughline` project on the public site, connected to this repository. To set it up, with the local app from the previous section running:

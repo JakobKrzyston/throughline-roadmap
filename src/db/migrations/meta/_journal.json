@@ -99,6 +99,13 @@
       "when": 1794282346011,
       "tag": "0013_mcp_proposals",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794496618977,
+      "tag": "0014_job_project",
+      "breakpoints": true
     }
   ]
 }

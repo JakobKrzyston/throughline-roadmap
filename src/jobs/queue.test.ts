@@ -2,7 +2,7 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { jobs } from "@/db/schema";
+import { jobs, projects } from "@/db/schema";
 import { createTestDb } from "@/db/test-db";
 
 import { enqueue, enqueueReconcile, MAX_ATTEMPTS, runJobs } from "./queue";
@@ -10,9 +10,14 @@ import { enqueue, enqueueReconcile, MAX_ATTEMPTS, runJobs } from "./queue";
 type TestDb = Awaited<ReturnType<typeof createTestDb>>;
 
 let db: TestDb;
+let projectId: string;
 
 beforeEach(async () => {
   db = await createTestDb();
+  [{ id: projectId }] = await db
+    .insert(projects)
+    .values({ name: "Test", slug: "test" })
+    .returning();
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -23,7 +28,7 @@ async function job(id: string): Promise<typeof jobs.$inferSelect> {
 
 describe("runJobs", () => {
   it("runs a queued job with its payload and marks it done", async () => {
-    const id = await enqueue(db, "backfill", { repositoryId: "r1" });
+    const id = await enqueue(db, projectId, "backfill", { repositoryId: "r1" });
     const backfill = vi.fn(async () => {});
 
     expect(await runJobs(db, { backfill })).toEqual({ done: 1, failed: 0 });
@@ -32,7 +37,7 @@ describe("runJobs", () => {
   });
 
   it("queues the follow-up job a handler returns", async () => {
-    const id = await enqueue(db, "backfill", { repositoryId: "r1" });
+    const id = await enqueue(db, projectId, "backfill", { repositoryId: "r1" });
     const backfill = vi.fn(async (payload: { cursor?: string }) =>
       payload.cursor ? undefined : { repositoryId: "r1", cursor: "page:2" },
     );
@@ -43,11 +48,35 @@ describe("runJobs", () => {
       cursor: "page:2",
     });
     expect(await job(id)).toMatchObject({ status: "done" });
-    expect(await db.select().from(jobs)).toHaveLength(2);
+    // The follow-up works on the same project, so a demo-only runner still claims it.
+    expect((await db.select().from(jobs)).map((row) => row.projectId)).toEqual([
+      projectId,
+      projectId,
+    ]);
+  });
+
+  it("with demoOnly, runs a demo project's job and leaves another project's queued", async () => {
+    const [demo] = await db
+      .insert(projects)
+      .values({ name: "Demo", slug: "demo", isDemo: true })
+      .returning();
+    const other = await enqueue(db, projectId, "backfill", {
+      repositoryId: "r1",
+    });
+    const mine = await enqueue(db, demo.id, "backfill", { repositoryId: "r2" });
+    const backfill = vi.fn(async () => {});
+
+    expect(await runJobs(db, { backfill }, { demoOnly: true })).toEqual({
+      done: 1,
+      failed: 0,
+    });
+    expect(backfill).toHaveBeenCalledExactlyOnceWith({ repositoryId: "r2" });
+    expect(await job(mine)).toMatchObject({ status: "done" });
+    expect(await job(other)).toMatchObject({ status: "queued", attempts: 0 });
   });
 
   it("leaves job types without a handler queued", async () => {
-    const id = await enqueue(db, "reconcile", {
+    const id = await enqueue(db, projectId, "reconcile", {
       workItemId: "w",
       requirementId: "r",
     });
@@ -59,7 +88,7 @@ describe("runJobs", () => {
   });
 
   it("retries a failing job later, then marks it failed", async () => {
-    const id = await enqueue(db, "backfill", { repositoryId: "r1" });
+    const id = await enqueue(db, projectId, "backfill", { repositoryId: "r1" });
     const backfill = vi.fn(async () => {
       throw new Error("GitHub is down");
     });
@@ -92,7 +121,7 @@ describe("runJobs", () => {
   });
 
   it("runs a job again if it was cut off while running", async () => {
-    const id = await enqueue(db, "backfill", { repositoryId: "r1" });
+    const id = await enqueue(db, projectId, "backfill", { repositoryId: "r1" });
     await db
       .update(jobs)
       .set({ status: "running", attempts: 1 })
@@ -107,7 +136,7 @@ describe("runJobs", () => {
   });
 
   it("does not touch a job that is running now", async () => {
-    const id = await enqueue(db, "backfill", { repositoryId: "r1" });
+    const id = await enqueue(db, projectId, "backfill", { repositoryId: "r1" });
     await db
       .update(jobs)
       .set({ status: "running", attempts: 1 })
@@ -119,8 +148,10 @@ describe("runJobs", () => {
 
   it("stops after the limit", async () => {
     for (let i = 0; i < 3; i++)
-      await enqueue(db, "backfill", { repositoryId: `r${i}` });
-    expect(await runJobs(db, { backfill: async () => {} }, 2)).toEqual({
+      await enqueue(db, projectId, "backfill", { repositoryId: `r${i}` });
+    expect(
+      await runJobs(db, { backfill: async () => {} }, { limit: 2 }),
+    ).toEqual({
       done: 2,
       failed: 0,
     });
@@ -130,10 +161,16 @@ describe("runJobs", () => {
 describe("enqueueReconcile", () => {
   it("folds a second reconciliation for the same requirement into the waiting job", async () => {
     expect(
-      await enqueueReconcile(db, { workItemId: "w1", requirementId: "r1" }),
+      await enqueueReconcile(db, projectId, {
+        workItemId: "w1",
+        requirementId: "r1",
+      }),
     ).toBe(true);
     expect(
-      await enqueueReconcile(db, { workItemId: "w2", requirementId: "r1" }),
+      await enqueueReconcile(db, projectId, {
+        workItemId: "w2",
+        requirementId: "r1",
+      }),
     ).toBe(false);
 
     const rows = await db.select().from(jobs);
@@ -147,17 +184,29 @@ describe("enqueueReconcile", () => {
   });
 
   it("queues separate jobs for different requirements", async () => {
-    await enqueueReconcile(db, { workItemId: "w1", requirementId: "r1" });
-    await enqueueReconcile(db, { workItemId: "w1", requirementId: "r2" });
+    await enqueueReconcile(db, projectId, {
+      workItemId: "w1",
+      requirementId: "r1",
+    });
+    await enqueueReconcile(db, projectId, {
+      workItemId: "w1",
+      requirementId: "r2",
+    });
     expect(await db.select().from(jobs)).toHaveLength(2);
   });
 
   it("leaves a running job alone and queues a new one", async () => {
-    await enqueueReconcile(db, { workItemId: "w1", requirementId: "r1" });
+    await enqueueReconcile(db, projectId, {
+      workItemId: "w1",
+      requirementId: "r1",
+    });
     await db.update(jobs).set({ status: "running", attempts: 1 });
 
     expect(
-      await enqueueReconcile(db, { workItemId: "w2", requirementId: "r1" }),
+      await enqueueReconcile(db, projectId, {
+        workItemId: "w2",
+        requirementId: "r1",
+      }),
     ).toBe(true);
     expect(await db.select().from(jobs)).toHaveLength(2);
   });

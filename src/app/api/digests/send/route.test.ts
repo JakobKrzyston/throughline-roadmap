@@ -32,9 +32,12 @@ function send(authorization?: string): Promise<Response> {
   );
 }
 
+let db: TestDb;
+
 beforeEach(async () => {
   vi.stubEnv("CRON_SECRET", SECRET);
-  const db = await createTestDb();
+  vi.stubEnv("PUBLIC_DEPLOYMENT", "");
+  db = await createTestDb();
   state.db = db;
   const projectId = await seedDemoProject(db);
   await db
@@ -72,5 +75,29 @@ describe("/api/digests/send", () => {
         "The full roadmap: https://throughline.example/p/acme-analytics",
       ),
     );
+  });
+
+  it("on a public deployment, sends the demo's digest but not another project's", async () => {
+    vi.stubEnv("PUBLIC_DEPLOYMENT", "true");
+    const privateWebhook = "https://hooks.slack.com/services/T000/B000/private";
+    await db.insert(projects).values({
+      name: "Private",
+      slug: "private",
+      digestSlackWebhookUrl: privateWebhook,
+    });
+
+    const response = await send(`Bearer ${SECRET}`);
+
+    expect(await response.json()).toEqual({ sent: 1, failed: 0 });
+    expect(postToSlack).toHaveBeenCalledExactlyOnceWith(
+      WEBHOOK,
+      expect.any(String),
+    );
+    // Still due, for the private instance's own cron to send.
+    const [untouched] = await db
+      .select({ digestSentAt: projects.digestSentAt })
+      .from(projects)
+      .where(eq(projects.slug, "private"));
+    expect(untouched.digestSentAt).toBeNull();
   });
 });

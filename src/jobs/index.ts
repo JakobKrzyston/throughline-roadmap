@@ -13,6 +13,7 @@ import { runReconcile } from "@/agents/reconcile";
 import { runSlipCheck } from "@/agents/slip";
 import { getDb } from "@/db/client";
 import { feedback, outcomes, projects, workItems } from "@/db/schema";
+import { isPublicDeployment } from "@/lib/public-deployment";
 
 import { runBackfill } from "./backfill";
 import { runJobs } from "./queue";
@@ -27,6 +28,9 @@ import { runJobs } from "./queue";
  * provider (a free OpenRouter model, else sample results) and skip GitHub, wherever the job runs:
  * on a public site visitors queue these jobs and must not spend the Anthropic key, and the demo's
  * repository is made up.
+ *
+ * A public deployment runs only demo projects' jobs. Its other projects are view-only there, and
+ * when it shares a database with a private instance, their jobs are the private instance's to run.
  *
  * Returns:
  *   How many jobs finished and how many failed.
@@ -53,42 +57,46 @@ export async function runQueuedJobs(): Promise<{
     return { llm, source };
   }
 
-  return runJobs(db, {
-    backfill: (payload) => runBackfill(db, backfillSource, payload),
-    reconcile: async (payload) => {
-      const agents = await agentsFor(payload.workItemId);
-      await runReconcile(db, agents.llm, agents.source, payload);
+  return runJobs(
+    db,
+    {
+      backfill: (payload) => runBackfill(db, backfillSource, payload),
+      reconcile: async (payload) => {
+        const agents = await agentsFor(payload.workItemId);
+        await runReconcile(db, agents.llm, agents.source, payload);
+      },
+      link_suggest: async (payload) => {
+        const agents = await agentsFor(payload.workItemId);
+        await runLinkSuggest(db, agents.llm, agents.source, payload);
+      },
+      slip_check: async ({ outcomeId }) => {
+        const [row] = await db
+          .select({ isDemo: projects.isDemo })
+          .from(outcomes)
+          .innerJoin(projects, eq(outcomes.projectId, projects.id))
+          .where(eq(outcomes.id, outcomeId));
+        await runSlipCheck(
+          db,
+          row?.isDemo ? getDemoLLMProvider(DEMO_LLM_FIXTURES) : llm,
+          outcomeId,
+          new Date().toISOString().slice(0, 10),
+        );
+      },
+      feedback_match: async ({ feedbackId }) => {
+        const [row] = await db
+          .select({ isDemo: projects.isDemo })
+          .from(feedback)
+          .innerJoin(projects, eq(feedback.projectId, projects.id))
+          .where(eq(feedback.id, feedbackId));
+        await runFeedbackMatch(
+          db,
+          row?.isDemo ? getDemoLLMProvider(DEMO_LLM_FIXTURES) : llm,
+          { feedbackId },
+        );
+      },
     },
-    link_suggest: async (payload) => {
-      const agents = await agentsFor(payload.workItemId);
-      await runLinkSuggest(db, agents.llm, agents.source, payload);
-    },
-    slip_check: async ({ outcomeId }) => {
-      const [row] = await db
-        .select({ isDemo: projects.isDemo })
-        .from(outcomes)
-        .innerJoin(projects, eq(outcomes.projectId, projects.id))
-        .where(eq(outcomes.id, outcomeId));
-      await runSlipCheck(
-        db,
-        row?.isDemo ? getDemoLLMProvider(DEMO_LLM_FIXTURES) : llm,
-        outcomeId,
-        new Date().toISOString().slice(0, 10),
-      );
-    },
-    feedback_match: async ({ feedbackId }) => {
-      const [row] = await db
-        .select({ isDemo: projects.isDemo })
-        .from(feedback)
-        .innerJoin(projects, eq(feedback.projectId, projects.id))
-        .where(eq(feedback.id, feedbackId));
-      await runFeedbackMatch(
-        db,
-        row?.isDemo ? getDemoLLMProvider(DEMO_LLM_FIXTURES) : llm,
-        { feedbackId },
-      );
-    },
-  });
+    { demoOnly: isPublicDeployment() },
+  );
 }
 
 // The source a backfill reads its repository from.

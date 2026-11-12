@@ -313,6 +313,11 @@ export const events = pgTable("events", {
 
 export const jobs = pgTable("jobs", {
   id: uuid("id").primaryKey().defaultRandom(),
+  // Which project the job works on, so a public deployment can run only demo projects' jobs.
+  // Null only for jobs queued before the column existed whose subject was since deleted.
+  projectId: uuid("project_id").references(() => projects.id, {
+    onDelete: "cascade",
+  }),
   type: text("type").notNull(),
   payload: jsonb("payload").notNull(),
   status: jobStatus("status").notNull().default("queued"),

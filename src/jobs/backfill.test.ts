@@ -222,7 +222,7 @@ describe("backfill through the job queue", () => {
       }
       return { items: [item(2)], nextCursor: null };
     });
-    await enqueue(db, "backfill", { repositoryId });
+    await enqueue(db, projectId, "backfill", { repositoryId });
 
     await runJobs(db, handlers);
     expect(await db.select().from(workItems)).toHaveLength(1);
@@ -244,7 +244,7 @@ describe("backfill through the job queue", () => {
 
   it("reports an import that gave up, with its error", async () => {
     adapter.listBackfillPage.mockRejectedValue(new Error("Bad credentials"));
-    await enqueue(db, "backfill", { repositoryId });
+    await enqueue(db, projectId, "backfill", { repositoryId });
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       await db.update(jobs).set({ runAfter: new Date(0) });
       await runJobs(db, handlers);

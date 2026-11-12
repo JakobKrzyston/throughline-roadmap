@@ -9,6 +9,7 @@ Throughline v1 has no sign-in, so a public deployment sets `PUBLIC_DEPLOYMENT=tr
 - Visitors can import, approve and reject only in **demo projects** (Acme Analytics). They cannot edit a proposal before approving it, so nobody can put their own wording on the public demo. The demo's agents run on a free model through OpenRouter when `OPENROUTER_API_KEY` is set, and on sample results otherwise or whenever that model fails. They never use your Anthropic key. The demo resets every night.
 - **Every other project is view-only.** Its product view, technical view and review queue are public, but the forms are hidden and the server actions refuse changes.
 - Repositories cannot be connected from the site.
+- **Only the demo's jobs run, and only the demo's digest is sent.** Webhooks still store your own projects' pull requests and issues and queue their agent jobs, but the site leaves those jobs queued and sends no digest for those projects. That keeps the site safe to point at a private instance's database: the private instance runs those jobs and sends those digests.
 
 You make changes to your own projects from a local copy of the app pointed at the production database (see [Working on your own projects](#working-on-your-own-projects)). Real sign-in is tracked in the "Teams and permissions" issue.
 
@@ -187,8 +188,16 @@ Your own projects use `ANTHROPIC_API_KEY` when it is set, and otherwise the same
 On the public site your projects are view-only, so you change them from your machine against the production database:
 
 1. Copy the production settings into `.env.local`, for example with the Vercel CLI: `vercel env pull .env.local --environment=production`.
-2. Delete the `PUBLIC_DEPLOYMENT` line from `.env.local`. Keep the Anthropic, OpenRouter and GitHub settings: approving a proposal can start agent jobs, and they run on your machine with these settings.
+2. Delete the `PUBLIC_DEPLOYMENT` line from `.env.local`. Keep the Anthropic, OpenRouter and GitHub settings: your projects' agent jobs run on your machine with these settings.
 3. Run `pnpm dev`. Everything you do at http://localhost:3000 now changes production data, so take care.
+
+The public site does not run your projects' jobs, so a merged pull request's reconciliation waits in the queue until your copy runs it. Whenever an action on your copy queues a job (approving a proposal, moving a target, connecting a repository), it also runs every due job. To run them without doing any of those:
+
+```bash
+curl -H "Authorization: Bearer <CRON_SECRET>" http://localhost:3000/api/jobs/run   # leave out the header if CRON_SECRET is empty in .env.local
+```
+
+The public site's weekly cron does not send your projects' digests either. For a roadmap that should reconcile on its own and send a weekly digest, use [a private instance](#a-private-instance-on-your-own-key).
 
 To create a project, run this in Neon's **SQL Editor** (there is no create-project page in v1):
 

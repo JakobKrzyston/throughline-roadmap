@@ -1,4 +1,4 @@
-/** SourceAdapter for GitHub, authenticated as a GitHub App through Octokit. Exports GitHubAdapter, GitHubApp. */
+/** SourceAdapter for GitHub, authenticated as a GitHub App through Octokit. Exports GitHubAdapter, GitHubApp, GitHubError. */
 import { type App, type Octokit, RequestError } from "octokit";
 
 import type {
@@ -23,6 +23,55 @@ const PAGE_SIZE = 100;
 /** The parts of an Octokit `App` the adapter uses. */
 export type GitHubApp = Pick<App, "octokit" | "getInstallationOctokit">;
 
+/** Why a repository lookup failed, worded for the person connecting the repository. */
+export class GitHubError extends Error {
+  name = "GitHubError";
+}
+
+/**
+ * Say which kind of failure an error from Octokit is: unusable app credentials, an error status
+ * from GitHub, or GitHub not answering at all.
+ *
+ * Args:
+ *   error: What Octokit threw.
+ *
+ * Returns:
+ *   A GitHubError with a plain-language message, and the original error as its cause.
+ */
+function explainFailure(error: unknown): GitHubError {
+  const options = { cause: error };
+  // Octokit wraps every failed request in a RequestError, so anything else was thrown while
+  // signing the app's token, before a request was sent: the private key cannot be read.
+  if (!(error instanceof RequestError)) {
+    return new GitHubError(
+      "The GitHub App's private key cannot be used. Check GITHUB_APP_PRIVATE_KEY (see docs/GITHUB_APP.md); trying again will not help.",
+      options,
+    );
+  }
+  if (!error.response) {
+    return new GitHubError(
+      "Could not reach GitHub. Please try again.",
+      options,
+    );
+  }
+  if (error.status === 401) {
+    return new GitHubError(
+      "GitHub did not accept the app's credentials. Check that GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY belong to the same GitHub App; trying again will not help.",
+      options,
+    );
+  }
+  if (error.status >= 500) {
+    return new GitHubError(
+      `GitHub answered with an error (status ${error.status}). Please try again in a few minutes.`,
+      options,
+    );
+  }
+  return new GitHubError(
+    `GitHub answered with an error (status ${error.status}). The server log has GitHub's reason.`,
+    options,
+  );
+}
+
 /** Reads repositories, issues and pull requests through a GitHub App installation. */
 export class GitHubAdapter implements SourceAdapter {
   readonly source = "github";
@@ -41,6 +90,10 @@ export class GitHubAdapter implements SourceAdapter {
    *
    * Returns:
    *   The repository, or null if it does not exist or the app is not installed on it.
+   *
+   * Raises:
+   *   GitHubError: The app's credentials cannot be used, GitHub answered with an error, or
+   *     GitHub could not be reached.
    */
   async findRepository(fullName: string): Promise<SourceRepository | null> {
     const [owner, repo] = fullName.split("/");
@@ -50,7 +103,7 @@ export class GitHubAdapter implements SourceAdapter {
       return { externalId: String(data.id), fullName: data.full_name };
     } catch (error) {
       if (error instanceof RequestError && error.status === 404) return null;
-      throw error;
+      throw explainFailure(error);
     }
   }
 

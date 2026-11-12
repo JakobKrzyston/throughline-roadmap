@@ -1,8 +1,10 @@
 /** Tests for GitHubAdapter against a fake Octokit app. */
-import { RequestError } from "octokit";
+import { generateKeyPairSync } from "node:crypto";
+
+import { App, Octokit, RequestError } from "octokit";
 import { describe, expect, it } from "vitest";
 
-import { GitHubAdapter, type GitHubApp } from "./adapter";
+import { GitHubAdapter, type GitHubApp, GitHubError } from "./adapter";
 
 const notFound = (): RequestError =>
   new RequestError("Not Found", 404, {
@@ -90,6 +92,79 @@ describe("GitHubAdapter.findRepository", () => {
     expect(
       await new GitHubAdapter(app).findRepository("acme/private"),
     ).toBeNull();
+  });
+});
+
+describe("GitHubAdapter.findRepository failures", () => {
+  const validKey = generateKeyPairSync("rsa", { modulusLength: 2048 })
+    .privateKey.export({ type: "pkcs8", format: "pem" })
+    .toString();
+
+  /** A real Octokit App whose requests go to `fetch` instead of GitHub. */
+  function appWith(privateKey: string, fetch: typeof globalThis.fetch) {
+    const adapter = new GitHubAdapter(
+      new App({
+        appId: "1",
+        privateKey,
+        // Octokit retries failed requests with backoff; one attempt keeps the tests fast.
+        Octokit: Octokit.defaults({
+          request: { fetch },
+          retry: { enabled: false },
+        }),
+      }),
+    );
+    return adapter.findRepository("acme/analytics");
+  }
+
+  const answer = (status: number) => async () =>
+    new Response(JSON.stringify({ message: "nope" }), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+
+  it("says the private key cannot be used when it does not parse, without calling GitHub", async () => {
+    let called = false;
+    const fetch = async () => {
+      called = true;
+      return new Response("{}");
+    };
+    // A PEM pasted with its line breaks turned into spaces.
+    const mangled = validKey.replace(/\n/g, " ");
+    const failure = appWith(mangled, fetch);
+    await expect(failure).rejects.toThrow(GitHubError);
+    await expect(failure).rejects.toThrow(/private key cannot be used/);
+    expect(called).toBe(false);
+  });
+
+  it("says the credentials were refused when GitHub answers 401", async () => {
+    await expect(appWith(validKey, answer(401))).rejects.toThrow(
+      /did not accept the app's credentials/,
+    );
+  });
+
+  it("names the status when GitHub answers with another error", async () => {
+    await expect(appWith(validKey, answer(502))).rejects.toThrow(
+      "GitHub answered with an error (status 502). Please try again in a few minutes.",
+    );
+    await expect(appWith(validKey, answer(403))).rejects.toThrow(
+      /status 403\)\. The server log/,
+    );
+  });
+
+  it("says GitHub could not be reached when the request never gets an answer", async () => {
+    const fetch = async () => {
+      throw new TypeError("fetch failed", {
+        cause: new Error("getaddrinfo ENOTFOUND api.github.com"),
+      });
+    };
+    await expect(appWith(validKey, fetch)).rejects.toThrow(
+      "Could not reach GitHub. Please try again.",
+    );
+  });
+
+  it("keeps Octokit's error as the cause for the server log", async () => {
+    const failure = await appWith(validKey, answer(502)).catch((e) => e);
+    expect(failure.cause).toBeInstanceOf(RequestError);
   });
 });
 

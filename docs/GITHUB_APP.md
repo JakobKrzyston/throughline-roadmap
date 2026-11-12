@@ -42,7 +42,7 @@ After creating the app:
 2. Under **Private keys**, click **Generate a private key**. A `.pem` file downloads.
 3. Note the app's **slug**: the last part of its public URL, `https://github.com/apps/<slug>`.
 
-Set these environment variables (in `.env.local` locally, or in the Vercel project settings):
+Set these environment variables (in `.env.local` locally, or in the Vercel project settings; see below for the private key on Vercel):
 
 ```bash
 GITHUB_APP_ID=123456
@@ -50,9 +50,17 @@ GITHUB_APP_SLUG=throughline-yourname
 # Accounts whose repositories may be connected, comma-separated.
 GITHUB_ALLOWED_OWNERS=yourname
 GITHUB_WEBHOOK_SECRET=<the webhook secret from step 1>
-# The whole .pem file. On one line, write each line break as \n.
+# In .env.local: the whole .pem file on one line, with each line break written as \n.
 GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----\n"
 ```
+
+On Vercel, store the `.pem` file itself rather than pasting the one-line form, which can arrive mangled:
+
+```bash
+vercel env add GITHUB_APP_PRIVATE_KEY production < private-key.pem
+```
+
+Repeat with `preview` for preview deployments. A mangled key shows up when you connect a repository: the settings page says the private key cannot be used, and the server log has `asn1 encoding routines::wrong tag` or `Invalid keyData`.
 
 Throughline has no sign-in yet, so anyone who can open a project's settings page can connect a repository. `GITHUB_ALLOWED_OWNERS` limits that to repositories owned by the accounts you list, and repositories cannot be connected until it is set. On a public site, set `PUBLIC_DEPLOYMENT=true` as well, and nobody can connect repositories from the site at all (see [`DEPLOY.md`](DEPLOY.md)).
 
@@ -67,7 +75,7 @@ Throughline then imports the repository's open issues and the pull requests merg
 
 An issue labelled `feedback` (in any case) is customer feedback rather than work: it shows on `/p/<project-slug>/feedback` and is never linked to a requirement. Removing the label turns it back into an ordinary issue. Create the label in the repository if it does not exist; nothing else needs setting up, since label changes arrive as `issues` events.
 
-A pull request or issue whose title or description says `Implements TL-12` or `Part of TL-12` is linked to requirement `TL-12` automatically. Several references are fine (`Part of TL-3, TL-4 and TL-5`), keys are not case-sensitive, and keys that do not exist in the project are ignored.
+A pull request or issue whose title or description says `Implements TL-12` or `Part of TL-12` is linked to requirement `TL-12` automatically. Several references are fine (`Part of TL-3, TL-4 and TL-5`), keys are not case-sensitive, and keys that do not exist in the project are ignored. References inside inline code or fenced code blocks are ignored too, so a description can quote the syntax as an example.
 
 ## Receiving webhooks locally
 

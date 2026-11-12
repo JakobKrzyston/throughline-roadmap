@@ -145,6 +145,7 @@ export async function loadDigest(
  *   db: Database to read and record sends in.
  *   options.baseUrl: The app's origin, for the roadmap link.
  *   options.post: Sends one digest.
+ *   options.demoOnly: Send only demo projects' digests, as a public deployment does.
  *   options.now: The time of this run. Defaults to now.
  *
  * Returns:
@@ -152,7 +153,12 @@ export async function loadDigest(
  */
 export async function sendDueDigests(
   db: Database,
-  options: { baseUrl: string; post: DigestPoster; now?: Date },
+  options: {
+    baseUrl: string;
+    post: DigestPoster;
+    demoOnly?: boolean;
+    now?: Date;
+  },
 ): Promise<{ sent: number; failed: number }> {
   const now = options.now ?? new Date();
   const due = or(
@@ -162,7 +168,13 @@ export async function sendDueDigests(
   const rows = await db
     .select()
     .from(projects)
-    .where(and(isNotNull(projects.digestSlackWebhookUrl), due));
+    .where(
+      and(
+        isNotNull(projects.digestSlackWebhookUrl),
+        options.demoOnly ? eq(projects.isDemo, true) : undefined,
+        due,
+      ),
+    );
 
   let sent = 0;
   let failed = 0;

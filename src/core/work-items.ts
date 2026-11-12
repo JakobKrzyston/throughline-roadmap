@@ -205,7 +205,7 @@ export async function syncWorkItem(
           ? allLinked
           : newLinks.map((link) => link.requirementId);
     for (const requirementId of toReconcile) {
-      await enqueueReconcile(tx, { workItemId, requirementId });
+      await enqueueReconcile(tx, projectId, { workItemId, requirementId });
     }
     // Linear issues outside any project are mostly bugs and chores; suggesting links for them
     // would flood the review queue.
@@ -215,7 +215,8 @@ export async function syncWorkItem(
       (item.kind === "pull_request" || item.inProject === true) &&
       linkedIds.size === 0 &&
       newLinks.length === 0;
-    if (suggestLink) await enqueue(tx, "link_suggest", { workItemId });
+    if (suggestLink)
+      await enqueue(tx, projectId, "link_suggest", { workItemId });
 
     return {
       workItemId,
@@ -322,7 +323,9 @@ export async function syncFeedback(
       .onConflictDoNothing()
       .returning({ id: feedback.id });
     if (inserted) {
-      await enqueue(tx, "feedback_match", { feedbackId: inserted.id });
+      await enqueue(tx, projectId, "feedback_match", {
+        feedbackId: inserted.id,
+      });
       return { feedbackId: inserted.id, matchJob: true };
     }
 
@@ -347,7 +350,9 @@ export async function syncFeedback(
     }
     await tx.update(feedback).set(fields).where(eq(feedback.id, existing.id));
     if (existing.withdrawn) {
-      await enqueue(tx, "feedback_match", { feedbackId: existing.id });
+      await enqueue(tx, projectId, "feedback_match", {
+        feedbackId: existing.id,
+      });
     }
     return { feedbackId: existing.id, matchJob: existing.withdrawn };
   });

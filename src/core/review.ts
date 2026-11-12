@@ -55,7 +55,8 @@ export async function approveProposal(
     let queued = 0;
     if (proposal.source === "reconcile" && proposal.requirementId) {
       const outcomeId = await outcomeIdOf(tx, proposal.requirementId);
-      if (await enqueueSlipCheck(tx, { outcomeId })) queued++;
+      if (await enqueueSlipCheck(tx, proposal.projectId, { outcomeId }))
+        queued++;
     }
 
     const linksAdded = operationListSchema
@@ -96,7 +97,7 @@ export async function approveProposal(
         continue;
       }
       if (!isFinished(item)) continue;
-      await enqueueReconcile(tx, {
+      await enqueueReconcile(tx, proposal.projectId, {
         workItemId: item.id,
         requirementId: requirement.id,
       });

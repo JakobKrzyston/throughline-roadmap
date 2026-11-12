@@ -124,7 +124,9 @@ export async function connectRepository(
       })
       .onConflictDoNothing()
       .returning({ id: repositories.id });
-    if (row) await enqueue(tx, "backfill", { repositoryId: row.id });
+    if (row) {
+      await enqueue(tx, project.id, "backfill", { repositoryId: row.id });
+    }
     return Boolean(row);
   });
   if (!connected) return fail(`${repository.fullName} is already connected.`);
@@ -232,7 +234,9 @@ export async function connectLinearTeam(
       })
       .onConflictDoNothing()
       .returning({ id: repositories.id });
-    if (row) await enqueue(tx, "backfill", { repositoryId: row.id });
+    if (row) {
+      await enqueue(tx, project.id, "backfill", { repositoryId: row.id });
+    }
     return Boolean(row);
   });
   if (!connected) {

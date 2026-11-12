@@ -6,7 +6,6 @@ import type { LLMProvider } from "@/adapters/llm/provider";
 import { SAMPLE_IMPORT_OUTPUT } from "@/agents/fixtures";
 import { IMPORT_SAMPLES } from "@/agents/import-samples";
 import {
-  jobs,
   outcomes,
   projects,
   proposals,
@@ -15,6 +14,7 @@ import {
 } from "@/db/schema";
 import { DEMO_SLUG, seedDemoProject } from "@/db/seed";
 import { createTestDb } from "@/db/test-db";
+import { enqueue } from "@/jobs/queue";
 
 type TestDb = Awaited<ReturnType<typeof createTestDb>>;
 
@@ -97,9 +97,9 @@ async function queueDemoReconcile(): Promise<void> {
     .select()
     .from(requirements)
     .where(eq(requirements.key, "TL-4"));
-  await db.insert(jobs).values({
-    type: "reconcile",
-    payload: { workItemId: item.id, requirementId: requirement.id },
+  await enqueue(db, item.projectId, "reconcile", {
+    workItemId: item.id,
+    requirementId: requirement.id,
   });
 }
 

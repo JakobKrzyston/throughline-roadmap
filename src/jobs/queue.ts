@@ -2,7 +2,7 @@
 import { and, asc, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
 
 import type { Database } from "@/db/client";
-import { jobs } from "@/db/schema";
+import { jobs, projects } from "@/db/schema";
 
 /** Every job type and the payload it carries. */
 export type JobPayloads = {
@@ -46,6 +46,7 @@ const STALE_AFTER_MS = 15 * 60_000;
  *
  * Args:
  *   db: Database or transaction to write to. Inside a transaction, the job exists only if it commits.
+ *   projectId: The project the job works on.
  *   type: The job type.
  *   payload: Its payload.
  *
@@ -54,12 +55,13 @@ const STALE_AFTER_MS = 15 * 60_000;
  */
 export async function enqueue<T extends JobType>(
   db: Pick<Database, "insert">,
+  projectId: string,
   type: T,
   payload: JobPayloads[T],
 ): Promise<string> {
   const [job] = await db
     .insert(jobs)
-    .values({ type, payload })
+    .values({ projectId, type, payload })
     .returning({ id: jobs.id });
   return job.id;
 }
@@ -73,6 +75,7 @@ export async function enqueue<T extends JobType>(
  *
  * Args:
  *   db: Database or transaction to write to.
+ *   projectId: The project the work item belongs to.
  *   payload: The work item and requirement to compare.
  *
  * Returns:
@@ -80,6 +83,7 @@ export async function enqueue<T extends JobType>(
  */
 export async function enqueueReconcile(
   db: Pick<Database, "insert" | "select" | "update">,
+  projectId: string,
   payload: JobPayloads["reconcile"],
 ): Promise<boolean> {
   const [waiting] = await db
@@ -94,7 +98,7 @@ export async function enqueueReconcile(
     )
     .for("update");
   if (!waiting) {
-    await enqueue(db, "reconcile", payload);
+    await enqueue(db, projectId, "reconcile", payload);
     return true;
   }
   await db.update(jobs).set({ payload }).where(eq(jobs.id, waiting.id));
@@ -109,6 +113,7 @@ export async function enqueueReconcile(
  *
  * Args:
  *   db: Database or transaction to write to.
+ *   projectId: The project the outcome belongs to.
  *   payload: The outcome to check.
  *
  * Returns:
@@ -116,6 +121,7 @@ export async function enqueueReconcile(
  */
 export async function enqueueSlipCheck(
   db: Pick<Database, "insert" | "select">,
+  projectId: string,
   payload: JobPayloads["slip_check"],
 ): Promise<boolean> {
   const [waiting] = await db
@@ -129,7 +135,7 @@ export async function enqueueSlipCheck(
       ),
     );
   if (waiting) return false;
-  await enqueue(db, "slip_check", payload);
+  await enqueue(db, projectId, "slip_check", payload);
   return true;
 }
 
@@ -142,7 +148,9 @@ export async function enqueueSlipCheck(
  * Args:
  *   db: Database holding the queue.
  *   handlers: How to run each job type.
- *   limit: Most jobs to run in this call.
+ *   options.limit: Most jobs to run in this call.
+ *   options.demoOnly: Claim only demo projects' jobs, leaving every other job queued for
+ *     another runner.
  *
  * Returns:
  *   How many jobs finished and how many failed in this call.
@@ -150,14 +158,14 @@ export async function enqueueSlipCheck(
 export async function runJobs(
   db: Database,
   handlers: JobHandlers,
-  limit = 20,
+  { limit = 20, demoOnly = false }: { limit?: number; demoOnly?: boolean } = {},
 ): Promise<{ done: number; failed: number }> {
   const summary = { done: 0, failed: 0 };
   const types = Object.keys(handlers) as JobType[];
   if (types.length === 0) return summary;
 
   for (let i = 0; i < limit; i++) {
-    const job = await claimNextJob(db, types);
+    const job = await claimNextJob(db, types, demoOnly);
     if (!job) break;
 
     let error: unknown;
@@ -178,7 +186,11 @@ export async function runJobs(
     if (error === undefined) {
       await db.transaction(async (tx) => {
         if (followUp) {
-          await tx.insert(jobs).values({ type: job.type, payload: followUp });
+          await tx.insert(jobs).values({
+            projectId: job.projectId,
+            type: job.type,
+            payload: followUp,
+          });
         }
         await tx
           .update(jobs)
@@ -207,6 +219,7 @@ export async function runJobs(
 async function claimNextJob(
   db: Database,
   types: JobType[],
+  demoOnly: boolean,
 ): Promise<typeof jobs.$inferSelect | null> {
   return db.transaction(async (tx) => {
     const now = new Date();
@@ -217,6 +230,15 @@ async function claimNextJob(
       .where(
         and(
           inArray(jobs.type, types),
+          demoOnly
+            ? inArray(
+                jobs.projectId,
+                tx
+                  .select({ id: projects.id })
+                  .from(projects)
+                  .where(eq(projects.isDemo, true)),
+              )
+            : undefined,
           or(
             and(eq(jobs.status, "queued"), lte(jobs.runAfter, now)),
             and(

@@ -183,7 +183,7 @@ export async function savePlanningChange(
         .from(outcomes)
         .where(eq(outcomes.id, outcomeId));
       await supersedeReschedules(tx, projectId, outcome.key, actor);
-      if (await enqueueSlipCheck(tx, { outcomeId })) checksQueued++;
+      if (await enqueueSlipCheck(tx, projectId, { outcomeId })) checksQueued++;
     }
     return { proposalId: proposal.id, checksQueued };
   });

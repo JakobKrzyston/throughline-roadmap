@@ -1,7 +1,8 @@
-/** Tests for connectLinearTeam: the LINEAR_ALLOWED_TEAMS allowlist and the workspace TL-team check, with a fake Linear. */
+/** Tests for connectLinearTeam (the LINEAR_ALLOWED_TEAMS allowlist and the workspace TL-team check, with a fake Linear) and connectRepository's lookup errors. */
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { GitHubError } from "@/adapters/github/adapter";
 import type { LinearIssue } from "@/adapters/linear/adapter";
 import {
   FakeLinearAdapter,
@@ -16,6 +17,7 @@ type TestDb = Awaited<ReturnType<typeof createTestDb>>;
 const state = vi.hoisted(() => ({
   db: undefined as unknown,
   adapter: undefined as unknown,
+  githubLookup: undefined as unknown as () => Promise<never>,
 }));
 vi.mock(import("@/db/client"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -32,11 +34,18 @@ vi.mock(import("@/adapters/linear"), async (importOriginal) => {
         : (state.adapter as FakeLinearAdapter),
   };
 });
+vi.mock(import("@/adapters/github"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  getGitHubAdapter: () =>
+    ({ findRepository: state.githubLookup }) as unknown as ReturnType<
+      typeof import("@/adapters/github").getGitHubAdapter
+    >,
+}));
 // These need a Next.js request scope; what they schedule or refresh is not under test here.
 vi.mock("next/server", () => ({ after: vi.fn() }));
 vi.mock("next/cache", () => ({ refresh: vi.fn() }));
 
-const { connectLinearTeam } = await import("./actions");
+const { connectLinearTeam, connectRepository } = await import("./actions");
 
 const IDLE = { status: "idle" } as const;
 let db: TestDb;
@@ -131,5 +140,35 @@ describe("connectLinearTeam", () => {
     expect(
       await db.$count(repositories, eq(repositories.source, "linear")),
     ).toBe(1);
+  });
+});
+
+describe("connectRepository", () => {
+  beforeEach(() => {
+    vi.stubEnv("GITHUB_APP_ID", "1");
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "key");
+    vi.stubEnv("GITHUB_ALLOWED_OWNERS", "acme");
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  it("shows why the GitHub lookup failed rather than a generic network error", async () => {
+    const reason =
+      "The GitHub App's private key cannot be used. Check GITHUB_APP_PRIVATE_KEY (see docs/GITHUB_APP.md); trying again will not help.";
+    state.githubLookup = async () => {
+      throw new GitHubError(reason);
+    };
+    const result = await connectRepository(
+      "real",
+      IDLE,
+      teamForm("acme/analytics"),
+    );
+    expect(result).toEqual({
+      status: "error",
+      message: reason,
+      repository: "acme/analytics",
+    });
+    expect(
+      await db.$count(repositories, eq(repositories.source, "github")),
+    ).toBe(0);
   });
 });

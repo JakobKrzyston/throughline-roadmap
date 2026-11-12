@@ -10,6 +10,7 @@ import {
   isGitHubConfigured,
   isOwnerAllowed,
 } from "@/adapters/github";
+import { GitHubError } from "@/adapters/github/adapter";
 import { isTeamAllowed, linearAdapterFor } from "@/adapters/linear";
 import { LinearError } from "@/adapters/linear/source";
 import { postToSlack, slackWebhookUrlSchema } from "@/adapters/slack";
@@ -101,7 +102,11 @@ export async function connectRepository(
     repository = await getGitHubAdapter().findRepository(fullName.data);
   } catch (error) {
     console.error("Repository lookup failed:", error);
-    return fail("Could not reach GitHub. Please try again.");
+    return fail(
+      error instanceof GitHubError
+        ? error.message
+        : "Could not look up the repository on GitHub.",
+    );
   }
   if (!repository) {
     return fail(

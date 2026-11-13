@@ -14,6 +14,7 @@ https://github.com/user-attachments/assets/c134a7a7-c978-4fda-9ba3-6519e8923006
 - **Plan versus reality.** When linked work merges, the reconciliation agent reads the pull request and the plan and proposes what changed: done, partly done, split into new pieces, or scope added. A merged pull request with no reference gets a suggested link.
 - **People decide.** Every agent output is a proposal in the review queue. Approve, edit or reject it; nothing changes until it is approved, and every approval writes an event with a plain-language note.
 - **Import from where you plan.** Paste notes, upload the CSV, Markdown or HTML export of Jira, Productboard, Aha!, Notion or Confluence, read a team's initiatives and projects straight from Linear, or import a product roadmap and a technical roadmap together, linked to each other.
+- **Open to coding agents.** On a private instance, an MCP server lets the agent that wrote a pull request read its requirement and propose the link. The proposal waits in the review queue like any other.
 - **Replan and listen.** Drag outcomes into priority order and change targets on the plan page. A slip check proposes a later target when work is due after its outcome's target. Issues labelled `feedback` land on the feedback page, matched to the outcome that would deliver them, and a weekly Slack digest sums up the week for people who never open Throughline.
 
 ## How it works
@@ -83,7 +84,7 @@ A **small team** gets a roadmap that maintains itself for a few minutes of revie
 
 Throughline tracks its own build: [`docs/PLAN.md`](docs/PLAN.md) is imported into a `throughline` project on the public site, and this repository is connected to it, so each stage's pull request updates that roadmap when it merges. The setup steps are in [`docs/DEPLOY.md`](docs/DEPLOY.md#dogfooding-throughline-tracking-its-own-roadmap).
 
-It also tracks a second project, [factory-platform](https://github.com/JakobKrzyston/factory-platform), on a private instance that runs on its own database and model key. How to run one is in [`docs/DEPLOY.md`](docs/DEPLOY.md#a-private-instance-on-your-own-key).
+It also tracks a second project, [factory-platform](https://github.com/JakobKrzyston/factory-platform), on a private instance that runs on its own database and model key. The factory's own agents read their requirements and propose their pull requests' links through the MCP server. How to run a private instance is in [`docs/DEPLOY.md`](docs/DEPLOY.md#a-private-instance-on-your-own-key), and how to share a read-only link to one is in [the section after it](docs/DEPLOY.md#a-view-only-mirror-of-a-private-instance).
 
 ## Built with Claude
 
@@ -96,9 +97,8 @@ Designed for but not built yet; each has an issue:
 - [Research agent](../../issues/9): check planned approaches against current libraries and the market.
 - [More sources](../../issues/10): Jira alongside GitHub and Linear.
 - [Teams and permissions](../../issues/11): organisations, roles and SSO, replacing the public site's view-only rule.
-- [MCP server](../../issues/71): let coding agents read and update the roadmap from where they work.
 
-Two built features have a second half still to come: feedback from support and CRM tools (GitHub issues labelled `feedback` work today), and the weekly digest by email (Slack works today).
+Three built features have a second half still to come: feedback from support and CRM tools (GitHub issues labelled `feedback` work today), the weekly digest by email (Slack works today), and the [MCP server](../../issues/71)'s outcome status and product summary tools, with token-free access to the demo (reading a requirement and proposing a link work today).
 
 ## Learn more
 
